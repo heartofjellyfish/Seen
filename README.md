@@ -25,7 +25,7 @@ Optional env:
 | `SEEN_CYCLE_MS` | `86400000` | length of a full cycle, X |
 | `SEEN_DURATION_MS` | `900000` | length of the fame window, Y (≤ X) |
 | `SEEN_PREP_GRACE_MS` | `180000` | time the chosen person has to submit |
-| `SEEN_DEMO` | unset | `=1` seeds a visible demo reveal |
-| `NEXT_PUBLIC_SEEN_DEBUG` | unset | `=1` shows the debug panel |
+| `SEEN_DEMO_MODE` | unset | `=1` seeds a fake visible demo reveal |
+| `NEXT_PUBLIC_SEEN_DEBUG_PANEL` | unset | `=1` shows the floating debug panel |
 
 Add `?debug` to the URL for the debug panel without env vars.

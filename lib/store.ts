@@ -20,7 +20,7 @@ import {
  *                         (default 15m). Clamped to X.
  *   SEEN_PREP_GRACE_MS  — P, how long the chosen person has to submit their
  *                         answers before we quietly move on (default 3m).
- *   SEEN_DEMO=1         — pre-seed a demo person AND auto-set X=Y so the
+ *   SEEN_DEMO_MODE=1    — pre-seed a demo person AND auto-set X=Y so the
  *                         reveal is always visible (no "quiet hours").
  *
  * Invariant enforced: 0 < P, P < Y, Y <= X.
@@ -29,7 +29,7 @@ import {
  * this is midnight UTC. Timezone shift will be added as SEEN_CYCLE_OFFSET_MS
  * when someone asks for it.
  */
-const DEMO = process.env.SEEN_DEMO === "1";
+const DEMO = process.env.SEEN_DEMO_MODE === "1";
 
 const RAW_CYCLE_MS =
   Number(process.env.SEEN_CYCLE_MS) || 24 * 60 * 60 * 1000;
@@ -78,9 +78,9 @@ const store: StoreShape =
   globalThis.__seenStore ??
   (globalThis.__seenStore = { queue: [], current: null });
 
-// Seed a demo person on module init when SEEN_DEMO=1. Lets you watch the
+// Seed a demo person on module init when SEEN_DEMO_MODE=1. Lets you watch the
 // whole ceremonial reveal solo without spinning up two browsers.
-if (process.env.SEEN_DEMO === "1" && !store.current) {
+if (process.env.SEEN_DEMO_MODE === "1" && !store.current) {
   const now = Date.now();
   // Small warm abstract gradient — stands in for a real photograph.
   const demoPhoto =

@@ -8,7 +8,7 @@ import type { StateResponse } from "@/lib/types";
  * `remote` without touching the server store. Toggling it off resumes the
  * real poll immediately.
  *
- * Enabled via `?debug` in the URL or `NEXT_PUBLIC_SEEN_DEBUG=1` at build.
+ * Enabled via `?debug` in the URL or `NEXT_PUBLIC_SEEN_DEBUG_PANEL=1` at build.
  */
 
 const FAKE_PHOTO =

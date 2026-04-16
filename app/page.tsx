@@ -34,8 +34,8 @@ export default function Page() {
   const clappedForKey = useRef<string | null>(null);
 
   // ————— debug back-door —————
-  // Enabled via ?debug URL param or NEXT_PUBLIC_SEEN_DEBUG=1. Purely client-
-  // side — overrides what we render without touching the server store.
+  // Enabled via ?debug URL param or NEXT_PUBLIC_SEEN_DEBUG_PANEL=1. Purely
+  // client-side — overrides what we render without touching the server store.
   const [debugEnabled, setDebugEnabled] = useState(false);
   const [debugMode, setDebugMode] = useState<DebugMode>("off");
 
@@ -44,7 +44,7 @@ export default function Page() {
     const urlDebug =
       typeof window !== "undefined" &&
       new URLSearchParams(window.location.search).has("debug");
-    const envDebug = process.env.NEXT_PUBLIC_SEEN_DEBUG === "1";
+    const envDebug = process.env.NEXT_PUBLIC_SEEN_DEBUG_PANEL === "1";
     setDebugEnabled(urlDebug || envDebug);
   }, []);
 
