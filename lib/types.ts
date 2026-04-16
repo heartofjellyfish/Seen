@@ -19,14 +19,9 @@ export const REVEAL_ORDER: {
   { key: "precious", label: "their dearest" },
 ];
 
-export interface Participant {
-  id: string;
-  joinedAt: number;
-}
-
 export interface SeenPayload {
-  // milliseconds since the selected user submitted their answers.
-  // Viewers use this to pace the reveal without needing a server clock.
+  // milliseconds since the selected user's scheduled_for began. Viewers use
+  // this to pace the reveal without needing a server clock.
   revealElapsedMs: number;
   answers: Answers;
 }
@@ -49,4 +44,25 @@ export interface StateResponse {
    * resolution as `nextProgress` for the same anti-gaming reason.
    */
   cycleProgress?: number;
+  /**
+   * When the current server-side "view" becomes stale. Clients use this to
+   * schedule the next fetch (event-driven, not polled) — the next phase
+   * boundary, bucket edge, or sensible refresh tick. ISO-8601 string.
+   */
+  nextFetchAt?: string;
+}
+
+/**
+ * Shape returned by /api/mine for a bookmarked submission. Everything a
+ * person needs to see their own status without exposing anyone else's data.
+ */
+export interface MineResponse {
+  /** ISO timestamp the submission was received. */
+  submittedAt: string;
+  /** ISO timestamp the submission is scheduled to be seen, if picked. */
+  scheduledFor: string | null;
+  /** Status derived from scheduling + cycle position. */
+  status: "pool" | "scheduled" | "showing" | "past" | "expired";
+  /** The answers, if they still exist (content is wiped after the fame window). */
+  answers: Answers | null;
 }

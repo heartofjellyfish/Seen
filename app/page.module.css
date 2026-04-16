@@ -353,6 +353,82 @@
   margin-top: 0.5rem;
 }
 
+/* ————— "after submit" bookmark URL box ————— */
+
+.youSoft {
+  font-family: var(--font-serif);
+  font-size: 1rem;
+  font-style: italic;
+  color: var(--fg-dim);
+  opacity: 0.9;
+  line-height: 1.6;
+  max-width: 24rem;
+  text-align: center;
+  margin: 0;
+}
+
+.bookmarkBox {
+  max-width: 30rem;
+  width: 100%;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--line);
+  background: var(--bg-soft);
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.bookmarkLink {
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  color: var(--amber);
+  opacity: 0.9;
+  text-decoration: none;
+  transition: opacity 600ms ease;
+}
+
+.bookmarkLink:hover {
+  opacity: 1;
+  text-decoration: underline;
+}
+
+.subtleGhost {
+  composes: subtle;
+  color: var(--fg-dim);
+  opacity: 0.4;
+}
+
+.subtleGhost:hover {
+  opacity: 0.7;
+  letter-spacing: 0.34em;
+}
+
+/* ————— /mine/[token] page ————— */
+
+.mineAnswers {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5rem;
+  width: 100%;
+  opacity: 0.7;
+}
+
+.mineAnswer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.mineWhen {
+  font-family: var(--font-serif);
+  font-size: 1.1rem;
+  font-style: italic;
+  color: var(--amber);
+  opacity: 0.9;
+}
+
 /* ————— waiting clock ————— */
 
 .clock {
