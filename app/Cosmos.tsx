@@ -104,7 +104,7 @@ void main() {
 
   float stars = 0.0;
 
-  // Bright stars layer (coarser grid = larger stars)
+  // Bright stars — 3x3 neighbours, gaussian pin + halo, twinkling
   vec2 bP = gUv * 55.0;
   vec2 bCell = floor(bP);
   for (int dy = -1; dy <= 1; dy++) {
@@ -117,17 +117,24 @@ void main() {
           0.25 + hash(nCell + vec2(31.0, 5.7)) * 0.5
         );
         float d2 = distance(bP, sPos);
-        // Pin + halo
         float pin = exp(-d2 * d2 * 95.0);
         float halo = exp(-d2 * d2 * 14.0);
-        float br = (pin * 2.2 + halo * 0.55) * (h - 0.955) * 24.0;
+        float br = (pin * 2.2 + halo * 0.55) * (h - 0.955) * 26.0;
+
+        // Twinkle — two uncorrelated sines at different frequencies
+        // give an irregular flicker instead of a metronome pulse
+        float twPhase = h * 17.7 + hash(nCell + vec2(97.0, 53.0)) * 11.3;
+        float tw = 0.5 + 0.5 * sin(t * 2.4 + twPhase);
+        tw = mix(tw, 0.5 + 0.5 * sin(t * 4.7 + twPhase * 0.71), 0.35);
+        br *= 0.35 + 0.65 * tw;
+
         br *= 0.28 + 0.72 * arm;
         stars += br * armMask;
       }
     }
   }
 
-  // Fine star dust (finer grid = smaller, denser stars)
+  // Fine star dust — denser, dimmer, their own twinkle at a faster rate
   vec2 fP = gUv * 160.0;
   vec2 fCell = floor(fP);
   for (int dy = -1; dy <= 1; dy++) {
@@ -142,6 +149,12 @@ void main() {
         float d2 = distance(fP, sPos);
         float pin = exp(-d2 * d2 * 85.0);
         float br = pin * (h - 0.935) * 14.0;
+
+        // Fine stars twinkle faster, brief sparkles
+        float twPhase = h * 29.0 + hash(nCell + vec2(37.0, 19.0)) * 13.0;
+        float tw = 0.5 + 0.5 * sin(t * 3.8 + twPhase);
+        br *= 0.3 + 0.7 * tw;
+
         br *= armMask;
         stars += br * 0.5;
       }

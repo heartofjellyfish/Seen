@@ -60,13 +60,13 @@
       rgba(0, 0, 0, 0.3) 40px,
       rgba(0, 0, 0, 0.62) 44px
     ),
-    /* base velvet color sweep */
+    /* base velvet color sweep — Twin Peaks Red Room crimson */
     linear-gradient(
       to right,
-      #2e0a10 0%,
-      #53171e 35%,
-      #6c2430 68%,
-      #4a1318 100%
+      #2a0404 0%,
+      #6e1010 35%,
+      #8e1a1a 65%,
+      #4a0808 100%
     );
   background-size: 240px 240px, 44px 100%, 100% 100%;
   background-repeat: repeat, repeat, no-repeat;

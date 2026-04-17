@@ -161,6 +161,20 @@ export function Stage({
               <stop offset="100%" stopColor="#4a1419" />
             </linearGradient>
 
+            {/* Floor depth fade — slightly darker/warmer toward the back */}
+            <linearGradient id="floorDepth" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stopColor="#1a0e08" stopOpacity="0.7" />
+              <stop offset="50%" stopColor="#7a5a34" stopOpacity="0.15" />
+              <stop offset="100%" stopColor="#f0dcae" stopOpacity="0" />
+            </linearGradient>
+
+            {/* Marble for the Venus — warm cream with soft shading */}
+            <linearGradient id="venusStone" x1="0.2" y1="0" x2="0.8" y2="1">
+              <stop offset="0%" stopColor="#f5e4b6" />
+              <stop offset="45%" stopColor="#d4be8a" />
+              <stop offset="85%" stopColor="#8a7858" />
+              <stop offset="100%" stopColor="#5a4a30" />
+            </linearGradient>
           </defs>
 
           {/* Large soft halo behind ghost light */}
@@ -172,23 +186,11 @@ export function Stage({
             style={{ opacity: 0.5 + eased * 0.3 }}
           />
 
-          {/* Red carpet — narrow at stage, wide toward viewer */}
-          <path
-            d="M 270 500 L 430 500 L 680 900 L 20 900 Z"
-            fill="url(#carpet)"
-          />
-          <path
-            d="M 270 500 L 20 900"
-            stroke="rgba(232,192,137,0.08)"
-            strokeWidth="1.2"
-            fill="none"
-          />
-          <path
-            d="M 430 500 L 680 900"
-            stroke="rgba(232,192,137,0.08)"
-            strokeWidth="1.2"
-            fill="none"
-          />
+          {/* Red Room floor — black and cream zigzag chevron */}
+          <RedRoomFloor />
+
+          {/* Venus de Milo on the left — Red Room corner sculpture */}
+          <VenusSculpture />
 
           {/* Stage floor edge hairline */}
           <line
@@ -586,6 +588,132 @@ function DreamObject({ kind }: { kind: DreamKind }) {
       <line x1="-6" y1="7" x2="3" y2="7" stroke="#3a2a10" strokeWidth="0.5" opacity="0.82" />
       <rect x="-10" y="-14" width="20" height="3.2" fill="#fff" opacity="0.4" rx="0.5" />
     </svg>
+  );
+}
+
+// ————— Red Room floor —————
+//
+// Iconic Twin Peaks zigzag chevron — cream and near-black triangles
+// alternating per row. 7 rows of perspective compression (tighter
+// toward the back). The whole thing fills the trapezoidal floor
+// from the stage's foot to the viewer's seat.
+
+const FLOOR_ROWS = [
+  { yTop: 500, yBot: 527 },
+  { yTop: 527, yBot: 562 },
+  { yTop: 562, yBot: 607 },
+  { yTop: 607, yBot: 665 },
+  { yTop: 665, yBot: 740 },
+  { yTop: 740, yBot: 830 },
+  { yTop: 830, yBot: 900 },
+];
+const FLOOR_SEGMENTS = 12; // zigzag segments per row (must be even)
+
+function xAtY(y: number) {
+  const t = Math.max(0, (y - 500) / 400);
+  const w = 160 + t * 520; // narrow at far, wide at foreground
+  return { left: 350 - w / 2, right: 350 + w / 2 };
+}
+
+function RedRoomFloor() {
+  const blackTriangles: React.ReactElement[] = [];
+
+  FLOOR_ROWS.forEach((row, r) => {
+    const { yTop, yBot } = row;
+    const top = xAtY(yTop);
+    const bot = xAtY(yBot);
+    const segTop = (top.right - top.left) / FLOOR_SEGMENTS;
+    const segBot = (bot.right - bot.left) / FLOOR_SEGMENTS;
+
+    // For each row, fill half the triangles with black. Alternate
+    // which half (upper ▽ vs lower △) per row so the chevron
+    // interlocks vertically row-to-row.
+    const blackUpper = r % 2 === 0;
+
+    for (let j = 0; j < FLOOR_SEGMENTS / 2; j++) {
+      let points: string;
+      if (blackUpper) {
+        // ▽ apex down — base along top edge, apex at bottom-middle
+        const x1 = top.left + 2 * j * segTop;
+        const x2 = top.left + (2 * j + 2) * segTop;
+        const xA = bot.left + (2 * j + 1) * segBot;
+        points = `${x1.toFixed(1)},${yTop} ${x2.toFixed(1)},${yTop} ${xA.toFixed(1)},${yBot}`;
+      } else {
+        // △ apex up — base along bottom edge, apex at top-middle
+        const x1 = bot.left + 2 * j * segBot;
+        const x2 = bot.left + (2 * j + 2) * segBot;
+        const xA = top.left + (2 * j + 1) * segTop;
+        points = `${x1.toFixed(1)},${yBot} ${x2.toFixed(1)},${yBot} ${xA.toFixed(1)},${yTop}`;
+      }
+      blackTriangles.push(
+        <polygon key={`${r}-${j}`} points={points} fill="#0a0604" />,
+      );
+    }
+  });
+
+  return (
+    <g className={styles.floor}>
+      {/* Cream base covering the whole trapezoid */}
+      <path
+        d="M 270 500 L 430 500 L 680 900 L 20 900 Z"
+        fill="#e4d1a4"
+      />
+      {/* Subtle amber gradient toward back for depth */}
+      <path
+        d="M 270 500 L 430 500 L 680 900 L 20 900 Z"
+        fill="url(#floorDepth)"
+        opacity="0.55"
+      />
+      {blackTriangles}
+      {/* Front lip shadow — the raised edge of the floor closest to us */}
+      <rect x="20" y="895" width="660" height="5" fill="#000" opacity="0.45" />
+    </g>
+  );
+}
+
+// ————— Venus sculpture —————
+//
+// A small simplified Venus de Milo silhouette in stone cream,
+// perched on a black pedestal. Stands at the left edge of the floor.
+// Headless, armless — the Louvre silhouette.
+
+function VenusSculpture() {
+  return (
+    <g transform="translate(115, 560)" className={styles.venus}>
+      {/* Pedestal */}
+      <rect x="-22" y="105" width="44" height="18" fill="#1a0e08" />
+      <rect x="-22" y="105" width="44" height="3" fill="#3a2a14" />
+      {/* Drapery base — narrow conic lower half */}
+      <path
+        d="M -18 105
+           C -22 85, -20 60, -15 40
+           L 15 40
+           C 20 60, 22 85, 18 105
+           Z"
+        fill="url(#venusStone)"
+      />
+      {/* Drapery folds on skirt */}
+      <path d="M -12 100 Q -8 80 -5 55" stroke="#8a7858" strokeWidth="0.6" fill="none" opacity="0.6" />
+      <path d="M 12 100 Q 8 80 5 55" stroke="#8a7858" strokeWidth="0.6" fill="none" opacity="0.6" />
+      <path d="M -4 100 Q -2 80 -1 55" stroke="#8a7858" strokeWidth="0.45" fill="none" opacity="0.5" />
+      <path d="M 4 100 Q 2 80 1 55" stroke="#8a7858" strokeWidth="0.45" fill="none" opacity="0.5" />
+      {/* Waist / upper body */}
+      <ellipse cx="0" cy="32" rx="11" ry="14" fill="url(#venusStone)" />
+      {/* Torso tapered */}
+      <path d="M -9 18 C -11 10, -10 2, -8 -6 L 8 -6 C 10 2, 11 10, 9 18 Z" fill="url(#venusStone)" />
+      {/* Chest curve shadow */}
+      <ellipse cx="-3" cy="5" rx="6" ry="7" fill="#a6906c" opacity="0.35" />
+      {/* Neck stump */}
+      <path d="M -3 -9 L 3 -9 L 3 -14 L -3 -14 Z" fill="url(#venusStone)" />
+      {/* Arm stump — left (broken off at shoulder) */}
+      <ellipse cx="-10" cy="-2" rx="4" ry="5" fill="url(#venusStone)" />
+      <ellipse cx="-10" cy="-2" rx="3" ry="2" fill="#7a6848" opacity="0.5" />
+      {/* Arm stump — right */}
+      <ellipse cx="10" cy="-2" rx="4" ry="5" fill="url(#venusStone)" />
+      <ellipse cx="10" cy="-2" rx="3" ry="2" fill="#7a6848" opacity="0.5" />
+      {/* A soft overall highlight from top-left */}
+      <ellipse cx="-4" cy="-2" rx="5" ry="18" fill="#fff" opacity="0.15" />
+    </g>
   );
 }
 
