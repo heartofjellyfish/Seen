@@ -210,7 +210,7 @@ function Walls() {
         position={[-11, 4.5, -6]}
         rotation={[0, Math.PI / 2, 0]}
         pleatCount={32}
-        pleatDepth={0.22}
+        pleatDepth={0.264}
         segments={180}
         color="#5a0e0e"
         sheenColor="#8a1818"
@@ -222,7 +222,7 @@ function Walls() {
         position={[11, 4.5, -6]}
         rotation={[0, -Math.PI / 2, 0]}
         pleatCount={32}
-        pleatDepth={0.22}
+        pleatDepth={0.264}
         segments={180}
         color="#5a0e0e"
         sheenColor="#8a1818"
@@ -1367,13 +1367,13 @@ function WallCurtainLights() {
   return (
     <group>
       {/* Left wall — near stage */}
-      <rectAreaLight position={[-10.5, 3.2, -11.5]} rotation={[0,  Math.PI / 2, 0]} width={3} height={5} color="#e8960a" intensity={0.5} />
+      <rectAreaLight position={[-10.5, 3.2, -11.5]} rotation={[0,  Math.PI / 2, 0]} width={3} height={5} color="#e8960a" intensity={2} />
       {/* Left wall — second block (higher intensity to offset missing stage spill) */}
-      <rectAreaLight position={[-10.5, 3.2, -7.0]} rotation={[0,  Math.PI / 2, 0]} width={3} height={5} color="#e8960a" intensity={0.8} />
+      <rectAreaLight position={[-10.5, 3.2, -7.0]} rotation={[0,  Math.PI / 2, 0]} width={3} height={5} color="#e8960a" intensity={2} />
       {/* Right wall — near stage */}
-      <rectAreaLight position={[10.5,  3.2, -11.5]} rotation={[0, -Math.PI / 2, 0]} width={3} height={5} color="#e8960a" intensity={0.5} />
+      <rectAreaLight position={[10.5,  3.2, -11.5]} rotation={[0, -Math.PI / 2, 0]} width={3} height={5} color="#e8960a" intensity={2} />
       {/* Right wall — second block (higher intensity to offset missing stage spill) */}
-      <rectAreaLight position={[10.5,  3.2, -7.0]} rotation={[0, -Math.PI / 2, 0]} width={3} height={5} color="#e8960a" intensity={0.8} />
+      <rectAreaLight position={[10.5,  3.2, -7.0]} rotation={[0, -Math.PI / 2, 0]} width={3} height={5} color="#e8960a" intensity={2} />
     </group>
   );
 }
