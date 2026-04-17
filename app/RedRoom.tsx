@@ -474,16 +474,17 @@ function makeMistTexture(): THREE.CanvasTexture {
   c.width = c.height = SIZE;
   const ctx = c.getContext("2d")!;
   ctx.clearRect(0, 0, SIZE, SIZE);
-  // Layered soft radial blobs — gives an organic puff without a
-  // visible edge. Centered blobs biased toward the middle.
-  for (let i = 0; i < 48; i++) {
-    const cx = SIZE / 2 + (Math.random() - 0.5) * SIZE * 0.8;
-    const cy = SIZE / 2 + (Math.random() - 0.5) * SIZE * 0.7;
-    const r = 30 + Math.random() * 80;
-    const a = 0.035 + Math.random() * 0.07;
+  // Layered soft radial blobs — more blobs, higher alpha per blob,
+  // so the puff reads as actually dense smoke instead of a whisper.
+  // Blobs biased toward the middle so edges fall off to transparent.
+  for (let i = 0; i < 90; i++) {
+    const cx = SIZE / 2 + (Math.random() - 0.5) * SIZE * 0.75;
+    const cy = SIZE / 2 + (Math.random() - 0.5) * SIZE * 0.65;
+    const r = 28 + Math.random() * 90;
+    const a = 0.08 + Math.random() * 0.12;
     const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-    g.addColorStop(0, `rgba(230, 220, 200, ${a})`);
-    g.addColorStop(0.5, `rgba(230, 220, 200, ${a * 0.3})`);
+    g.addColorStop(0, `rgba(240, 230, 210, ${a})`);
+    g.addColorStop(0.4, `rgba(230, 215, 195, ${a * 0.55})`);
     g.addColorStop(1, "rgba(0,0,0,0)");
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, SIZE, SIZE);
@@ -503,8 +504,12 @@ function StageMist({
   stageH: number;
 }) {
   const tex = useMemo(() => makeMistTexture(), []);
+  // Ground-hugging mist, concentrated on the central ~7m of the
+  // apron — not the full stage width. Anchor heights hover from
+  // deck level to about +0.5m (the half-meter the user asked for).
   const puffs = useMemo(() => {
-    const N = 7;
+    const N = 16;
+    const HALF_SPAN = 3.5; // ±3.5m around centre — not full stage
     const out: Array<{
       baseX: number;
       baseY: number;
@@ -513,19 +518,26 @@ function StageMist({
       h: number;
       seed: number;
       drift: number;
+      rot: number;
+      rotSpeed: number;
     }> = [];
     for (let i = 0; i < N; i++) {
-      const f = i / (N - 1);
+      // Gaussian-ish clustering at the middle — more density toward
+      // the centre, thinner at the edges.
+      const u = (i + 0.5) / N; // 0..1
+      const centered = (u - 0.5) * 2; // -1..1
+      const soft = Math.sign(centered) * Math.pow(Math.abs(centered), 1.5);
+      const x = soft * HALF_SPAN + (Math.random() - 0.5) * 0.6;
       out.push({
-        baseX:
-          THREE.MathUtils.lerp(-stageW / 2 + 1, stageW / 2 - 1, f) +
-          (Math.random() - 0.5) * 0.7,
-        baseY: stageH + 0.35 + Math.random() * 0.55,
-        baseZ: stageD / 2 + 0.3 + (Math.random() - 0.5) * 0.4,
-        w: 2.2 + Math.random() * 1.4,
-        h: 1.5 + Math.random() * 0.6,
+        baseX: x,
+        baseY: stageH + 0.05 + Math.random() * 0.45, // 0–0.5m above deck
+        baseZ: stageD / 2 + 0.25 + (Math.random() - 0.5) * 0.5,
+        w: 2.6 + Math.random() * 1.8, // wider, flatter
+        h: 0.95 + Math.random() * 0.55, // short, ground-hugging
         seed: Math.random() * 10,
-        drift: 0.13 + Math.random() * 0.09,
+        drift: 0.12 + Math.random() * 0.1,
+        rot: Math.random() * Math.PI * 2,
+        rotSpeed: (Math.random() - 0.5) * 0.25, // swirl ±15°/s
       });
     }
     return out;
@@ -541,13 +553,15 @@ function StageMist({
       const m = meshRefs.current[i];
       if (!m) continue;
       const p = puffs[i];
-      m.position.x = p.baseX + Math.sin(t * p.drift + p.seed) * 0.45;
-      m.position.y = p.baseY + Math.sin(t * 0.17 + p.seed * 1.4) * 0.12;
-      m.position.z = p.baseZ + Math.sin(t * 0.11 + p.seed * 0.8) * 0.08;
-      // Billboard toward the camera so puffs stay visible from any
-      // angle. Three.js lookAt works in world space and accounts for
-      // parent transforms, so stage-group position is handled.
+      m.position.x = p.baseX + Math.sin(t * p.drift + p.seed) * 0.5;
+      m.position.y =
+        p.baseY + Math.sin(t * 0.25 + p.seed * 1.4) * 0.08; // gentle float
+      m.position.z = p.baseZ + Math.sin(t * 0.11 + p.seed * 0.8) * 0.1;
+      // Billboard toward the camera then spin slowly around that
+      // view axis — gives the puffs a curling/swirling 缭绕 feel
+      // instead of a rigid slab drifting sideways.
       m.lookAt(camera.position);
+      m.rotateZ(p.rot + t * p.rotSpeed);
     }
   });
 
@@ -565,11 +579,11 @@ function StageMist({
           <meshStandardMaterial
             map={tex}
             transparent
-            opacity={0.95}
+            opacity={1}
             depthWrite={false}
-            color="#c8b8a4"
-            emissive="#604028"
-            emissiveIntensity={0.55}
+            color="#e0d0b8"
+            emissive="#805228"
+            emissiveIntensity={0.85}
             roughness={1}
             metalness={0}
             side={THREE.DoubleSide}
