@@ -1368,12 +1368,12 @@ function WallCurtainLights() {
     <group>
       {/* Left wall — near stage */}
       <rectAreaLight position={[-10.5, 3.2, -11.5]} rotation={[0,  Math.PI / 2, 0]} width={3} height={5} color="#e8960a" intensity={0.5} />
-      {/* Left wall — second block */}
-      <rectAreaLight position={[-10.5, 3.2, -7.0]} rotation={[0,  Math.PI / 2, 0]} width={3} height={5} color="#e8960a" intensity={0.5} />
+      {/* Left wall — second block (higher intensity to offset missing stage spill) */}
+      <rectAreaLight position={[-10.5, 3.2, -7.0]} rotation={[0,  Math.PI / 2, 0]} width={3} height={5} color="#e8960a" intensity={0.8} />
       {/* Right wall — near stage */}
       <rectAreaLight position={[10.5,  3.2, -11.5]} rotation={[0, -Math.PI / 2, 0]} width={3} height={5} color="#e8960a" intensity={0.5} />
-      {/* Right wall — second block */}
-      <rectAreaLight position={[10.5,  3.2, -7.0]} rotation={[0, -Math.PI / 2, 0]} width={3} height={5} color="#e8960a" intensity={0.5} />
+      {/* Right wall — second block (higher intensity to offset missing stage spill) */}
+      <rectAreaLight position={[10.5,  3.2, -7.0]} rotation={[0, -Math.PI / 2, 0]} width={3} height={5} color="#e8960a" intensity={0.8} />
     </group>
   );
 }
