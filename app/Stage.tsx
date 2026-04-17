@@ -186,29 +186,9 @@ export function Stage({
             style={{ opacity: 0.5 + eased * 0.3 }}
           />
 
-          {/* Red Room floor — black and cream zigzag chevron, receding
-              back into the tunnel. Venus + traffic light are NOT here
-              anymore; they live in the foreground apron so they can
-              stand taller and in front of the curtains. */}
-          <RedRoomFloor />
-
-          {/* Narrow red carpet runner inside the stage opening */}
-          <path
-            d="M 320 500 L 380 500 L 470 900 L 230 900 Z"
-            fill="url(#carpet)"
-          />
-          <path
-            d="M 320 500 L 230 900"
-            stroke="rgba(232,192,137,0.12)"
-            strokeWidth="1.2"
-            fill="none"
-          />
-          <path
-            d="M 380 500 L 470 900"
-            stroke="rgba(232,192,137,0.12)"
-            strokeWidth="1.2"
-            fill="none"
-          />
+          {/* No floor inside the stage-scene — the foreground apron IS
+              the floor, extending back through the opening. Keeps the
+              stage uncluttered: just depth, ghost light, stanchions. */}
 
           {/* Stage floor edge hairline */}
           <line
