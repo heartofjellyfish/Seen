@@ -1,0 +1,179 @@
+/* ————————————————————————————————————————————————
+   The waiting theater.
+   Quiet, ceremonial. One amber light in an empty hall.
+   ———————————————————————————————————————————————— */
+
+.hall {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2.2rem;
+  width: 100%;
+  max-width: 44rem;
+  padding: 0 1rem;
+  animation: stageIn 2400ms ease both;
+}
+
+@keyframes stageIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ————— epigraph at the top (permanent) ————— */
+
+.epigraphWrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.55rem;
+  text-align: center;
+  padding-top: 1.2rem;
+}
+
+.epigraph {
+  font-family: var(--font-serif);
+  font-size: clamp(1.1rem, 2.6vw, 1.35rem);
+  font-style: italic;
+  color: var(--fg);
+  letter-spacing: 0.02em;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.epigraphEn {
+  font-family: var(--font-sans);
+  font-size: 0.68rem;
+  letter-spacing: 0.34em;
+  text-transform: lowercase;
+  color: var(--amber);
+  opacity: 0.55;
+  margin: 0;
+  font-weight: 300;
+}
+
+/* ————— the SVG theater itself ————— */
+
+.theater {
+  width: 100%;
+  max-width: 38rem;
+  height: auto;
+  display: block;
+  filter: drop-shadow(0 20px 50px rgba(0, 0, 0, 0.55));
+}
+
+/* The velvet curtain — no animation, but a tiny breath of warmth */
+.curtain {
+  filter: saturate(0.98);
+}
+
+/* Ghost light — bulb pulses very, very slowly (barely) */
+.ghost {
+  filter: drop-shadow(0 0 14px rgba(232, 192, 137, 0.35));
+  animation: bulbBreath 14s ease-in-out infinite;
+}
+
+@keyframes bulbBreath {
+  0%, 100% {
+    filter: drop-shadow(0 0 10px rgba(232, 192, 137, 0.3));
+  }
+  50% {
+    filter: drop-shadow(0 0 18px rgba(232, 192, 137, 0.48));
+  }
+}
+
+/* ————— dust motes ————— */
+
+.motes {
+  mix-blend-mode: screen;
+}
+
+.mote {
+  opacity: 0;
+  animation-name: mote;
+  animation-iteration-count: infinite;
+  animation-timing-function: ease-in-out;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+
+@keyframes mote {
+  0% {
+    opacity: 0;
+    transform: translateY(0);
+  }
+  20% {
+    opacity: 0.85;
+  }
+  80% {
+    opacity: 0.65;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-36px);
+  }
+}
+
+/* ————— stanchions + rope (minor sheen) ————— */
+
+.stanchions {
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.6));
+}
+
+/* ————— rotating line beneath the stage ————— */
+
+.musing {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.55rem;
+  text-align: center;
+  max-width: 32rem;
+  padding: 0.5rem 1rem 1.5rem;
+  transition: opacity 2400ms ease;
+}
+
+.musingZh {
+  font-family: var(--font-serif);
+  font-size: clamp(1rem, 2.2vw, 1.15rem);
+  font-style: italic;
+  color: var(--fg-dim);
+  line-height: 1.65;
+  letter-spacing: 0.015em;
+  margin: 0;
+}
+
+.musingEn {
+  font-family: var(--font-sans);
+  font-size: 0.64rem;
+  letter-spacing: 0.28em;
+  text-transform: lowercase;
+  color: var(--amber-soft);
+  opacity: 0.55;
+  margin: 0;
+  font-weight: 300;
+  line-height: 1.6;
+}
+
+/* ————— responsive —————
+   On very small screens, drop the SVG a little but keep composition. */
+
+@media (max-width: 520px) {
+  .hall {
+    gap: 1.6rem;
+  }
+  .epigraph {
+    font-size: 1.05rem;
+  }
+  .theater {
+    max-width: 100%;
+  }
+  .musingZh {
+    font-size: 0.98rem;
+  }
+}

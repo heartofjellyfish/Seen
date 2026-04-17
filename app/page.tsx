@@ -5,8 +5,7 @@ import styles from "./page.module.css";
 import type { StateResponse } from "@/lib/types";
 import { Interview, type InterviewOutcome } from "./Interview";
 import { Reveal } from "./Reveal";
-import { Hourglass } from "./Hourglass";
-import { Clock } from "./Clock";
+import { Stage } from "./Stage";
 import { DebugPanel, modeToState, type DebugMode } from "./DebugPanel";
 
 // Safety ceiling between event-driven fetches when the server hasn't given
@@ -299,8 +298,11 @@ export default function Page() {
     body = (
       <main className={styles.stage}>
         <div className={styles.pane} key="waiting">
-          <p className={styles.headlineDim}>Maybe soon.</p>
-          <Clock progress={view.cycleProgress ?? 0} />
+          <Stage
+            progress={view.cycleProgress ?? 0}
+            epigraph="你的一束光，正在准备。"
+            epigraphEn="Your light is being prepared."
+          />
           {savedToken && (
             <a className={styles.subtle} href={`/mine/${savedToken}`}>
               your thread
@@ -315,11 +317,11 @@ export default function Page() {
     body = (
       <main className={styles.stage}>
         <div className={styles.pane} key="quiet">
-          <p className={styles.headlineDim}>The quiet hours.</p>
-          {typeof view.nextProgress === "number" && (
-            <Hourglass progress={view.nextProgress} />
-          )}
-          <div className={styles.hairlineAmber} />
+          <Stage
+            progress={view.nextProgress ?? 0}
+            epigraph="剧院还没醒。"
+            epigraphEn="The theater is still asleep."
+          />
           <button className={styles.subtle} onClick={onBeSeen}>
             be seen
           </button>
@@ -332,12 +334,19 @@ export default function Page() {
     body = (
       <main className={styles.stage}>
         <div className={styles.pane} key="idle">
-          <p className={styles.headlineDim}>
-            {view.phase === "preparing"
-              ? "Someone is arriving."
-              : "Someone, any moment now."}
-          </p>
-          <div className={styles.hairlineAmber} />
+          <Stage
+            progress={view.phase === "preparing" ? 0.95 : 0.5}
+            epigraph={
+              view.phase === "preparing"
+                ? "有一个人，正在走出来。"
+                : "有一个座位，留着。"
+            }
+            epigraphEn={
+              view.phase === "preparing"
+                ? "Someone is stepping out."
+                : "A seat is kept."
+            }
+          />
           <button className={styles.subtle} onClick={onBeSeen}>
             be seen
           </button>
