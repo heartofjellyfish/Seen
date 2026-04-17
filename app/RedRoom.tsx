@@ -77,17 +77,15 @@ function makeChevronTexture(): THREE.CanvasTexture {
 
 function Floor() {
   const tex = useMemo(() => makeChevronTexture(), []);
-  // Coarser repeat — each tile covers ~9 world units instead of ~3.5.
-  // Visible chevrons are roughly 2.5x bigger than before.
-  tex.repeat.set(3, 6);
+  tex.repeat.set(3, 5);
 
   return (
     <mesh
       rotation={[-Math.PI / 2, 0, 0]}
-      position={[0, 0, -8]}
+      position={[0, 0, -6]}
       receiveShadow
     >
-      <planeGeometry args={[28, 48, 1, 1]} />
+      <planeGeometry args={[22, 36, 1, 1]} />
       <meshStandardMaterial map={tex} roughness={0.92} metalness={0.02} />
     </mesh>
   );
@@ -172,33 +170,30 @@ function Walls() {
     <group>
       {/* Back wall — behind the stage */}
       <CurtainPanel
-        width={28}
-        height={11}
-        position={[0, 5.5, -22]}
-        pleatCount={18}
-        pleatDepth={0.2}
+        width={22}
+        height={9}
+        position={[0, 4.5, -16]}
+        pleatCount={16}
+        pleatDepth={0.18}
       />
       {/* Left wall */}
       <CurtainPanel
-        width={36}
-        height={11}
-        position={[-14, 5.5, -8]}
+        width={28}
+        height={9}
+        position={[-11, 4.5, -6]}
         rotation={[0, Math.PI / 2, 0]}
-        pleatCount={22}
-        pleatDepth={0.22}
+        pleatCount={18}
+        pleatDepth={0.2}
       />
       {/* Right wall */}
       <CurtainPanel
-        width={36}
-        height={11}
-        position={[14, 5.5, -8]}
+        width={28}
+        height={9}
+        position={[11, 4.5, -6]}
         rotation={[0, -Math.PI / 2, 0]}
-        pleatCount={22}
-        pleatDepth={0.22}
+        pleatCount={18}
+        pleatDepth={0.2}
       />
-      {/* Ceiling — pleated velvet with radial cosine displacement, so
-          the cloth "gathers" toward a centre point like a draped tent
-          or a cinema dome. Slightly darker than the walls. */}
       <RadialVelvetCeiling />
     </group>
   );
@@ -206,7 +201,7 @@ function Walls() {
 
 function RadialVelvetCeiling() {
   const geometry = useMemo(() => {
-    const radius = 18;
+    const radius = 14;
     const geo = new THREE.CircleGeometry(radius, 80);
     const pos = geo.attributes.position;
     // Displace each vertex's z (i.e. "up" in the ceiling plane local
@@ -226,7 +221,7 @@ function RadialVelvetCeiling() {
 
   return (
     <mesh
-      position={[0, 11, -8]}
+      position={[0, 9, -6]}
       rotation={[Math.PI / 2, 0, 0]}
       geometry={geometry}
       receiveShadow
@@ -250,12 +245,12 @@ function RadialVelvetCeiling() {
 // ————— raised stage + its own proscenium curtains —————
 
 function Stage() {
-  const stageZ = -18;
-  const stageW = 9;
-  const stageD = 3.5;
-  const stageH = 0.9;
-  const curtainHeight = 7.5;
-  const pelmetHeight = 0.9;
+  const stageZ = -13;
+  const stageW = 13;
+  const stageD = 4.5;
+  const stageH = 1.0;
+  const curtainHeight = 6;
+  const pelmetHeight = 0.8;
 
   return (
     <group position={[0, 0, stageZ]}>
@@ -324,7 +319,26 @@ function Stage() {
   );
 }
 
-// ————— Venus — decor in the left corner —————
+// ————— Venus — decor in the left corner, grounded by a contact shadow —————
+
+function makeContactShadowTexture(): THREE.CanvasTexture {
+  const SIZE = 256;
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = SIZE;
+  const ctx = canvas.getContext("2d")!;
+  const cx = SIZE / 2;
+  const cy = SIZE / 2;
+  const gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, SIZE / 2);
+  gradient.addColorStop(0, "rgba(0,0,0,0.75)");
+  gradient.addColorStop(0.35, "rgba(0,0,0,0.55)");
+  gradient.addColorStop(0.7, "rgba(0,0,0,0.2)");
+  gradient.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, SIZE, SIZE);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.needsUpdate = true;
+  return tex;
+}
 
 function Venus() {
   const tex = useTexture("/venus.png", (t) => {
@@ -357,10 +371,29 @@ function Venus() {
     });
   }, [tex]);
 
+  const shadowTex = useMemo(() => makeContactShadowTexture(), []);
+
+  // Group: ground shadow ellipse + Venus plane standing above.
+  // The shadow's elongated y radius (0.6) vs x radius (1.2) suggests
+  // the camera is looking down slightly — realistic foreshortened
+  // blob under her pedestal.
   return (
-    <mesh position={[-7, 1.35, -6]} material={material}>
-      <planeGeometry args={[1.8, 2.7]} />
-    </mesh>
+    <group position={[-5.5, 0, -4.5]}>
+      {/* Contact shadow — ellipse of dark decal on the floor */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.015, 0]}>
+        <planeGeometry args={[2.4, 1.2]} />
+        <meshBasicMaterial
+          map={shadowTex}
+          transparent
+          depthWrite={false}
+          opacity={0.9}
+        />
+      </mesh>
+      {/* Venus herself — plane anchored at feet */}
+      <mesh position={[0, 1.15, 0]} material={material}>
+        <planeGeometry args={[1.55, 2.3]} />
+      </mesh>
+    </group>
   );
 }
 
@@ -372,15 +405,15 @@ function CameraRig() {
   const current = useRef({ x: 0, y: 0 });
 
   useFrame(({ mouse }) => {
-    target.current.x = mouse.x * 0.35;
-    target.current.y = mouse.y * 0.2;
+    target.current.x = mouse.x * 0.3;
+    target.current.y = mouse.y * 0.18;
     current.current.x += (target.current.x - current.current.x) * 0.06;
     current.current.y += (target.current.y - current.current.y) * 0.06;
 
     if (cameraRef.current) {
       cameraRef.current.position.x = current.current.x;
-      cameraRef.current.position.y = 1.7 + current.current.y;
-      cameraRef.current.lookAt(0, 2.5, -18);
+      cameraRef.current.position.y = 1.65 + current.current.y;
+      cameraRef.current.lookAt(0, 3, -13);
     }
   });
 
@@ -388,10 +421,10 @@ function CameraRig() {
     <PerspectiveCamera
       ref={cameraRef}
       makeDefault
-      position={[0, 1.7, 8]}
-      fov={52}
+      position={[0, 1.65, 6]}
+      fov={55}
       near={0.1}
-      far={100}
+      far={80}
     />
   );
 }
@@ -412,7 +445,7 @@ export function RedRoom() {
       style={{ position: "absolute", inset: 0 }}
     >
       <color attach="background" args={["#2a0a0a"]} />
-      <fog attach="fog" args={["#2a0a0a", 32, 85]} />
+      <fog attach="fog" args={["#2a0a0a", 22, 60]} />
 
       <Suspense fallback={null}>
         <CameraRig />
@@ -432,9 +465,9 @@ export function RedRoom() {
         {/* Central "chandelier" — a single bright warm point high in
             the room, casting onto everything below */}
         <pointLight
-          position={[0, 10, -8]}
-          intensity={45}
-          distance={28}
+          position={[0, 8, -6]}
+          intensity={35}
+          distance={22}
           decay={1.5}
           color="#f0c480"
         />
