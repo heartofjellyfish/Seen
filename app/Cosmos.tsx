@@ -54,125 +54,97 @@ float noise2d(vec2 p) {
 void main() {
   vec2 uv = (gl_FragCoord.xy - u_resolution * 0.5) / min(u_resolution.x, u_resolution.y);
 
-  // Mouse parallax — vanishing point drifts opposite to head motion
-  uv += u_mouse * 0.14;
+  // Subtle mouse parallax — galaxy is a stately thing, don't lurch
+  uv += u_mouse * 0.08;
 
   float r = length(uv);
-  float a = atan(uv.y, uv.x);
+  float theta = atan(uv.y, uv.x);
   float t = u_time;
 
-  // Tunnel depth from radial position (classic 1/r projection).
-  // Clamp to avoid singularity at the exact center.
-  float rSafe = max(r, 0.02);
-  // Base depth = actual distance from viewer (stable, only a function of r).
-  // Used for lighting falloff so brightness doesn't drift over time.
-  float baseDepth = 0.45 / rSafe;
-
-  // Flowing depth = base + time. Only used to advance the ring pattern.
-  float speed = 0.75 + u_progress * u_progress * 0.6;
-  float depth = baseDepth + t * speed;
-
-  // Angular rotation — slow spin down the corridor + a little mouse yaw
-  float phi = a + t * 0.11 + u_mouse.x * 0.28;
-
-  vec3 col = vec3(0.0);
-
-  // ————— ink-blot cosmos: rings of organic painterly dots —————
+  // ————— slow rotating galaxy —————
   //
-  // Tunnel structure is still concentric rings (so perspective rush
-  // survives), but each ring is populated by scattered bone-cream
-  // dots on deep indigo. Each (ring, slot) cell hosts one dot at a
-  // hash-based offset, with hash-based size, shape squash, and a 35%
-  // chance of being empty. Dot boundaries are noise-distorted so
-  // every edge looks like wet ink soaking into paper.
+  // Top-down view of a two-armed spiral galaxy. Arms follow a
+  // logarithmic spiral (tighter near the core). Center is kept pure
+  // black so the ghost light sits unopposed. Stars scatter across the
+  // disk with a bias toward the arms; dust lanes darken the regions
+  // between arms. One full revolution per ~4.5 minutes.
 
   const float PI = 3.14159265;
-  const float RING_FREQ = 1.2;
-  const float ANGULAR_SLOTS = 18.0;
+  const float N_ARMS = 2.0;
+  const float TWIST = 2.8;
 
-  float bandIdx = floor(depth * RING_FREQ);
-  float bandPos = fract(depth * RING_FREQ);
+  float rotSpeed = 0.023 + u_progress * u_progress * 0.012;
+  float phi = theta + t * rotSpeed + u_mouse.x * 0.14;
 
-  float angPhase = (phi / (2.0 * PI)) * ANGULAR_SLOTS;
-  float slotIdx = floor(angPhase);
-  float slotLocal = fract(angPhase);
+  float armPhase = N_ARMS * phi + TWIST * log(r + 0.08);
 
-  vec2 cell = vec2(bandIdx, slotIdx);
-  float h1 = hash(cell);
-  float h2 = hash(cell + vec2(11.1, 7.3));
-  float h3 = hash(cell + vec2(23.7, 13.9));
-  float h4 = hash(cell + vec2(37.3, 19.1));
-  float h5 = hash(cell + vec2(41.7, 29.3));
+  // Sharp arm ridges
+  float arm = cos(armPhase) * 0.5 + 0.5;
+  arm = pow(arm, 3.5);
 
-  // Dot center anchored inside [0.32, 0.68] so it doesn't bleed into
-  // neighbouring cells even at max radius.
-  vec2 dotCenter = vec2(0.32 + h1 * 0.36, 0.32 + h2 * 0.36);
+  // Dark hole at center (ghost light's throne), arms in a ring
+  float innerFade = smoothstep(0.05, 0.28, r);
+  float outerFade = smoothstep(1.9, 0.45, r);
+  float armMask = innerFade * outerFade;
+  float armIntensity = arm * armMask;
 
-  float dotRadius = 0.14 + h3 * 0.18;
-  float squash = 0.7 + h4 * 0.6;
+  // ————— stars —————
 
-  vec2 pixelPos = vec2(bandPos, slotLocal);
-  vec2 relPos = pixelPos - dotCenter;
-  relPos.x /= squash;
-  relPos.y *= squash;
-  float dist = length(relPos);
+  // Bright sparse stars, preferentially on arms
+  vec2 sCell = floor(uv * 70.0);
+  float sHash = hash(sCell);
+  float stars = 0.0;
+  if (sHash > 0.97) {
+    vec2 sFrac = fract(uv * 70.0);
+    vec2 sPos = vec2(
+      0.35 + hash(sCell + vec2(11.0, 3.0)) * 0.3,
+      0.35 + hash(sCell + vec2(23.0, 7.0)) * 0.3
+    );
+    float sd = distance(sFrac, sPos);
+    float s = smoothstep(0.14, 0.0, sd) * (sHash - 0.97) * 42.0;
+    s *= 0.3 + 0.7 * arm;
+    s *= armMask * 1.3;
+    stars += s;
+  }
 
-  // Painterly edge — two octaves of noise soak the boundary
-  float edgeN = noise2d(pixelPos * 22.0 + cell * 3.3) - 0.5;
-  edgeN += (noise2d(pixelPos * 48.0 + cell * 7.1) - 0.5) * 0.5;
-  float inked = smoothstep(
-    dotRadius + 0.025,
-    dotRadius - 0.015,
-    dist + edgeN * 0.05
-  );
+  // Fine star dust — everywhere in the disk
+  vec2 dCell = floor(uv * 180.0);
+  float dHash = hash(dCell + vec2(7.0, 41.0));
+  if (dHash > 0.958) {
+    float s = (dHash - 0.958) * 12.0;
+    s *= armMask;
+    stars += s * 0.45;
+  }
 
-  // ~35% of cells have no dot — the scatter is sparse
-  float present = step(0.35, h5);
-  inked *= present;
+  // ————— dust lanes between arms —————
 
-  // Palette — deep indigo + bone cream, with a drifting warm hint
-  vec3 indigoDeep   = vec3(0.05, 0.06, 0.18);
-  vec3 indigo       = vec3(0.11, 0.13, 0.36);
-  vec3 creamDot     = vec3(0.92, 0.85, 0.66);
-  vec3 creamEdge    = vec3(0.45, 0.38, 0.24);
+  float dustPhase = armPhase + PI * 0.45;
+  float dust = pow(cos(dustPhase) * 0.5 + 0.5, 3.5);
+  float dustDarken = dust * armMask * 0.35;
 
-  // Background: indigo with a subtle orbit — hints there's a warm
-  // light somewhere in the void (the ghost light ahead)
-  float orbit = cos(phi - t * 0.3) * 0.5 + 0.5;
-  vec3 base = mix(indigoDeep, indigo, 0.35 + orbit * 0.55);
-  base += vec3(0.025, 0.018, 0.0) * orbit;
+  // ————— palette + composite —————
 
-  // Dot: cream with a painted darker rim just inside the edge
-  float dotCore = smoothstep(dotRadius * 0.55, 0.0, dist + edgeN * 0.05);
-  vec3 dotCol = mix(creamEdge, creamDot, dotCore);
+  vec3 space = vec3(0.014, 0.013, 0.022);
+  vec3 armAmber = vec3(0.56, 0.36, 0.17);
+  vec3 armWarm = vec3(0.88, 0.60, 0.28);
+  vec3 starColor = vec3(1.0, 0.94, 0.78);
 
-  vec3 wallCol = mix(base, dotCol, inked);
+  vec3 col = space;
+  col += mix(armAmber, armWarm, arm) * armIntensity * 0.8;
+  col += starColor * stars;
+  col -= vec3(0.012, 0.012, 0.02) * dustDarken;
+  col = max(col, vec3(0.0));
 
-  // Depth fade — driven by baseDepth so brightness is stable over time.
-  float depthFade = exp(-baseDepth * 0.06);
-  wallCol *= depthFade;
+  // Subtle screen-space grain — film emulsion suggestion
+  float grain = (hash(gl_FragCoord.xy * 1.3) - 0.5) * 0.028;
+  col += vec3(grain * 0.9, grain, grain * 1.1);
 
-  // ————— paper grain (risograph / screen-print texture) —————
-  //
-  // Two layers of hash noise pinned to screen coordinates — the paper
-  // itself doesn't move, only the printed rings on it do. Tinted warm
-  // so grain still reads inside SEEN's palette.
+  // Central darkness reserved for the ghost light
+  float centerMask = smoothstep(0.04, 0.07, r);
+  col *= centerMask;
 
-  vec2 gPos = gl_FragCoord.xy;
-  float gFine = hash(gPos * 1.6) - 0.5;
-  float gCoarse = hash(floor(gPos * 0.35)) - 0.5;
-  float grain = gFine * 0.14 + gCoarse * 0.07;
-  // Grain tinted slightly cool to sit inside the indigo field
-  wallCol += vec3(grain * 0.9, grain * 0.95, grain * 1.15) * depthFade;
-
-  // Smooth mask at center and outer edge
-  float tunnelMask = smoothstep(0.08, 0.2, r) * smoothstep(2.2, 0.6, r);
-  col += wallCol * tunnelMask;
-
-  // ————— outer vignette —————
-
-  col *= smoothstep(2.3, 0.2, r);
-  col *= 0.95;
+  // Outer fade blends galaxy into the curtain shadows
+  col *= smoothstep(2.1, 0.4, r);
 
   gl_FragColor = vec4(col, 1.0);
 }
