@@ -285,10 +285,10 @@
   left: 0;
   right: 0;
   bottom: 0;
-  height: clamp(280px, 36vh, 460px);
+  height: clamp(320px, 42vh, 540px);
   z-index: 2;
   pointer-events: none;
-  perspective: 900px;
+  perspective: 500px;
   perspective-origin: center top;
   overflow: hidden;
 }
@@ -300,40 +300,44 @@
 }
 
 /* The chevron floor — flat tiled PNG, rotated into the ground plane.
-   Geometry must keep the bottom edge's z-depth UNDER perspective
-   (900), or that portion falls behind the camera and stops drawing.
-   height 140% + rotateX 58deg → bottom z ≈ 140%*300*sin(58°) ≈ 356
-   on a 300px apron — well clear of 900. */
+   Explicit width + centering (instead of relying on negative left/right
+   which some browsers compute into a negative width). perspective 500
+   with rotateX 68° gives a near/far scale ratio of ~3.6, dramatic
+   Twin-Peaks-style foreshortening. Bottom z ≈ 130% * 320 * sin(68°)
+   ≈ 386 on a 320px apron — still below perspective 500, safe. */
 .apronFloor {
   position: absolute;
-  left: -60%;
-  right: -60%;
+  left: 50%;
   top: 0;
-  height: 140%;
+  width: 220%;
+  height: 130%;
+  margin-left: -110%;
   background-image: url("/floor.png");
   background-repeat: repeat;
-  background-size: 260px 260px;
+  background-size: 280px 280px;
   background-color: #2a0a0a;
-  transform: rotateX(58deg);
+  transform: rotateX(68deg);
   transform-origin: center top;
-  filter: brightness(0.8) saturate(0.92);
+  filter: brightness(0.82) saturate(0.95);
   will-change: transform;
+  backface-visibility: hidden;
 }
 
 /* Warm pool of ghost-light spilling forward onto the floor */
 .apronFloorLight {
   position: absolute;
-  left: -60%;
-  right: -60%;
+  left: 50%;
   top: 0;
-  height: 140%;
+  width: 220%;
+  height: 130%;
+  margin-left: -110%;
   background: radial-gradient(
-    ellipse at 50% 10%,
-    rgba(212, 163, 99, 0.45) 0%,
-    rgba(212, 163, 99, 0.15) 22%,
+    ellipse at 50% 8%,
+    rgba(212, 163, 99, 0.55) 0%,
+    rgba(212, 163, 99, 0.2) 22%,
     transparent 55%
   );
-  transform: rotateX(58deg);
+  transform: rotateX(68deg);
   transform-origin: center top;
   mix-blend-mode: screen;
   pointer-events: none;
