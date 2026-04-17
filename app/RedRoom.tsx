@@ -77,7 +77,9 @@ function makeChevronTexture(): THREE.CanvasTexture {
 
 function Floor() {
   const tex = useMemo(() => makeChevronTexture(), []);
-  tex.repeat.set(7, 14);
+  // Coarser repeat — each tile covers ~9 world units instead of ~3.5.
+  // Visible chevrons are roughly 2.5x bigger than before.
+  tex.repeat.set(3, 6);
 
   return (
     <mesh
@@ -284,48 +286,6 @@ function Stage() {
   );
 }
 
-// ————— ghost light on the audience floor, facing the stage —————
-
-function GhostLight() {
-  return (
-    <group position={[0, 0, -10]}>
-      <mesh position={[0, 2.3, 0]}>
-        <sphereGeometry args={[0.16, 24, 24]} />
-        <meshBasicMaterial color="#fff2c6" toneMapped={false} />
-      </mesh>
-      <mesh position={[0, 2.3, 0]}>
-        <sphereGeometry args={[0.35, 16, 16]} />
-        <meshBasicMaterial
-          color="#f0c47c"
-          transparent
-          opacity={0.28}
-          toneMapped={false}
-          blending={THREE.AdditiveBlending}
-        />
-      </mesh>
-      <pointLight
-        position={[0, 2.3, 0]}
-        color="#f0c47c"
-        intensity={14}
-        distance={20}
-        decay={1.7}
-        castShadow
-        shadow-mapSize={[1024, 1024]}
-      />
-      {/* Pole */}
-      <mesh position={[0, 1.1, 0]} castShadow>
-        <cylinderGeometry args={[0.04, 0.04, 2.3, 10]} />
-        <meshStandardMaterial color="#8b6a34" metalness={0.75} roughness={0.42} />
-      </mesh>
-      {/* Base */}
-      <mesh position={[0, 0.05, 0]} castShadow>
-        <cylinderGeometry args={[0.25, 0.3, 0.1, 20]} />
-        <meshStandardMaterial color="#4a3518" metalness={0.7} roughness={0.55} />
-      </mesh>
-    </group>
-  );
-}
-
 // ————— Venus — decor in the left corner —————
 
 function Venus() {
@@ -413,26 +373,41 @@ export function RedRoom() {
       dpr={[1, 2]}
       style={{ position: "absolute", inset: 0 }}
     >
-      <color attach="background" args={["#0a0404"]} />
-      <fog attach="fog" args={["#0a0404", 12, 32]} />
+      <color attach="background" args={["#150606"]} />
+      <fog attach="fog" args={["#150606", 18, 50]} />
 
       <Suspense fallback={null}>
         <CameraRig />
 
-        {/* Ambient — just enough so shadows aren't pitch black */}
-        <ambientLight intensity={0.07} color="#3a1a0a" />
+        {/* Room lights — no ghost light any more; the room is
+            generally lit like a theater's house lights between acts.
+            Warm, dim-ish, enough to see the curtains everywhere. */}
+        <ambientLight intensity={0.45} color="#5a2a18" />
 
-        {/* Warm frontal fill from above, soft */}
+        {/* Front-top fill — simulates ceiling fixtures in the house */}
         <directionalLight
-          position={[0, 6, 10]}
-          intensity={0.22}
-          color="#4a2a1a"
+          position={[0, 8, 6]}
+          intensity={0.75}
+          color="#f0c480"
+        />
+
+        {/* Back fill from the audience behind us, warms silhouettes */}
+        <directionalLight
+          position={[0, 4, 14]}
+          intensity={0.35}
+          color="#d4a363"
+        />
+
+        {/* Side rim from the right, brushes Venus and the side curtain */}
+        <directionalLight
+          position={[10, 5, 0]}
+          intensity={0.28}
+          color="#c88a3a"
         />
 
         <Floor />
         <Walls />
         <Stage />
-        <GhostLight />
         <Venus />
       </Suspense>
     </Canvas>

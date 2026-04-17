@@ -90,11 +90,8 @@ export function Stage({
             - Pelmet SVG → absorbed into the top of the 3D back wall
             - Apron + Venus → 3D floor + Venus plane with shader keyer */}
 
-        {/* Dream objects — HTML layer with CSS 3D transforms.
-            These still live on top of the 3D canvas as a separate
-            DOM layer. Next iteration: port them into the Three.js
-            scene as real meshes. */}
-        <DreamObjects />
+        {/* Dream objects removed — starting the room clean, building
+            up from scene + lighting. */}
 
         {/* Vignette on top of everything */}
         <div className={styles.vignette} />
