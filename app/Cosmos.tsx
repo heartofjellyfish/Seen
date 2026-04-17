@@ -139,6 +139,9 @@ void main() {
   // Outer fade blends tunnel into the curtain shadows
   col *= smoothstep(2.2, 0.5, r);
 
+  // Global dim — the floor is the star now, tunnel is just backdrop
+  col *= 0.55;
+
   gl_FragColor = vec4(col, 1.0);
 }
 `;
