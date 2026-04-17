@@ -153,7 +153,14 @@ function CurtainPanel({
   useFrame(({ clock }) => {
     if (!breathe || !meshRef.current) return;
     const t = clock.elapsedTime + seed;
-    const s = 1 + Math.sin(t * 0.38) * 0.022 + Math.sin(t * 0.71 + 1.3) * 0.012;
+    // Bigger inhale — fundamental slow breath, a mid-freq swell,
+    // and a faster tremor on top so the cloth looks like something
+    // is pressing against it from behind.
+    const s =
+      1 +
+      Math.sin(t * 0.38) * 0.055 +
+      Math.sin(t * 0.71 + 1.3) * 0.032 +
+      Math.sin(t * 1.7 + 0.4) * 0.018;
     meshRef.current.scale.z = s;
   });
 
@@ -371,11 +378,11 @@ function Venus() {
   //   y=0 to 0.31       → darker wooden pedestal (de-emphasised)
   //   y=0.31 to 2.71    → Venus body plane (feet at bottom, head at top)
   //
-  // Position: tucked into the left corner at [-8, 0, -8], rotated
-  // 15° toward the room's centre so her gaze sweeps the carpet and
-  // the stage instead of the empty left wall.
+  // Position: pulled forward to the left near-mid ground so she
+  // actually reads as a figure, not a speck in the corner. Rotated
+  // ~26° toward the room's centre so her gaze sweeps the carpet.
   return (
-    <group position={[-8, 0, -8]} rotation={[0, Math.PI / 12, 0]}>
+    <group position={[-4.5, 0, -1]} rotation={[0, Math.PI / 7, 0]}>
       {/* Ground shadow — tighter now that the uplight is focused */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.012, 0]}>
         <planeGeometry args={[2.8, 1.6]} />
@@ -404,25 +411,23 @@ function Venus() {
       </mesh>
 
       {/* Directional uplight — narrow SpotLight from the front edge
-          of the pedestal, aimed up at Venus's chest/face. Narrow
-          cone keeps the beam off the pedestal and the floor; only
-          the statue catches it. The target is defined as a child of
-          the spotlight so its offset is in the spotlight's local
-          frame (spotlight is not rotated, so this = world offset). */}
+          of the pedestal, aimed up at Venus's chest/face. Now that
+          she's closer, tuned a touch wider and stronger so the
+          statue actually reads as marble. */}
       <spotLight
-        position={[0, 0.08, 0.32]}
-        angle={0.34}
-        penumbra={0.48}
-        intensity={18}
-        distance={5.5}
-        decay={1.6}
+        position={[0, 0.08, 0.35]}
+        angle={0.42}
+        penumbra={0.55}
+        intensity={28}
+        distance={6}
+        decay={1.5}
         color="#ffd2a0"
       >
         <object3D position={[0, 1.9, -0.15]} attach="target" />
       </spotLight>
       {/* Tiny brass shroud suggesting a louvered lamp in the floor —
           smaller and dimmer than before, not a focal point. */}
-      <mesh position={[0, 0.04, 0.32]} castShadow>
+      <mesh position={[0, 0.04, 0.35]} castShadow>
         <cylinderGeometry args={[0.05, 0.06, 0.04, 16]} />
         <meshStandardMaterial
           color="#4a3010"
@@ -433,6 +438,11 @@ function Venus() {
         />
       </mesh>
 
+      {/* Small altar at Venus's feet — a low stone block with a
+          cluster of short pillar candles. Lives in her local frame
+          so it moves with her. */}
+      <VenusAltar />
+
       {/* Venus body. MeshStandardMaterial gives her full PBR
           lighting — every torchiere, sconce, altar spot, the new
           chest-aimed spot, and the hemisphere wash all affect her.
@@ -440,6 +450,71 @@ function Venus() {
           hook that injects a luminance-based discard right after the
           map is sampled. */}
       <VenusBody geometry={geometry} tex={tex} />
+    </group>
+  );
+}
+
+// ————— Venus altar — small stone block at her feet with candles —————
+
+function VenusAltar() {
+  const lightRefs = useRef<Array<THREE.PointLight | null>>([
+    null,
+    null,
+    null,
+  ]);
+  const seeds = useMemo(
+    () => [Math.random() * 10, Math.random() * 10, Math.random() * 10],
+    [],
+  );
+  useFrame(({ clock }) => {
+    for (let i = 0; i < 3; i++) {
+      const l = lightRefs.current[i];
+      if (!l) continue;
+      const t = clock.elapsedTime + seeds[i];
+      const flick = 1 + Math.sin(t * 3.6) * 0.2 + Math.sin(t * 7.9) * 0.12;
+      l.intensity = 1.3 * flick;
+    }
+  });
+  // Three candles of different heights on a small stone block in
+  // front of the pedestal (at +z in local frame).
+  const candles: Array<{ pos: [number, number, number]; h: number }> = [
+    { pos: [-0.15, 0, 0], h: 0.24 },
+    { pos: [0.0, 0, 0.05], h: 0.38 },
+    { pos: [0.17, 0, -0.01], h: 0.18 },
+  ];
+  return (
+    <group position={[0, 0, 0.7]}>
+      {/* Stone block */}
+      <mesh position={[0, 0.06, 0]} castShadow receiveShadow>
+        <boxGeometry args={[0.55, 0.12, 0.3]} />
+        <meshStandardMaterial
+          color="#302218"
+          roughness={0.95}
+          metalness={0}
+        />
+      </mesh>
+      {candles.map((c, i) => (
+        <group key={i} position={[c.pos[0], 0.12, c.pos[2]]}>
+          <mesh position={[0, c.h / 2, 0]} castShadow>
+            <cylinderGeometry args={[0.024, 0.026, c.h, 10]} />
+            <meshStandardMaterial color="#f2e6ca" roughness={0.75} />
+          </mesh>
+          <mesh position={[0, c.h + 0.04, 0]}>
+            <sphereGeometry args={[0.035, 10, 10]} />
+            <meshBasicMaterial color="#ffd08a" toneMapped={false} />
+          </mesh>
+          <pointLight
+            ref={(el) => {
+              lightRefs.current[i] = el;
+            }}
+            position={[0, c.h + 0.05, 0]}
+            color="#f0b070"
+            intensity={1.3}
+            distance={3.5}
+            decay={1.7}
+          />
+        </group>
+      ))}
     </group>
   );
 }
@@ -480,7 +555,27 @@ function VenusBody({
     return mat;
   }, [tex]);
 
-  return <mesh position={[0, 1.51, 0]} geometry={geometry} material={material} />;
+  // Very slow breathing — a tiny y-oscillation + a fainter scale
+  // pulse on her chest area (achieved with uniform scale here;
+  // imperceptibly small). ~7s period.
+  const ref = useRef<THREE.Mesh>(null);
+  useFrame(({ clock }) => {
+    if (!ref.current) return;
+    const t = clock.elapsedTime;
+    const breath = Math.sin(t * 0.9) * 0.5 + Math.sin(t * 0.42 + 0.6) * 0.5;
+    ref.current.position.y = 1.51 + breath * 0.018;
+    const s = 1 + breath * 0.004;
+    ref.current.scale.set(s, s, 1);
+  });
+
+  return (
+    <mesh
+      ref={ref}
+      position={[0, 1.51, 0]}
+      geometry={geometry}
+      material={material}
+    />
+  );
 }
 
 // ————— camera with a gentle mouse-parallax rig —————
@@ -760,9 +855,9 @@ function Candelabra({ position }: { position: [number, number, number] }) {
   );
 }
 
-// ————— 3d velvet chair —————
-// Empty chairs, backs toward the camera, facing the stage. Their
-// emptiness is the point.
+// ————— 3d velvet armchair —————
+// A plush velvet Twin-Peaks-style armchair: wide, low, padded arms,
+// rolled back. Backs face the camera, facing the stage.
 
 function VelvetChair({
   position,
@@ -771,52 +866,90 @@ function VelvetChair({
   position: [number, number, number];
   rotation?: [number, number, number];
 }) {
+  const velvet = (
+    <meshPhysicalMaterial
+      color="#5a0f0f"
+      roughness={0.95}
+      metalness={0}
+      sheen={1}
+      sheenColor="#b02828"
+      sheenRoughness={0.4}
+      emissive="#1a0303"
+      emissiveIntensity={0.22}
+    />
+  );
   return (
     <group position={position} rotation={rotation}>
-      {/* Seat cushion */}
-      <mesh position={[0, 0.5, 0]} castShadow receiveShadow>
-        <boxGeometry args={[0.55, 0.1, 0.5]} />
-        <meshPhysicalMaterial
-          color="#5a0f0f"
-          roughness={0.92}
-          metalness={0}
-          sheen={1}
-          sheenColor="#a02020"
-          sheenRoughness={0.4}
+      {/* Wooden frame under the cushions */}
+      <mesh position={[0, 0.18, 0]} castShadow receiveShadow>
+        <boxGeometry args={[1.05, 0.22, 0.82]} />
+        <meshStandardMaterial
+          color="#2a1608"
+          roughness={0.6}
+          metalness={0.3}
         />
       </mesh>
-      {/* Backrest — on +z side so default orientation faces -z (stage) */}
-      <mesh position={[0, 0.96, 0.22]} castShadow>
-        <boxGeometry args={[0.55, 0.95, 0.08]} />
-        <meshPhysicalMaterial
-          color="#5a0f0f"
-          roughness={0.92}
-          metalness={0}
-          sheen={1}
-          sheenColor="#a02020"
-          sheenRoughness={0.4}
-        />
+      {/* Seat cushion — puffy */}
+      <mesh position={[0, 0.42, 0]} castShadow receiveShadow>
+        <boxGeometry args={[0.82, 0.18, 0.68]} />
+        {velvet}
       </mesh>
-      {/* Top rail — tiny brass cap */}
-      <mesh position={[0, 1.44, 0.22]} castShadow>
-        <boxGeometry args={[0.58, 0.04, 0.1]} />
-        <meshStandardMaterial color="#8b6a34" metalness={0.8} roughness={0.45} />
+      {/* Back cushion — tall, padded */}
+      <mesh position={[0, 0.85, 0.3]} castShadow>
+        <boxGeometry args={[0.82, 0.72, 0.2]} />
+        {velvet}
       </mesh>
-      {/* Four legs */}
+      {/* Rolled bolster at top of back */}
+      <mesh
+        position={[0, 1.24, 0.3]}
+        rotation={[0, 0, Math.PI / 2]}
+        castShadow
+      >
+        <cylinderGeometry args={[0.1, 0.1, 0.82, 20]} />
+        {velvet}
+      </mesh>
+      {/* Left arm — padded block */}
+      <mesh position={[-0.46, 0.58, 0.05]} castShadow>
+        <boxGeometry args={[0.18, 0.5, 0.72]} />
+        {velvet}
+      </mesh>
+      {/* Right arm */}
+      <mesh position={[0.46, 0.58, 0.05]} castShadow>
+        <boxGeometry args={[0.18, 0.5, 0.72]} />
+        {velvet}
+      </mesh>
+      {/* Arm top rolls */}
+      <mesh
+        position={[-0.46, 0.85, 0.05]}
+        rotation={[Math.PI / 2, 0, 0]}
+        castShadow
+      >
+        <cylinderGeometry args={[0.09, 0.09, 0.72, 16]} />
+        {velvet}
+      </mesh>
+      <mesh
+        position={[0.46, 0.85, 0.05]}
+        rotation={[Math.PI / 2, 0, 0]}
+        castShadow
+      >
+        <cylinderGeometry args={[0.09, 0.09, 0.72, 16]} />
+        {velvet}
+      </mesh>
+      {/* Four squat feet */}
       {(
         [
-          [-0.23, 0.225, -0.2],
-          [0.23, 0.225, -0.2],
-          [-0.23, 0.225, 0.2],
-          [0.23, 0.225, 0.2],
+          [-0.42, 0.04, -0.34],
+          [0.42, 0.04, -0.34],
+          [-0.42, 0.04, 0.34],
+          [0.42, 0.04, 0.34],
         ] as Array<[number, number, number]>
       ).map((p, i) => (
         <mesh key={i} position={p} castShadow>
-          <cylinderGeometry args={[0.028, 0.028, 0.45, 8]} />
+          <cylinderGeometry args={[0.05, 0.05, 0.08, 10]} />
           <meshStandardMaterial
-            color="#2a1608"
-            metalness={0.4}
-            roughness={0.55}
+            color="#8b6a34"
+            metalness={0.8}
+            roughness={0.45}
           />
         </mesh>
       ))}
@@ -824,21 +957,114 @@ function VelvetChair({
   );
 }
 
+// ————— CandleStand — replaces torchiere —————
+// A short wooden/stone prayer-stand with a cluster of pillar candles
+// of varying heights. Each candle flickers on its own phase.
+
+function CandleStand({ position }: { position: [number, number, number] }) {
+  const N = 5;
+  const lightRefs = useRef<Array<THREE.PointLight | null>>(
+    Array(N).fill(null),
+  );
+  const flameRefs = useRef<Array<THREE.Mesh | null>>(Array(N).fill(null));
+  const candles = useMemo(() => {
+    const out: Array<{ x: number; z: number; h: number; seed: number }> = [];
+    // Cluster arrangement on top of stand
+    const cluster: Array<[number, number]> = [
+      [-0.22, -0.08],
+      [-0.08, 0.1],
+      [0.08, -0.05],
+      [0.22, 0.08],
+      [0.0, -0.18],
+    ];
+    for (let i = 0; i < N; i++) {
+      out.push({
+        x: cluster[i][0],
+        z: cluster[i][1],
+        h: 0.26 + Math.random() * 0.3,
+        seed: Math.random() * 10,
+      });
+    }
+    return out;
+  }, []);
+  useFrame(({ clock }) => {
+    for (let i = 0; i < N; i++) {
+      const l = lightRefs.current[i];
+      const f = flameRefs.current[i];
+      const t = clock.elapsedTime + candles[i].seed;
+      const flick =
+        1 + Math.sin(t * 3.1) * 0.22 + Math.sin(t * 7.3 + 0.4) * 0.13;
+      if (l) l.intensity = 2.1 * flick;
+      if (f) f.scale.setScalar(0.88 + 0.22 * (flick - 1) * 2);
+    }
+  });
+  return (
+    <group position={position}>
+      {/* Base — short wooden block */}
+      <mesh position={[0, 0.06, 0]} castShadow receiveShadow>
+        <boxGeometry args={[0.7, 0.12, 0.5]} />
+        <meshStandardMaterial
+          color="#2a1608"
+          roughness={0.88}
+          metalness={0.08}
+        />
+      </mesh>
+      {/* Thin brass trim around base top */}
+      <mesh position={[0, 0.125, 0]} castShadow>
+        <boxGeometry args={[0.74, 0.015, 0.54]} />
+        <meshStandardMaterial color="#8b6a34" metalness={0.8} roughness={0.45} />
+      </mesh>
+      {candles.map((c, i) => (
+        <group key={i} position={[c.x, 0.14, c.z]}>
+          <mesh position={[0, c.h / 2, 0]} castShadow>
+            <cylinderGeometry args={[0.045, 0.05, c.h, 12]} />
+            <meshStandardMaterial color="#f2e6ca" roughness={0.75} />
+          </mesh>
+          <mesh
+            ref={(el) => {
+              flameRefs.current[i] = el;
+            }}
+            position={[0, c.h + 0.05, 0]}
+          >
+            <sphereGeometry args={[0.055, 10, 10]} />
+            <meshBasicMaterial color="#ffd08a" toneMapped={false} />
+          </mesh>
+          <pointLight
+            ref={(el) => {
+              lightRefs.current[i] = el;
+            }}
+            position={[0, c.h + 0.07, 0]}
+            color="#f0b070"
+            intensity={2.1}
+            distance={8}
+            decay={1.5}
+          />
+        </group>
+      ))}
+    </group>
+  );
+}
+
 // ————— 4iii dust motes —————
-// A few hundred tiny warm specks drifting upward. Only clearly
-// visible where they cross warm pools of light — Vermeer air.
+// Fewer, smaller, confined to the central corridor so they don't
+// speckle the curtains like stars. Additive blending so they only
+// show as a warm shimmer where they're actually in a lit pool,
+// and vanish against the dark walls.
 
 function DustMotes() {
   const ref = useRef<THREE.Points>(null);
   const { positions, speeds } = useMemo(() => {
-    const N = 220;
+    const N = 80;
     const positions = new Float32Array(N * 3);
     const speeds = new Float32Array(N);
+    const X_HALF = 4.5; // keep away from side curtains
+    const Z_FAR = -9; // keep away from back curtain
+    const Z_NEAR = 3;
     for (let i = 0; i < N; i++) {
-      positions[i * 3] = (Math.random() - 0.5) * 18;
-      positions[i * 3 + 1] = Math.random() * 7 + 0.3;
-      positions[i * 3 + 2] = Math.random() * -18 + 3;
-      speeds[i] = 0.04 + Math.random() * 0.08;
+      positions[i * 3] = (Math.random() - 0.5) * X_HALF * 2;
+      positions[i * 3 + 1] = Math.random() * 5 + 0.2;
+      positions[i * 3 + 2] = Math.random() * (Z_NEAR - Z_FAR) + Z_FAR;
+      speeds[i] = 0.03 + Math.random() * 0.06;
     }
     return { positions, speeds };
   }, []);
@@ -849,14 +1075,17 @@ function DustMotes() {
     const arr = geo.attributes.position.array as Float32Array;
     const t = clock.elapsedTime;
     const step = Math.min(dt, 0.05);
+    const X_HALF = 4.5;
+    const Z_FAR = -9;
+    const Z_NEAR = 3;
     for (let i = 0; i < speeds.length; i++) {
       arr[i * 3 + 1] += speeds[i] * step;
-      arr[i * 3] += Math.sin(t * 0.25 + i) * step * 0.05;
-      arr[i * 3 + 2] += Math.cos(t * 0.2 + i * 1.3) * step * 0.03;
-      if (arr[i * 3 + 1] > 8) {
-        arr[i * 3 + 1] = 0.3;
-        arr[i * 3] = (Math.random() - 0.5) * 18;
-        arr[i * 3 + 2] = Math.random() * -18 + 3;
+      arr[i * 3] += Math.sin(t * 0.25 + i) * step * 0.04;
+      arr[i * 3 + 2] += Math.cos(t * 0.2 + i * 1.3) * step * 0.025;
+      if (arr[i * 3 + 1] > 6) {
+        arr[i * 3 + 1] = 0.2;
+        arr[i * 3] = (Math.random() - 0.5) * X_HALF * 2;
+        arr[i * 3 + 2] = Math.random() * (Z_NEAR - Z_FAR) + Z_FAR;
       }
     }
     geo.attributes.position.needsUpdate = true;
@@ -873,13 +1102,13 @@ function DustMotes() {
         />
       </bufferGeometry>
       <pointsMaterial
-        size={0.05}
-        color="#f0c887"
+        size={0.028}
+        color="#d8a46a"
         transparent
-        opacity={0.55}
+        opacity={0.28}
         sizeAttenuation
         depthWrite={false}
-        toneMapped={false}
+        toneMapped={true}
       />
     </points>
   );
@@ -897,45 +1126,75 @@ function Walker() {
 
   const figShape = useMemo(() => {
     const s = new THREE.Shape();
-    s.moveTo(-0.22, 0);
+    // Slightly irregular silhouette — not perfectly symmetric,
+    // narrower waist, sloped shoulders.
+    s.moveTo(-0.2, 0);
     s.lineTo(0.22, 0);
-    s.lineTo(0.18, 1.35);
-    s.lineTo(0.12, 1.46);
-    s.absarc(0, 1.58, 0.13, -0.35, Math.PI + 0.35, false);
-    s.lineTo(-0.18, 1.35);
-    s.lineTo(-0.22, 0);
+    s.lineTo(0.19, 0.55);
+    s.lineTo(0.23, 1.0);
+    s.lineTo(0.2, 1.35);
+    s.lineTo(0.13, 1.46);
+    s.absarc(0.01, 1.57, 0.125, -0.3, Math.PI + 0.4, false);
+    s.lineTo(-0.2, 1.35);
+    s.lineTo(-0.22, 1.0);
+    s.lineTo(-0.17, 0.55);
+    s.lineTo(-0.2, 0);
     return s;
   }, []);
 
-  const lastPhase = useRef(0);
-  const direction = useRef(1);
+  const state = useRef({
+    walking: false,
+    walkStart: 0,
+    walkDuration: 9,
+    nextWalkAt: 12 + Math.random() * 10, // first appearance 12-22s in
+    direction: Math.random() > 0.5 ? 1 : -1,
+    speedJitter: 0,
+  });
 
   useFrame(({ clock }) => {
     if (!groupRef.current) return;
-    const period = 45; // seconds between walks
-    const walkDur = 8; // seconds per crossing
     const t = clock.elapsedTime;
-    const cycle = t % period;
+    const s = state.current;
 
-    // Flip direction each new cycle
-    const phaseIdx = Math.floor(t / period);
-    if (phaseIdx !== lastPhase.current) {
-      lastPhase.current = phaseIdx;
-      direction.current *= -1;
+    if (!s.walking && t >= s.nextWalkAt) {
+      s.walking = true;
+      s.walkStart = t;
+      s.walkDuration = 7 + Math.random() * 5; // 7–12s per crossing
+      s.direction *= -1;
+      s.speedJitter = Math.random() * 6.28;
     }
 
-    if (cycle < walkDur) {
-      const p = cycle / walkDur;
+    if (s.walking) {
+      const raw = (t - s.walkStart) / s.walkDuration;
+      if (raw >= 1) {
+        s.walking = false;
+        s.nextWalkAt = t + 28 + Math.random() * 45; // 28-73s until next
+        groupRef.current.visible = false;
+        return;
+      }
+      // easeInOutCubic — he starts slow, picks up, slows again
+      const e =
+        raw < 0.5
+          ? 4 * raw * raw * raw
+          : 1 - Math.pow(-2 * raw + 2, 3) / 2;
+      // Add a slight non-monotonic drift so the pace isn't perfectly
+      // measured — feels more like someone walking, not a sprite
+      // scrolling.
+      const drift = Math.sin(raw * Math.PI * 3 + s.speedJitter) * 0.02;
+      const p = Math.min(1, Math.max(0, e + drift));
+
       groupRef.current.visible = true;
-      const xStart = direction.current > 0 ? -5.5 : 5.5;
+      const xStart = s.direction > 0 ? -5.8 : 5.8;
       const xEnd = -xStart;
       groupRef.current.position.x = THREE.MathUtils.lerp(xStart, xEnd, p);
-      // Gentle sine bob — a walker, not a float
-      groupRef.current.position.y = 0.01 + Math.sin(p * Math.PI * 6) * 0.025;
-      const fade = Math.min(p * 5, (1 - p) * 5, 1);
-      if (matRef.current) matRef.current.opacity = 0.88 * fade;
-    } else {
-      groupRef.current.visible = false;
+      // Step bob — frequency tied to progress so bob slows with pace
+      const dp = Math.abs(Math.cos(raw * Math.PI)); // near 0 at ends
+      groupRef.current.position.y =
+        0.005 + Math.sin(raw * Math.PI * 7) * 0.022 * dp;
+      // Tiny torso sway
+      groupRef.current.rotation.z = Math.sin(raw * Math.PI * 7) * 0.025 * dp;
+      const fade = Math.min(raw * 4, (1 - raw) * 4, 1);
+      if (matRef.current) matRef.current.opacity = 0.86 * fade;
     }
   });
 
@@ -988,9 +1247,10 @@ export function RedRoom() {
         <AltarSpot />
 
         {/* La Tour layer — distributed warm sources across the room.
-            Each one is a visible fixture with its own flicker. */}
-        <Torchiere position={[-6.5, 0, -10]} />
-        <Torchiere position={[6.5, 0, -10]} />
+            Candle stands flanking the stage replace the old floor
+            torchieres; sconces fill the corners. */}
+        <CandleStand position={[-5.8, 0, -9.6]} />
+        <CandleStand position={[5.8, 0, -9.6]} />
         <SideSconce position={[-10, 5.5, -4]} />
         <SideSconce position={[10, 5.5, -4]} />
         <SideSconce position={[-10, 3, -11]} />
@@ -1008,15 +1268,18 @@ export function RedRoom() {
         <Walls />
         <Stage />
 
-        {/* Candelabras flanking the stage mouth */}
+        {/* Candelabras on the stage deck, flanking the curtain */}
         <Candelabra position={[-5.2, 1.0, -11.2]} />
         <Candelabra position={[5.2, 1.0, -11.2]} />
 
-        {/* Four empty chairs — two rows, flanking the carpet */}
-        <VelvetChair position={[-3.2, 0, -3]} />
-        <VelvetChair position={[3.2, 0, -3]} />
-        <VelvetChair position={[-3.2, 0, -6]} />
-        <VelvetChair position={[3.2, 0, -6]} />
+        {/* Four empty armchairs — two rows flanking the carpet.
+            Armchairs are wider than the old boxy chairs so push x
+            outward a touch; Venus now lives near row 1 on the left
+            so keep the left front chair back a little. */}
+        <VelvetChair position={[-3.9, 0, -4]} />
+        <VelvetChair position={[3.9, 0, -3]} />
+        <VelvetChair position={[-3.9, 0, -7]} />
+        <VelvetChair position={[3.9, 0, -6]} />
 
         <Venus />
 
