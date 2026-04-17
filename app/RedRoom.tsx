@@ -344,11 +344,6 @@ function Stage() {
           burning just behind the fog' survives. */}
       <StageCandleRing stageW={stageW} stageD={stageD} stageH={stageH} />
 
-      {/* Dry-ice mist rolling across the apron — hides where the
-          candles would have been, and the flicker from the ring
-          lights crawls through it as warm breath. */}
-      <StageMist stageW={stageW} stageD={stageD} stageH={stageH} />
-
       <CurtainBleedGlow stageD={stageD} stageH={stageH} />
     </group>
   );
@@ -462,91 +457,6 @@ function StageCandleRing({
         ) : null,
       )}
     </group>
-  );
-}
-
-// ————— stage mist — particle fog —————
-// 350 soft gaussian sprites drifting slowly at stage-floor level.
-// Collective density ≈ 10-14x overlap at 0.025 opacity each → ~22%
-// effective opacity. No FBM noise, no billboard quads, no planes.
-// The fog texture comes from density variation, not noise shape.
-
-function StageMist({
-  stageW,
-  stageD,
-  stageH,
-}: {
-  stageW: number;
-  stageD: number;
-  stageH: number;
-}) {
-  const COUNT = 220;
-  const hw = stageW * 0.22;        // half-width ≈ 2.9 m — concentrated, not wall-to-wall
-  const hd = (stageD + 0.4) * 0.5; // half-depth ≈ 2.45 m
-
-  // Radial-gradient sprite — soft centre, transparent edge
-  const spriteTex = useMemo(() => {
-    const S = 64;
-    const c = document.createElement("canvas");
-    c.width = c.height = S;
-    const ctx = c.getContext("2d")!;
-    const g = ctx.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
-    g.addColorStop(0,    "rgba(255,255,255,1)");
-    g.addColorStop(0.45, "rgba(255,255,255,0.5)");
-    g.addColorStop(1,    "rgba(255,255,255,0)");
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, S, S);
-    return new THREE.CanvasTexture(c);
-  }, []);
-
-  // Build geometry + velocity buffer once
-  const { geo, vel } = useMemo(() => {
-    const pos = new Float32Array(COUNT * 3);
-    const vel = new Float32Array(COUNT * 2); // vx, vz
-    for (let i = 0; i < COUNT; i++) {
-      pos[i * 3 + 0] = (Math.random() - 0.5) * 2 * hw;
-      pos[i * 3 + 1] = stageH + Math.random() * 0.20; // 0–20 cm above deck
-      pos[i * 3 + 2] = (Math.random() - 0.5) * 2 * hd;
-      const angle = Math.random() * Math.PI * 2;
-      const speed = 0.002 + Math.random() * 0.004;
-      vel[i * 2 + 0] = Math.cos(angle) * speed;
-      vel[i * 2 + 1] = Math.sin(angle) * speed;
-    }
-    const g = new THREE.BufferGeometry();
-    g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-    return { geo: g, vel };
-  }, [hw, hd, stageH]);
-
-  // Drift particles, wrap at stage edges
-  useFrame(() => {
-    const attr = geo.attributes.position as THREE.BufferAttribute;
-    for (let i = 0; i < COUNT; i++) {
-      let x = attr.getX(i) + vel[i * 2 + 0];
-      let z = attr.getZ(i) + vel[i * 2 + 1];
-      if (x >  hw) x -= 2 * hw;
-      if (x < -hw) x += 2 * hw;
-      if (z >  hd) z -= 2 * hd;
-      if (z < -hd) z += 2 * hd;
-      attr.setX(i, x);
-      attr.setZ(i, z);
-    }
-    attr.needsUpdate = true;
-  });
-
-  return (
-    <points geometry={geo}>
-      <pointsMaterial
-        size={1.6}
-        sizeAttenuation
-        map={spriteTex}
-        color="#c6d0e0"
-        transparent
-        opacity={0.025}
-        depthWrite={false}
-        alphaTest={0.004}
-        toneMapped={false}
-      />
-    </points>
   );
 }
 
