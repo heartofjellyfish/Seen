@@ -54,142 +54,90 @@ float noise2d(vec2 p) {
 void main() {
   vec2 uv = (gl_FragCoord.xy - u_resolution * 0.5) / min(u_resolution.x, u_resolution.y);
 
-  // Subtle mouse parallax — galaxy is a stately thing, don't lurch
+  // Subtle mouse parallax
   uv += u_mouse * 0.08;
 
   float r = length(uv);
+  float theta = atan(uv.y, uv.x);
   float t = u_time;
 
-  // ————— rotating galaxy —————
+  // ————— zigzag chevron tunnel —————
   //
-  // Top-down view of a two-armed spiral galaxy. We rotate uv into the
-  // galaxy-frame coordinate system — then stars and arms all live at
-  // stable positions in that frame, and it's the viewer who appears
-  // to rotate around the galactic axis. Both arms and stars rotate
-  // together. Center is kept pure black so the ghost light sits
-  // unopposed.
+  // A tunnel whose wall is papered in Red Room chevron. From the
+  // viewer's POV this reads as concentric rings with zigzag edges
+  // receding toward the vanishing point. The rings flow forward
+  // (toward us) so new ones keep emerging from the centre; the
+  // whole tunnel slowly rotates around its axis. Alternate rings
+  // are cream and wine — the chevron colour scheme. Depth attenuates
+  // brightness so the rings fade into the black centre where the
+  // ghost light will sit.
 
   const float PI = 3.14159265;
-  const float N_ARMS = 2.0;
-  const float TWIST = 2.8;
+  const float TEETH = 12.0;        // zigzag teeth around the tunnel
+  const float RING_FREQ = 0.85;    // ring density along depth
+  const float ZIGZAG_AMP = 0.32;   // how far teeth bite into the next ring
 
-  // Visible rotation — one revolution per ~1.7 minutes, with a touch
-  // more urgency as fame approaches.
-  float rotSpeed = 0.06 + u_progress * u_progress * 0.03;
-  float gAngle = t * rotSpeed;
+  float rSafe = max(r, 0.02);
+  float baseDepth = 0.5 / rSafe;
 
-  // Rotate uv into galaxy frame (stars + arms are stable there)
-  float cA = cos(gAngle);
-  float sA = sin(gAngle);
-  vec2 gUv = vec2(uv.x * cA + uv.y * sA, -uv.x * sA + uv.y * cA);
-  float gTheta = atan(gUv.y, gUv.x);
+  // Forward flow — rings rush toward viewer
+  float flowSpeed = 0.38 + u_progress * u_progress * 0.25;
+  float depth = baseDepth + t * flowSpeed;
 
-  float armPhase = N_ARMS * (gTheta + u_mouse.x * 0.14)
-                 + TWIST * log(r + 0.08);
+  // Slow rotation around the tunnel axis
+  float rotSpeed = 0.045;
+  float phi = theta + t * rotSpeed + u_mouse.x * 0.12;
 
-  float arm = cos(armPhase) * 0.5 + 0.5;
-  arm = pow(arm, 3.5);
+  // Triangular wave in angular direction — the zigzag
+  float teethPhase = phi * TEETH / (2.0 * PI);
+  float teethWave = abs(fract(teethPhase) * 2.0 - 1.0); // 0 at valley, 1 at peak
 
-  float innerFade = smoothstep(0.05, 0.28, r);
-  float outerFade = smoothstep(1.9, 0.45, r);
-  float armMask = innerFade * outerFade;
-  float armIntensity = arm * armMask;
+  // Band boundaries are depth + triangular-wave offset in angle
+  float effectiveDepth = depth + teethWave * ZIGZAG_AMP;
+  float bandIdx = floor(effectiveDepth * RING_FREQ);
+  float bandPos = fract(effectiveDepth * RING_FREQ);
 
-  // ————— stars —————
-  //
-  // For each pixel we check a 3x3 neighbourhood of cells so star
-  // rendering doesn't cut off at cell edges. Each star has a
-  // gaussian pinpoint + a softer halo — gives crisp bright dots
-  // with a glow, not pixelated dabs.
+  // Alternate ring colours
+  float parity = mod(bandIdx, 2.0);
 
-  float stars = 0.0;
+  vec3 cream = vec3(0.90, 0.80, 0.55);
+  vec3 wine  = vec3(0.28, 0.075, 0.075);
 
-  // Bright stars — 3x3 neighbours, gaussian pin + halo, twinkling
-  vec2 bP = gUv * 55.0;
-  vec2 bCell = floor(bP);
-  for (int dy = -1; dy <= 1; dy++) {
-    for (int dx = -1; dx <= 1; dx++) {
-      vec2 nCell = bCell + vec2(float(dx), float(dy));
-      float h = hash(nCell);
-      if (h > 0.955) {
-        vec2 sPos = nCell + vec2(
-          0.25 + hash(nCell + vec2(17.0, 3.1)) * 0.5,
-          0.25 + hash(nCell + vec2(31.0, 5.7)) * 0.5
-        );
-        float d2 = distance(bP, sPos);
-        float pin = exp(-d2 * d2 * 95.0);
-        float halo = exp(-d2 * d2 * 14.0);
-        float br = (pin * 2.2 + halo * 0.55) * (h - 0.955) * 26.0;
+  // Soft edge between rings — smoothstep in bandPos to avoid crawling
+  // aliasing as the pattern flows
+  float edgeSoft = smoothstep(0.0, 0.025, bandPos)
+                 * smoothstep(1.0, 0.975, bandPos);
+  vec3 bandCol = mix(wine, cream, parity);
+  // Darken at band boundaries — a thin ink line where chevron meets
+  vec3 boundaryInk = vec3(0.02, 0.006, 0.004);
+  bandCol = mix(boundaryInk, bandCol, edgeSoft);
 
-        // Twinkle — two uncorrelated sines at different frequencies
-        // give an irregular flicker instead of a metronome pulse
-        float twPhase = h * 17.7 + hash(nCell + vec2(97.0, 53.0)) * 11.3;
-        float tw = 0.5 + 0.5 * sin(t * 2.4 + twPhase);
-        tw = mix(tw, 0.5 + 0.5 * sin(t * 4.7 + twPhase * 0.71), 0.35);
-        br *= 0.35 + 0.65 * tw;
+  // Subtle cream → wine shading inside each band (fake dimension)
+  float bandCurve = sin(bandPos * PI);
+  bandCol *= 0.78 + 0.22 * bandCurve;
 
-        br *= 0.28 + 0.72 * arm;
-        stars += br * armMask;
-      }
-    }
-  }
+  // A slow orbiting warm tilt — light source circling the tunnel axis
+  float orbit = cos(phi - t * 0.22) * 0.08;
+  bandCol *= 1.0 + orbit;
 
-  // Fine star dust — denser, dimmer, their own twinkle at a faster rate
-  vec2 fP = gUv * 160.0;
-  vec2 fCell = floor(fP);
-  for (int dy = -1; dy <= 1; dy++) {
-    for (int dx = -1; dx <= 1; dx++) {
-      vec2 nCell = fCell + vec2(float(dx), float(dy));
-      float h = hash(nCell + vec2(7.0, 41.0));
-      if (h > 0.935) {
-        vec2 sPos = nCell + vec2(
-          0.3 + hash(nCell + vec2(51.0, 23.0)) * 0.4,
-          0.3 + hash(nCell + vec2(71.0, 19.0)) * 0.4
-        );
-        float d2 = distance(fP, sPos);
-        float pin = exp(-d2 * d2 * 85.0);
-        float br = pin * (h - 0.935) * 14.0;
+  // Depth falloff — pinned to baseDepth so brightness is stable over time
+  float depthFade = exp(-baseDepth * 0.055);
+  vec3 col = bandCol * depthFade;
 
-        // Fine stars twinkle faster, brief sparkles
-        float twPhase = h * 29.0 + hash(nCell + vec2(37.0, 19.0)) * 13.0;
-        float tw = 0.5 + 0.5 * sin(t * 3.8 + twPhase);
-        br *= 0.3 + 0.7 * tw;
+  // ————— paper grain —————
 
-        br *= armMask;
-        stars += br * 0.5;
-      }
-    }
-  }
-
-  // ————— dust lanes between arms —————
-
-  float dustPhase = armPhase + PI * 0.45;
-  float dust = pow(cos(dustPhase) * 0.5 + 0.5, 3.5);
-  float dustDarken = dust * armMask * 0.35;
-
-  // ————— palette + composite —————
-
-  vec3 space = vec3(0.014, 0.013, 0.022);
-  vec3 armAmber = vec3(0.56, 0.36, 0.17);
-  vec3 armWarm = vec3(0.88, 0.60, 0.28);
-  vec3 starColor = vec3(1.0, 0.94, 0.78);
-
-  vec3 col = space;
-  col += mix(armAmber, armWarm, arm) * armIntensity * 0.8;
-  col += starColor * stars;
-  col -= vec3(0.012, 0.012, 0.02) * dustDarken;
-  col = max(col, vec3(0.0));
-
-  // Subtle screen-space grain — film emulsion suggestion
-  float grain = (hash(gl_FragCoord.xy * 1.3) - 0.5) * 0.028;
-  col += vec3(grain * 0.9, grain, grain * 1.1);
+  vec2 gPos = gl_FragCoord.xy;
+  float gFine = hash(gPos * 1.6) - 0.5;
+  float gCoarse = hash(floor(gPos * 0.35)) - 0.5;
+  float grain = gFine * 0.11 + gCoarse * 0.06;
+  col += vec3(grain * 1.05, grain * 0.95, grain * 0.85) * depthFade;
 
   // Central darkness reserved for the ghost light
-  float centerMask = smoothstep(0.04, 0.07, r);
+  float centerMask = smoothstep(0.06, 0.14, r);
   col *= centerMask;
 
-  // Outer fade blends galaxy into the curtain shadows
-  col *= smoothstep(2.1, 0.4, r);
+  // Outer fade blends tunnel into the curtain shadows
+  col *= smoothstep(2.2, 0.5, r);
 
   gl_FragColor = vec4(col, 1.0);
 }

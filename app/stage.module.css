@@ -234,6 +234,46 @@
   filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.75));
 }
 
+/* Traffic light — three lamps on their own slow breath cycles, never
+   quite in phase with each other. Dream logic. */
+
+.trafficLight {
+  filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.7));
+}
+
+.lampWine {
+  animation: lampWineBreath 7s ease-in-out infinite;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+.lampAmber {
+  animation: lampAmberBreath 11s ease-in-out infinite;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+.lampCream {
+  animation: lampCreamBreath 13s ease-in-out infinite;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+
+@keyframes lampWineBreath {
+  0%, 100% { opacity: 0.75; filter: drop-shadow(0 0 3px rgba(164, 32, 32, 0.5)); }
+  50%      { opacity: 1.0;  filter: drop-shadow(0 0 8px rgba(164, 32, 32, 0.85)); }
+}
+@keyframes lampAmberBreath {
+  0%, 100% { opacity: 0.80; filter: drop-shadow(0 0 3px rgba(212, 163, 99, 0.5)); }
+  50%      { opacity: 1.0;  filter: drop-shadow(0 0 10px rgba(232, 192, 137, 0.9)); }
+}
+@keyframes lampCreamBreath {
+  0%, 100% { opacity: 0.78; filter: drop-shadow(0 0 3px rgba(236, 226, 204, 0.4)); }
+  50%      { opacity: 1.0;  filter: drop-shadow(0 0 8px rgba(236, 226, 204, 0.8)); }
+}
+
+.venus {
+  filter: drop-shadow(0 6px 8px rgba(0, 0, 0, 0.55));
+}
+
 /* ————— dream objects —————
    HTML layer with real CSS 3D transforms. Parent enables perspective,
    each item has its own path animation (translate + scale) plus a

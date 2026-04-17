@@ -189,8 +189,29 @@ export function Stage({
           {/* Red Room floor — black and cream zigzag chevron */}
           <RedRoomFloor />
 
-          {/* Venus de Milo on the left — Red Room corner sculpture */}
+          {/* Narrow red carpet runner overlaid on the zigzag */}
+          <path
+            d="M 320 500 L 380 500 L 470 900 L 230 900 Z"
+            fill="url(#carpet)"
+          />
+          <path
+            d="M 320 500 L 230 900"
+            stroke="rgba(232,192,137,0.12)"
+            strokeWidth="1.2"
+            fill="none"
+          />
+          <path
+            d="M 380 500 L 470 900"
+            stroke="rgba(232,192,137,0.12)"
+            strokeWidth="1.2"
+            fill="none"
+          />
+
+          {/* Venus de Milo on stage left — Red Room corner sculpture */}
           <VenusSculpture />
+
+          {/* Traffic light on stage right — mirrors Venus, dreamlike */}
+          <TrafficLight />
 
           {/* Stage floor edge hairline */}
           <line
@@ -713,6 +734,79 @@ function VenusSculpture() {
       <ellipse cx="10" cy="-2" rx="3" ry="2" fill="#7a6848" opacity="0.5" />
       {/* A soft overall highlight from top-left */}
       <ellipse cx="-4" cy="-2" rx="5" ry="18" fill="#fff" opacity="0.15" />
+    </g>
+  );
+}
+
+// ————— traffic light (right stage, mirroring Venus) —————
+//
+// A recognizably-a-traffic-light silhouette but dressed in SEEN's
+// warm palette — wine red / amber / bone cream instead of the usual
+// red / yellow / green. All three lamps stay lit but pulse at three
+// different slow rates (7s, 11s, 13s) so the whole fixture has a
+// heartbeat that never quite syncs. Dream logic.
+
+function TrafficLight() {
+  return (
+    <g transform="translate(595, 540)" className={styles.trafficLight}>
+      {/* Hanging pole from above (thin black line going up) */}
+      <rect x="-1" y="-115" width="2" height="120" fill="#100804" />
+      {/* Casing — rounded rectangle black housing */}
+      <rect
+        x="-15"
+        y="-8"
+        width="30"
+        height="110"
+        rx="4"
+        ry="4"
+        fill="#0a0604"
+        stroke="#2a1a0c"
+        strokeWidth="1"
+      />
+      {/* Casing highlight — a thin streak on left for dimension */}
+      <rect x="-13" y="-6" width="1.5" height="106" fill="#2a1a0c" opacity="0.7" />
+
+      {/* Three lamps — wine / amber / cream, breathing on offset cycles */}
+      {/* Top: wine red */}
+      <circle cx="0" cy="10" r="9" fill="#2a0606" />
+      <circle
+        cx="0"
+        cy="10"
+        r="7.5"
+        fill="#a42020"
+        className={styles.lampWine}
+      />
+      <circle cx="-1.5" cy="8" r="2.5" fill="#ffb8a0" opacity="0.7" />
+
+      {/* Middle: amber */}
+      <circle cx="0" cy="38" r="9" fill="#2a1a04" />
+      <circle
+        cx="0"
+        cy="38"
+        r="7.5"
+        fill="#d4a363"
+        className={styles.lampAmber}
+      />
+      <circle cx="-1.5" cy="36" r="2.5" fill="#fff1c7" opacity="0.8" />
+
+      {/* Bottom: bone cream */}
+      <circle cx="0" cy="66" r="9" fill="#1a1810" />
+      <circle
+        cx="0"
+        cy="66"
+        r="7.5"
+        fill="#ece2cc"
+        className={styles.lampCream}
+      />
+      <circle cx="-1.5" cy="64" r="2.5" fill="#ffffff" opacity="0.85" />
+
+      {/* Base plate bottom */}
+      <rect x="-12" y="95" width="24" height="7" fill="#0a0604" />
+
+      {/* Soft ambient glow behind the lamps */}
+      <circle cx="0" cy="10" r="18" fill="#a42020" opacity="0.08" />
+      <circle cx="0" cy="38" r="18" fill="#d4a363" opacity="0.10" />
+      <circle cx="0" cy="66" r="18" fill="#ece2cc" opacity="0.06" />
     </g>
   );
 }
