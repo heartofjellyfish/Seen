@@ -107,8 +107,8 @@ function CurtainPanel({
   rotation,
   pleatCount = 14,
   pleatDepth = 0.18,
-  color = "#3a0505",
-  sheenColor = "#9a1a1a",
+  color = "#7a1212",
+  sheenColor = "#d42828",
   segments = 80,
 }: {
   width: number;
@@ -154,11 +154,13 @@ function CurtainPanel({
     >
       <meshPhysicalMaterial
         color={color}
-        roughness={0.95}
+        roughness={0.92}
         metalness={0}
         sheen={1}
         sheenColor={sheenColor}
-        sheenRoughness={0.35}
+        sheenRoughness={0.3}
+        emissive="#2a0303"
+        emissiveIntensity={0.35}
         side={THREE.DoubleSide}
       />
     </mesh>
@@ -194,22 +196,56 @@ function Walls() {
         pleatCount={22}
         pleatDepth={0.22}
       />
-      {/* Ceiling — darker red, flat */}
-      <mesh
-        position={[0, 11, -8]}
-        rotation={[Math.PI / 2, 0, 0]}
-        receiveShadow
-      >
-        <planeGeometry args={[28, 36]} />
-        <meshStandardMaterial
-          color="#1a0404"
-          roughness={0.95}
-          side={THREE.DoubleSide}
-        />
-      </mesh>
+      {/* Ceiling — pleated velvet with radial cosine displacement, so
+          the cloth "gathers" toward a centre point like a draped tent
+          or a cinema dome. Slightly darker than the walls. */}
+      <RadialVelvetCeiling />
     </group>
   );
 }
+
+function RadialVelvetCeiling() {
+  const geometry = useMemo(() => {
+    const radius = 18;
+    const geo = new THREE.CircleGeometry(radius, 80);
+    const pos = geo.attributes.position;
+    // Displace each vertex's z (i.e. "up" in the ceiling plane local
+    // coords) by a radial cosine — pleats radiating from the centre.
+    const pleatFreq = 16; // number of pleats around
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i);
+      const y = pos.getY(i);
+      const r = Math.sqrt(x * x + y * y);
+      const theta = Math.atan2(y, x);
+      const z = Math.cos(theta * pleatFreq) * 0.15 * (r / radius);
+      pos.setZ(i, z);
+    }
+    geo.computeVertexNormals();
+    return geo;
+  }, []);
+
+  return (
+    <mesh
+      position={[0, 11, -8]}
+      rotation={[Math.PI / 2, 0, 0]}
+      geometry={geometry}
+      receiveShadow
+    >
+      <meshPhysicalMaterial
+        color="#4a0a0a"
+        roughness={0.95}
+        metalness={0}
+        sheen={1}
+        sheenColor="#8a1515"
+        sheenRoughness={0.35}
+        emissive="#1a0202"
+        emissiveIntensity={0.3}
+        side={THREE.DoubleSide}
+      />
+    </mesh>
+  );
+}
+
 
 // ————— raised stage + its own proscenium curtains —————
 
@@ -245,12 +281,14 @@ function Stage() {
       >
         <boxGeometry args={[stageW + 0.6, pelmetHeight, 0.35]} />
         <meshPhysicalMaterial
-          color="#2a0404"
+          color="#5a0f0f"
           roughness={0.95}
           metalness={0}
           sheen={1}
-          sheenColor="#6a1010"
+          sheenColor="#b02020"
           sheenRoughness={0.35}
+          emissive="#1a0202"
+          emissiveIntensity={0.3}
         />
       </mesh>
 
@@ -261,8 +299,8 @@ function Stage() {
         position={[-stageW / 4 + 0.15, stageH + curtainHeight / 2, stageD / 2]}
         pleatCount={14}
         pleatDepth={0.15}
-        color="#4a0808"
-        sheenColor="#a01818"
+        color="#8a1818"
+        sheenColor="#e03030"
       />
       <CurtainPanel
         width={stageW / 2 + 0.3}
@@ -270,8 +308,8 @@ function Stage() {
         position={[stageW / 4 - 0.15, stageH + curtainHeight / 2, stageD / 2]}
         pleatCount={14}
         pleatDepth={0.15}
-        color="#4a0808"
-        sheenColor="#a01818"
+        color="#8a1818"
+        sheenColor="#e03030"
       />
 
       {/* Tiny inner warm glow as if the stage behind the curtain is lit */}
@@ -373,35 +411,46 @@ export function RedRoom() {
       dpr={[1, 2]}
       style={{ position: "absolute", inset: 0 }}
     >
-      <color attach="background" args={["#150606"]} />
-      <fog attach="fog" args={["#150606", 18, 50]} />
+      <color attach="background" args={["#2a0a0a"]} />
+      <fog attach="fog" args={["#2a0a0a", 32, 85]} />
 
       <Suspense fallback={null}>
         <CameraRig />
 
-        {/* Room lights — no ghost light any more; the room is
-            generally lit like a theater's house lights between acts.
-            Warm, dim-ish, enough to see the curtains everywhere. */}
-        <ambientLight intensity={0.45} color="#5a2a18" />
+        {/* Hemisphere light fills the room from above and below at
+            once — sky is a warm red (the curtains reflecting onto
+            each other), ground is a deeper warm. This is what gives
+            the Red Room its "the red is everywhere" quality — not a
+            single key light, but a soft red environmental wash. */}
+        <hemisphereLight
+          args={["#a02828", "#3a0a0a", 1.2]}
+        />
 
-        {/* Front-top fill — simulates ceiling fixtures in the house */}
-        <directionalLight
-          position={[0, 8, 6]}
-          intensity={0.75}
+        {/* Soft omnidirectional ambient, same warm */}
+        <ambientLight intensity={0.35} color="#6a2020" />
+
+        {/* Central "chandelier" — a single bright warm point high in
+            the room, casting onto everything below */}
+        <pointLight
+          position={[0, 10, -8]}
+          intensity={45}
+          distance={28}
+          decay={1.5}
           color="#f0c480"
         />
 
-        {/* Back fill from the audience behind us, warms silhouettes */}
+        {/* Warm rim from the back so the stage is illuminated from
+            behind the audience too */}
         <directionalLight
-          position={[0, 4, 14]}
-          intensity={0.35}
+          position={[0, 5, 14]}
+          intensity={0.5}
           color="#d4a363"
         />
 
-        {/* Side rim from the right, brushes Venus and the side curtain */}
+        {/* Soft side fill from the right, gives Venus a rim */}
         <directionalLight
-          position={[10, 5, 0]}
-          intensity={0.28}
+          position={[8, 3, -4]}
+          intensity={0.4}
           color="#c88a3a"
         />
 
