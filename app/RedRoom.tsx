@@ -2,7 +2,7 @@
 
 import { Suspense, useMemo, useRef } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { PerspectiveCamera, useTexture } from "@react-three/drei";
+import { Cloud, Clouds, PerspectiveCamera, useTexture } from "@react-three/drei";
 import * as THREE from "three";
 
 /* ————————————————————————————————————————————————
@@ -462,40 +462,12 @@ function StageCandleRing({
 }
 
 // ————— stage mist — dry-ice fog on the apron —————
-// A low bank of slowly drifting warm-grey mist that sits on the
-// stage apron where the candles used to be. It hides the (now
-// removed) candle geometry, so what we read is: mysterious fog,
-// lit from within by warm flickering light whose source we can't
-// quite see.
-
-function makeMistTexture(): THREE.CanvasTexture {
-  const SIZE = 256;
-  const c = document.createElement("canvas");
-  c.width = c.height = SIZE;
-  const ctx = c.getContext("2d")!;
-  ctx.clearRect(0, 0, SIZE, SIZE);
-  // Layered soft radial blobs — more blobs, higher alpha per blob,
-  // so the puff reads as actually dense smoke instead of a whisper.
-  // Blobs biased toward the middle so edges fall off to transparent.
-  for (let i = 0; i < 90; i++) {
-    const cx = SIZE / 2 + (Math.random() - 0.5) * SIZE * 0.75;
-    const cy = SIZE / 2 + (Math.random() - 0.5) * SIZE * 0.65;
-    const r = 28 + Math.random() * 90;
-    const a = 0.08 + Math.random() * 0.12;
-    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-    g.addColorStop(0, `rgba(240, 230, 210, ${a})`);
-    g.addColorStop(0.4, `rgba(230, 215, 195, ${a * 0.55})`);
-    g.addColorStop(1, "rgba(0,0,0,0)");
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, SIZE, SIZE);
-  }
-  const tex = new THREE.CanvasTexture(c);
-  tex.needsUpdate = true;
-  return tex;
-}
+// Swapped the hand-rolled billboard puffs for drei's <Clouds> +
+// <Cloud>, which instances N soft particles with proper soft-edge
+// alpha and internal depth fading — no more visible rectangular
+// seams between overlapping planes. Ground-hugging, central, warm.
 
 function StageMist({
-  stageW,
   stageD,
   stageH,
 }: {
@@ -503,93 +475,60 @@ function StageMist({
   stageD: number;
   stageH: number;
 }) {
-  const tex = useMemo(() => makeMistTexture(), []);
-  // Ground-hugging mist, concentrated on the central ~7m of the
-  // apron — not the full stage width. Anchor heights hover from
-  // deck level to about +0.5m (the half-meter the user asked for).
-  const puffs = useMemo(() => {
-    const N = 16;
-    const HALF_SPAN = 3.5; // ±3.5m around centre — not full stage
-    const out: Array<{
-      baseX: number;
-      baseY: number;
-      baseZ: number;
-      w: number;
-      h: number;
-      seed: number;
-      drift: number;
-      rot: number;
-      rotSpeed: number;
-    }> = [];
-    for (let i = 0; i < N; i++) {
-      // Gaussian-ish clustering at the middle — more density toward
-      // the centre, thinner at the edges.
-      const u = (i + 0.5) / N; // 0..1
-      const centered = (u - 0.5) * 2; // -1..1
-      const soft = Math.sign(centered) * Math.pow(Math.abs(centered), 1.5);
-      const x = soft * HALF_SPAN + (Math.random() - 0.5) * 0.6;
-      out.push({
-        baseX: x,
-        baseY: stageH + 0.05 + Math.random() * 0.45, // 0–0.5m above deck
-        baseZ: stageD / 2 + 0.25 + (Math.random() - 0.5) * 0.5,
-        w: 2.6 + Math.random() * 1.8, // wider, flatter
-        h: 0.95 + Math.random() * 0.55, // short, ground-hugging
-        seed: Math.random() * 10,
-        drift: 0.12 + Math.random() * 0.1,
-        rot: Math.random() * Math.PI * 2,
-        rotSpeed: (Math.random() - 0.5) * 0.25, // swirl ±15°/s
-      });
-    }
-    return out;
-  }, [stageW, stageD, stageH]);
-
-  const meshRefs = useRef<Array<THREE.Mesh | null>>(
-    Array(puffs.length).fill(null),
-  );
-
-  useFrame(({ clock, camera }) => {
-    const t = clock.elapsedTime;
-    for (let i = 0; i < puffs.length; i++) {
-      const m = meshRefs.current[i];
-      if (!m) continue;
-      const p = puffs[i];
-      m.position.x = p.baseX + Math.sin(t * p.drift + p.seed) * 0.5;
-      m.position.y =
-        p.baseY + Math.sin(t * 0.25 + p.seed * 1.4) * 0.08; // gentle float
-      m.position.z = p.baseZ + Math.sin(t * 0.11 + p.seed * 0.8) * 0.1;
-      // Billboard toward the camera then spin slowly around that
-      // view axis — gives the puffs a curling/swirling 缭绕 feel
-      // instead of a rigid slab drifting sideways.
-      m.lookAt(camera.position);
-      m.rotateZ(p.rot + t * p.rotSpeed);
-    }
-  });
-
+  // Anchor the cloud volume at the apron, centred on the stage
+  // front, rising from deck level to ~0.5m above it.
+  const anchor: [number, number, number] = [0, stageH + 0.25, stageD / 2 + 0.3];
   return (
-    <group>
-      {puffs.map((p, i) => (
-        <mesh
-          key={i}
-          ref={(el) => {
-            meshRefs.current[i] = el;
-          }}
-          position={[p.baseX, p.baseY, p.baseZ]}
-        >
-          <planeGeometry args={[p.w, p.h]} />
-          <meshStandardMaterial
-            map={tex}
-            transparent
-            opacity={1}
-            depthWrite={false}
-            color="#e0d0b8"
-            emissive="#805228"
-            emissiveIntensity={0.85}
-            roughness={1}
-            metalness={0}
-            side={THREE.DoubleSide}
-          />
-        </mesh>
-      ))}
+    <group position={anchor}>
+      {/* Using MeshLambertMaterial so the flickering front-row
+          candle lights register on the fog as warm breath. */}
+      <Clouds material={THREE.MeshLambertMaterial} limit={220}>
+        {/* Main thick bank — wide, short, living in the middle */}
+        <Cloud
+          seed={7}
+          segments={48}
+          bounds={[6, 0.55, 0.9]}
+          volume={4.2}
+          smallestVolume={0.4}
+          growth={2.5}
+          speed={0.18}
+          concentrate="inside"
+          color="#d8c6a4"
+          opacity={0.95}
+          fade={14}
+        />
+        {/* Second softer bank — slightly offset + different phase
+            so the two layers roll against each other */}
+        <Cloud
+          seed={19}
+          segments={32}
+          bounds={[4.5, 0.5, 0.7]}
+          volume={3}
+          smallestVolume={0.3}
+          growth={2}
+          speed={0.26}
+          concentrate="random"
+          color="#e8d2a8"
+          opacity={0.75}
+          fade={14}
+          position={[0.3, 0.05, 0.05]}
+        />
+        {/* Thin wisps that drift wider, thinning out at the edges */}
+        <Cloud
+          seed={31}
+          segments={24}
+          bounds={[3.2, 0.35, 0.5]}
+          volume={1.8}
+          smallestVolume={0.25}
+          growth={1.5}
+          speed={0.3}
+          concentrate="outside"
+          color="#f0dcb0"
+          opacity={0.55}
+          fade={14}
+          position={[-0.4, 0.12, 0.02]}
+        />
+      </Clouds>
     </group>
   );
 }
