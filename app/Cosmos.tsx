@@ -64,37 +64,48 @@ void main() {
 
   vec3 col = vec3(0.0);
 
-  // ————— zigzag concentric bands, spiraling into depth —————
+  // ————— braided rope: cylindrical strands, twisting with depth —————
   //
-  // Rings of alternating light/dark, each ring's inner/outer edge
-  // wobbled by a cosine of angle. The wobble shifts angularly with
-  // depth, which creates the spiral-twist illusion between adjacent
-  // rings (teeth appear to interlock).
+  // Each concentric band is rendered with a cylindrical cross-section:
+  // sin(PI * bandPos) gives a round-pipe profile, bright in the middle
+  // and dark at the edges. Alternating bands interleave cream and deep
+  // amber. The waves twist angularly with depth so adjacent bands look
+  // braided.
 
-  const float TEETH = 20.0;      // number of zigzag points per ring
-  const float RING_FREQ = 0.46;  // how densely rings pack in depth
-  const float TWIST = 1.6;       // how much teeth shift per depth unit
+  const float TEETH = 14.0;
+  const float RING_FREQ = 0.46;
+  const float TWIST = 2.2;
+  const float WAVE_AMP = 0.26;
+  const float PI = 3.14159265;
 
-  float edgeWave = cos(phi * TEETH + depth * TWIST) * 0.18;
-  float depthMod = depth + edgeWave;
+  float edgeWave = sin(phi * TEETH + depth * TWIST) * WAVE_AMP;
+  float bandFlow = depth + edgeWave;
 
-  float bandIdx = floor(depthMod * RING_FREQ);
-  float bandPos = fract(depthMod * RING_FREQ);
+  float bandIdx = floor(bandFlow * RING_FREQ);
+  float bandPos = fract(bandFlow * RING_FREQ);
+
+  // Cylindrical cross-section: 0 at the band's edges, 1 at its apex
+  float cross_ = sin(bandPos * PI);
+  float cyl = pow(cross_, 1.3);
 
   float parity = mod(bandIdx, 2.0);
-  vec3 lightBand = vec3(0.70, 0.42, 0.18);
-  vec3 darkBand = vec3(0.045, 0.018, 0.010);
-  vec3 wallCol = (parity > 0.5) ? lightBand : darkBand;
 
-  // Rib shading — darken the edges of each band so bands look 3D
-  float edgeSoft = smoothstep(0.0, 0.12, bandPos) * smoothstep(1.0, 0.88, bandPos);
-  wallCol *= 0.55 + 0.45 * edgeSoft;
+  vec3 cream = vec3(0.78, 0.48, 0.22);
+  vec3 creamEdge = vec3(0.14, 0.05, 0.025);
+  vec3 dark = vec3(0.06, 0.02, 0.012);
+  vec3 darkMid = vec3(0.22, 0.1, 0.05);
 
-  // Thin amber highlight running along the inner edge of light bands
-  float innerEdge = smoothstep(0.02, 0.0, abs(bandPos - 0.1)) * parity;
-  wallCol += vec3(0.95, 0.66, 0.3) * innerEdge * 0.25;
+  // Bright strand: dark at edges, warm cream at the rounded top
+  vec3 lightStrand = mix(creamEdge, cream, cyl);
+  // Add a hot specular near the top of the strand (glossy rope feel)
+  lightStrand += vec3(0.18, 0.09, 0.03) * pow(cyl, 3.5);
 
-  // Depth fade
+  // Dark strand: mostly deep, but shaded so it still reads as a tube
+  vec3 darkStrand = mix(dark, darkMid, cyl * 0.75);
+
+  vec3 wallCol = mix(darkStrand, lightStrand, parity);
+
+  // Depth falloff
   float depthFade = exp(-depth * 0.058);
   wallCol *= depthFade;
 

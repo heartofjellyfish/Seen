@@ -161,31 +161,38 @@ export function Stage({
               <stop offset="100%" stopColor="#4a1419" />
             </linearGradient>
 
-            {/* Dream-object gradients — cheap "3D" via highlight + shadow */}
-            <linearGradient id="pillBody" x1="0" x2="0" y1="0" y2="1">
-              <stop offset="0%" stopColor="#fff5dc" />
-              <stop offset="45%" stopColor="#ebd49c" />
-              <stop offset="100%" stopColor="#9c7840" />
+            {/* Dream-object gradients — multi-stop for 3D render feel */}
+            <linearGradient id="pillBody" x1="0.3" y1="0" x2="0.7" y2="1">
+              <stop offset="0%" stopColor="#fff6e2" />
+              <stop offset="30%" stopColor="#f0d8a6" />
+              <stop offset="55%" stopColor="#c89848" />
+              <stop offset="85%" stopColor="#6a4518" />
+              <stop offset="100%" stopColor="#2a1a08" />
             </linearGradient>
-            <linearGradient id="pillAmber" x1="0" x2="0" y1="0" y2="1">
-              <stop offset="0%" stopColor="#f8c877" />
-              <stop offset="45%" stopColor="#d4a363" />
-              <stop offset="100%" stopColor="#6b4314" />
+            <linearGradient id="pillAmber" x1="0.3" y1="0" x2="0.7" y2="1">
+              <stop offset="0%" stopColor="#f8ca7a" />
+              <stop offset="40%" stopColor="#c88a3a" />
+              <stop offset="80%" stopColor="#6a4518" />
+              <stop offset="100%" stopColor="#20100a" />
             </linearGradient>
-            <radialGradient id="coinFace" cx="35%" cy="30%" r="75%">
-              <stop offset="0%" stopColor="#fde4a6" />
-              <stop offset="45%" stopColor="#d4a363" />
-              <stop offset="100%" stopColor="#4a2d0e" />
+            <radialGradient id="coinFace" cx="30%" cy="20%" r="90%">
+              <stop offset="0%" stopColor="#fff6d8" />
+              <stop offset="25%" stopColor="#ecc580" />
+              <stop offset="55%" stopColor="#b8863a" />
+              <stop offset="85%" stopColor="#5a3e18" />
+              <stop offset="100%" stopColor="#2a1a08" />
             </radialGradient>
-            <linearGradient id="brass" x1="0" x2="1" y1="0" y2="0">
-              <stop offset="0%" stopColor="#7a5a2a" />
-              <stop offset="35%" stopColor="#d4a363" />
-              <stop offset="65%" stopColor="#e8c089" />
-              <stop offset="100%" stopColor="#6a4818" />
+            <linearGradient id="brass" x1="0.2" y1="0" x2="0.8" y2="1">
+              <stop offset="0%" stopColor="#fff4c8" />
+              <stop offset="25%" stopColor="#ecc580" />
+              <stop offset="50%" stopColor="#b8862e" />
+              <stop offset="80%" stopColor="#6a4818" />
+              <stop offset="100%" stopColor="#30200a" />
             </linearGradient>
-            <linearGradient id="paper" x1="0" x2="0" y1="0" y2="1">
-              <stop offset="0%" stopColor="#f0e4cc" />
-              <stop offset="100%" stopColor="#a68c60" />
+            <linearGradient id="paper" x1="0" y1="0" x2="0.2" y2="1">
+              <stop offset="0%" stopColor="#fff5db" />
+              <stop offset="50%" stopColor="#ddc898" />
+              <stop offset="100%" stopColor="#8a6e3c" />
             </linearGradient>
           </defs>
 
@@ -367,78 +374,105 @@ function DreamObject({ kind }: { kind: "pill" | "coin" | "key" | "note" }) {
   if (kind === "pill") {
     return (
       <g>
-        {/* Shadow below */}
-        <ellipse cx="0" cy="15" rx="18" ry="2.2" fill="#000" opacity="0.35" />
-        {/* Capsule — two halves */}
-        <rect x="-17" y="-7" width="17" height="14" fill="url(#pillBody)" rx="0.5" />
-        <rect x="0" y="-7" width="17" height="14" fill="url(#pillAmber)" rx="0.5" />
-        <ellipse cx="-17" cy="0" rx="7" ry="7" fill="url(#pillBody)" />
-        <ellipse cx="17" cy="0" rx="7" ry="7" fill="url(#pillAmber)" />
-        {/* Seam line */}
-        <line x1="0" y1="-6.5" x2="0" y2="6.5" stroke="#6a4818" strokeWidth="0.4" opacity="0.5" />
-        {/* Top highlight — the "3D" cheat */}
-        <ellipse cx="-4" cy="-4" rx="14" ry="1.4" fill="#fff" opacity="0.55" />
+        {/* Soft ground shadow */}
+        <ellipse cx="1" cy="17" rx="22" ry="3" fill="#000" opacity="0.55" />
+        {/* Body — two halves of a capsule, each with deep multi-stop gradients */}
+        <rect x="-20" y="-9" width="20" height="18" fill="url(#pillBody)" rx="0.6" />
+        <ellipse cx="-20" cy="0" rx="9" ry="9" fill="url(#pillBody)" />
+        <rect x="0" y="-9" width="20" height="18" fill="url(#pillAmber)" rx="0.6" />
+        <ellipse cx="20" cy="0" rx="9" ry="9" fill="url(#pillAmber)" />
+        {/* Equatorial seam */}
+        <line x1="0" y1="-8.5" x2="0" y2="8.5" stroke="#3a2810" strokeWidth="0.6" />
+        {/* Specular band — a crisp white streak near the top */}
+        <rect x="-14" y="-7" width="28" height="1.6" fill="#fff" opacity="0.9" rx="0.8" />
+        {/* Soft secondary highlight below the specular */}
+        <ellipse cx="-4" cy="-4" rx="18" ry="1.6" fill="#fff" opacity="0.35" />
+        {/* Bottom dark rim for depth */}
+        <ellipse cx="0" cy="7.6" rx="22" ry="1.1" fill="#000" opacity="0.45" />
       </g>
     );
   }
   if (kind === "coin") {
     return (
       <g>
-        <ellipse cx="0" cy="14" rx="13" ry="2" fill="#000" opacity="0.35" />
+        {/* Ground shadow */}
+        <ellipse cx="1" cy="17" rx="15" ry="2.5" fill="#000" opacity="0.55" />
+        {/* Outer dark rim (coin edge, visible underneath) */}
+        <circle cx="0" cy="1" r="14" fill="#1a1008" />
+        {/* Coin face with directional radial gradient */}
         <circle cx="0" cy="0" r="13" fill="url(#coinFace)" />
-        <circle cx="0" cy="0" r="13" fill="none" stroke="#6a4818" strokeWidth="0.6" />
-        <circle cx="0" cy="0" r="9" fill="none" stroke="#8e6a3d" strokeWidth="0.3" />
-        {/* Engraved mark */}
+        {/* Double engraved rings */}
+        <circle cx="0" cy="0" r="13" fill="none" stroke="#3a2810" strokeWidth="0.7" />
+        <circle cx="0" cy="0" r="11" fill="none" stroke="#7a5018" strokeWidth="0.45" opacity="0.7" />
+        {/* Stamped "s" */}
         <text
           x="0"
-          y="4"
-          fontSize="11"
+          y="5"
+          fontSize="14"
           textAnchor="middle"
-          fill="#6a4818"
+          fill="#3a2810"
           fontFamily="serif"
           fontStyle="italic"
-          opacity="0.65"
+          opacity="0.78"
         >
           s
         </text>
-        {/* Specular highlight */}
-        <ellipse cx="-4" cy="-4" rx="4.5" ry="2.2" fill="#fff" opacity="0.45" />
+        {/* Primary specular */}
+        <ellipse cx="-4" cy="-5" rx="6" ry="3" fill="#fff" opacity="0.6" />
+        {/* Pin-point secondary specular */}
+        <ellipse cx="-6.5" cy="-7.5" rx="2.5" ry="1.2" fill="#fff" opacity="0.55" />
       </g>
     );
   }
   if (kind === "key") {
     return (
       <g>
-        <ellipse cx="0" cy="13" rx="15" ry="1.8" fill="#000" opacity="0.3" />
-        {/* Bow */}
-        <circle cx="-13" cy="0" r="7" fill="none" stroke="url(#brass)" strokeWidth="2.4" />
-        <circle cx="-13" cy="0" r="2.5" fill="#1a1008" />
+        {/* Shadow */}
+        <ellipse cx="0" cy="14" rx="17" ry="2" fill="#000" opacity="0.5" />
+        {/* Bow: thick brass ring */}
+        <circle cx="-14" cy="0" r="8" fill="none" stroke="url(#brass)" strokeWidth="3.2" />
+        <circle cx="-14" cy="0" r="2.8" fill="#0a0805" />
         {/* Shaft */}
-        <rect x="-6" y="-1.6" width="17" height="3.2" fill="url(#brass)" rx="0.5" />
+        <rect x="-6.5" y="-2.2" width="19" height="4.4" fill="url(#brass)" rx="0.8" />
         {/* Teeth */}
-        <rect x="4" y="1.6" width="3" height="3" fill="url(#brass)" />
-        <rect x="8.5" y="1.6" width="2" height="4" fill="url(#brass)" />
-        {/* Highlight on shaft */}
-        <rect x="-6" y="-1.6" width="17" height="0.8" fill="#fff" opacity="0.4" />
+        <rect x="4" y="2.2" width="3" height="3.8" fill="url(#brass)" />
+        <rect x="8.5" y="2.2" width="2.5" height="5" fill="url(#brass)" />
+        {/* Bright specular band along the shaft's top edge */}
+        <rect x="-6.5" y="-2.2" width="19" height="1.3" fill="#fff" opacity="0.75" rx="0.8" />
+        {/* A glint on the ring's upper arc */}
+        <path
+          d="M -20 -3 A 8 8 0 0 1 -12 -7"
+          fill="none"
+          stroke="#fff"
+          strokeWidth="0.8"
+          opacity="0.7"
+        />
+        {/* Bottom shadow line under shaft */}
+        <rect x="-6.5" y="1.7" width="19" height="0.6" fill="#000" opacity="0.35" rx="0.3" />
       </g>
     );
   }
   // note
   return (
     <g>
-      <ellipse cx="0" cy="18" rx="12" ry="1.6" fill="#000" opacity="0.3" />
-      <rect x="-10" y="-14" width="20" height="28" fill="url(#paper)" rx="0.8" />
-      {/* Slight fold line */}
-      <line x1="-10" y1="-4" x2="10" y2="-4" stroke="#6a4e25" strokeWidth="0.3" opacity="0.4" />
+      {/* Shadow, offset slightly for dog-ear drop */}
+      <ellipse cx="2" cy="18" rx="14" ry="2.4" fill="#000" opacity="0.5" />
+      {/* Paper with a dog-ear corner on the bottom-left */}
+      <path
+        d="M -10 -14 L 10 -14 L 10 14 L -7 14 L -10 11 Z"
+        fill="url(#paper)"
+      />
+      {/* Dog-ear triangle (darker — the folded underside) */}
+      <path d="M -10 11 L -7 14 L -7 11 Z" fill="#8a6e3c" opacity="0.85" />
       {/* Handwritten scribbles */}
-      <line x1="-7" y1="-9" x2="6" y2="-9" stroke="#4a3418" strokeWidth="0.4" opacity="0.7" />
-      <line x1="-7" y1="-6.5" x2="4" y2="-6.5" stroke="#4a3418" strokeWidth="0.4" opacity="0.7" />
-      <line x1="-7" y1="0" x2="7" y2="0" stroke="#4a3418" strokeWidth="0.4" opacity="0.7" />
-      <line x1="-7" y1="2.5" x2="5" y2="2.5" stroke="#4a3418" strokeWidth="0.4" opacity="0.7" />
-      <line x1="-7" y1="5" x2="6" y2="5" stroke="#4a3418" strokeWidth="0.4" opacity="0.7" />
-      <line x1="-7" y1="7.5" x2="3" y2="7.5" stroke="#4a3418" strokeWidth="0.4" opacity="0.7" />
-      {/* Slight paper sheen */}
-      <rect x="-10" y="-14" width="20" height="4" fill="#fff" opacity="0.25" rx="0.8" />
+      <line x1="-6" y1="-9" x2="7" y2="-9" stroke="#3a2a10" strokeWidth="0.5" opacity="0.82" />
+      <line x1="-6" y1="-6" x2="5" y2="-6" stroke="#3a2a10" strokeWidth="0.5" opacity="0.82" />
+      <line x1="-6" y1="-3" x2="7" y2="-3" stroke="#3a2a10" strokeWidth="0.5" opacity="0.82" />
+      <line x1="-6" y1="1" x2="6" y2="1" stroke="#3a2a10" strokeWidth="0.5" opacity="0.82" />
+      <line x1="-6" y1="4" x2="7" y2="4" stroke="#3a2a10" strokeWidth="0.5" opacity="0.82" />
+      <line x1="-6" y1="7" x2="3" y2="7" stroke="#3a2a10" strokeWidth="0.5" opacity="0.82" />
+      {/* Top sheen — paper catches light */}
+      <rect x="-10" y="-14" width="20" height="3.2" fill="#fff" opacity="0.4" rx="0.5" />
     </g>
   );
 }
