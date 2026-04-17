@@ -266,8 +266,19 @@ function Stage() {
         <boxGeometry args={[stageW, stageH, stageD]} />
         <meshStandardMaterial color="#1a0505" roughness={0.88} />
       </mesh>
-      {/* Stage floor trim — a thin brass strip at the front edge */}
-      <mesh position={[0, stageH + 0.03, stageD / 2]} castShadow>
+      {/* Apron — a shallow extension of the deck in FRONT of the
+          curtain line so the visible front row of the candle ring
+          has a surface to stand on. Matches the deck material. */}
+      <mesh
+        position={[0, stageH / 2, stageD / 2 + 0.3]}
+        castShadow
+        receiveShadow
+      >
+        <boxGeometry args={[stageW, stageH, 0.6]} />
+        <meshStandardMaterial color="#1a0505" roughness={0.88} />
+      </mesh>
+      {/* Stage floor trim — a thin brass strip at the APRON front */}
+      <mesh position={[0, stageH + 0.03, stageD / 2 + 0.6]} castShadow>
         <boxGeometry args={[stageW, 0.06, 0.06]} />
         <meshStandardMaterial
           color="#8b6a34"
@@ -322,6 +333,243 @@ function Stage() {
         distance={6}
         decay={2}
       />
+
+      {/* Ring of candles around the deck perimeter (on top of deck).
+          Front row sits on the apron (visible); back + side rows sit
+          on the main deck behind closed curtains, providing only an
+          implicit energy inside the stage. */}
+      <StageCandleRing stageW={stageW} stageD={stageD} stageH={stageH} />
+
+      {/* Bleed-through glow on the front of the curtain — fakes the
+          side/back candle firelight passing through the velvet. */}
+      <CurtainBleedGlow stageD={stageD} stageH={stageH} />
+    </group>
+  );
+}
+
+// ————— candle ring on stage deck perimeter —————
+
+function StageCandleRing({
+  stageW,
+  stageD,
+  stageH,
+}: {
+  stageW: number;
+  stageD: number;
+  stageH: number;
+}) {
+  const candles = useMemo(() => {
+    const FRONT_Z = stageD / 2 + 0.3; // on apron
+    const BACK_Z = -stageD / 2 + 0.35;
+    const LEFT_X = -stageW / 2 + 0.35;
+    const RIGHT_X = stageW / 2 - 0.35;
+    const out: Array<{
+      x: number;
+      z: number;
+      h: number;
+      seed: number;
+      lit: boolean;
+    }> = [];
+    const N_FRONT = 7;
+    const N_BACK = 7;
+    const N_SIDE = 3;
+    for (let i = 0; i < N_FRONT; i++) {
+      const f = i / (N_FRONT - 1);
+      out.push({
+        x: THREE.MathUtils.lerp(-stageW / 2 + 0.7, stageW / 2 - 0.7, f),
+        z: FRONT_Z,
+        h: 0.26 + Math.random() * 0.14,
+        seed: Math.random() * 10,
+        lit: true, // visible → real pointLight
+      });
+    }
+    for (let i = 0; i < N_BACK; i++) {
+      const f = i / (N_BACK - 1);
+      out.push({
+        x: THREE.MathUtils.lerp(-stageW / 2 + 0.7, stageW / 2 - 0.7, f),
+        z: BACK_Z,
+        h: 0.26 + Math.random() * 0.14,
+        seed: Math.random() * 10,
+        lit: false, // hidden behind curtain, no GPU cost
+      });
+    }
+    for (let i = 0; i < N_SIDE; i++) {
+      const f = (i + 1) / (N_SIDE + 1);
+      const z = THREE.MathUtils.lerp(BACK_Z, FRONT_Z, f);
+      out.push({
+        x: LEFT_X,
+        z,
+        h: 0.26 + Math.random() * 0.14,
+        seed: Math.random() * 10,
+        lit: false,
+      });
+      out.push({
+        x: RIGHT_X,
+        z,
+        h: 0.26 + Math.random() * 0.14,
+        seed: Math.random() * 10,
+        lit: false,
+      });
+    }
+    return out;
+  }, [stageW, stageD]);
+
+  const flameRefs = useRef<Array<THREE.Mesh | null>>(
+    Array(candles.length).fill(null),
+  );
+  const lightRefs = useRef<Array<THREE.PointLight | null>>(
+    Array(candles.length).fill(null),
+  );
+
+  useFrame(({ clock }) => {
+    for (let i = 0; i < candles.length; i++) {
+      const c = candles[i];
+      const t = clock.elapsedTime + c.seed;
+      const flick =
+        1 + Math.sin(t * 3.3) * 0.22 + Math.sin(t * 7.5 + 0.4) * 0.13;
+      const f = flameRefs.current[i];
+      if (f) f.scale.setScalar(0.85 + 0.3 * (flick - 1) * 2);
+      if (c.lit) {
+        const l = lightRefs.current[i];
+        if (l) l.intensity = 1.3 * flick;
+      }
+    }
+  });
+
+  return (
+    <group>
+      {candles.map((c, i) => (
+        <group key={i} position={[c.x, stageH, c.z]}>
+          {/* Thicker candle wax — visible at stage distance */}
+          <mesh position={[0, c.h / 2, 0]} castShadow>
+            <cylinderGeometry args={[0.05, 0.06, c.h, 12]} />
+            <meshStandardMaterial color="#f2e6ca" roughness={0.75} />
+          </mesh>
+          {/* Flame: bright core + a softer outer halo sprite */}
+          <mesh
+            ref={(el) => {
+              flameRefs.current[i] = el;
+            }}
+            position={[0, c.h + 0.09, 0]}
+          >
+            <sphereGeometry args={[0.09, 12, 12]} />
+            <meshBasicMaterial color="#ffd890" toneMapped={false} />
+          </mesh>
+          <mesh position={[0, c.h + 0.09, 0]}>
+            <sphereGeometry args={[0.16, 12, 12]} />
+            <meshBasicMaterial
+              color="#ffa040"
+              toneMapped={false}
+              transparent
+              opacity={0.35}
+              depthWrite={false}
+              blending={THREE.AdditiveBlending}
+            />
+          </mesh>
+          {c.lit && (
+            <pointLight
+              ref={(el) => {
+                lightRefs.current[i] = el;
+              }}
+              position={[0, c.h + 0.1, 0]}
+              color="#f0b070"
+              intensity={1.5}
+              distance={5.5}
+              decay={1.6}
+            />
+          )}
+        </group>
+      ))}
+    </group>
+  );
+}
+
+// ————— curtain bleed-through glow —————
+// Soft, warm, flickering patches painted on the FRONT of the stage
+// curtain, simulating firelight from the candles behind it seeping
+// through the velvet. These are the real "energy accumulating behind
+// the curtain" cue; the actual back/side candles are occluded.
+
+function makeRadialGlowTexture(): THREE.CanvasTexture {
+  const SIZE = 128;
+  const c = document.createElement("canvas");
+  c.width = c.height = SIZE;
+  const ctx = c.getContext("2d")!;
+  const g = ctx.createRadialGradient(
+    SIZE / 2,
+    SIZE / 2,
+    0,
+    SIZE / 2,
+    SIZE / 2,
+    SIZE / 2,
+  );
+  g.addColorStop(0, "rgba(255, 220, 140, 1)");
+  g.addColorStop(0.35, "rgba(240, 150, 70, 0.55)");
+  g.addColorStop(1, "rgba(80, 30, 10, 0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, SIZE, SIZE);
+  const t = new THREE.CanvasTexture(c);
+  t.needsUpdate = true;
+  return t;
+}
+
+function CurtainBleedGlow({
+  stageD,
+  stageH,
+}: {
+  stageD: number;
+  stageH: number;
+}) {
+  const tex = useMemo(() => makeRadialGlowTexture(), []);
+  const patches = useMemo(() => {
+    // Distributed along the curtain width + height. Height is
+    // biased low so the glows sit where candle flames would be
+    // behind them (~y = stageH + 0.5 world).
+    const raw: Array<{ x: number; y: number; size: number }> = [
+      { x: -5.3, y: 0.4, size: 1.1 },
+      { x: -3.2, y: 1.3, size: 1.5 },
+      { x: -1.2, y: 0.3, size: 1.0 },
+      { x: 0.9, y: 1.1, size: 1.4 },
+      { x: 2.9, y: 0.7, size: 1.2 },
+      { x: 5.1, y: 1.5, size: 1.1 },
+    ];
+    return raw.map((p) => ({ ...p, seed: Math.random() * 10 }));
+  }, []);
+  const matRefs = useRef<Array<THREE.MeshBasicMaterial | null>>(
+    Array(patches.length).fill(null),
+  );
+  useFrame(({ clock }) => {
+    for (let i = 0; i < patches.length; i++) {
+      const m = matRefs.current[i];
+      if (!m) continue;
+      const t = clock.elapsedTime + patches[i].seed;
+      const flick =
+        0.55 + Math.sin(t * 2.3) * 0.22 + Math.sin(t * 5.8 + 0.3) * 0.1;
+      m.opacity = Math.max(0, 0.42 * flick);
+    }
+  });
+  // Patches sit just in FRONT of the curtain plane at local z =
+  // stageD/2 = curtain depth; +0.02 to avoid Z-fighting.
+  const z = stageD / 2 + 0.02;
+  return (
+    <group>
+      {patches.map((p, i) => (
+        <mesh key={i} position={[p.x, stageH + p.y, z]}>
+          <planeGeometry args={[p.size, p.size]} />
+          <meshBasicMaterial
+            ref={(el) => {
+              matRefs.current[i] = el;
+            }}
+            map={tex}
+            color="#ffb060"
+            transparent
+            opacity={0.35}
+            depthWrite={false}
+            blending={THREE.AdditiveBlending}
+            toneMapped={false}
+          />
+        </mesh>
+      ))}
     </group>
   );
 }
@@ -438,11 +686,6 @@ function Venus() {
         />
       </mesh>
 
-      {/* Small altar at Venus's feet — a low stone block with a
-          cluster of short pillar candles. Lives in her local frame
-          so it moves with her. */}
-      <VenusAltar />
-
       {/* Venus body. MeshStandardMaterial gives her full PBR
           lighting — every torchiere, sconce, altar spot, the new
           chest-aimed spot, and the hemisphere wash all affect her.
@@ -454,70 +697,6 @@ function Venus() {
   );
 }
 
-// ————— Venus altar — small stone block at her feet with candles —————
-
-function VenusAltar() {
-  const lightRefs = useRef<Array<THREE.PointLight | null>>([
-    null,
-    null,
-    null,
-  ]);
-  const seeds = useMemo(
-    () => [Math.random() * 10, Math.random() * 10, Math.random() * 10],
-    [],
-  );
-  useFrame(({ clock }) => {
-    for (let i = 0; i < 3; i++) {
-      const l = lightRefs.current[i];
-      if (!l) continue;
-      const t = clock.elapsedTime + seeds[i];
-      const flick = 1 + Math.sin(t * 3.6) * 0.2 + Math.sin(t * 7.9) * 0.12;
-      l.intensity = 1.3 * flick;
-    }
-  });
-  // Three candles of different heights on a small stone block in
-  // front of the pedestal (at +z in local frame).
-  const candles: Array<{ pos: [number, number, number]; h: number }> = [
-    { pos: [-0.15, 0, 0], h: 0.24 },
-    { pos: [0.0, 0, 0.05], h: 0.38 },
-    { pos: [0.17, 0, -0.01], h: 0.18 },
-  ];
-  return (
-    <group position={[0, 0, 0.7]}>
-      {/* Stone block */}
-      <mesh position={[0, 0.06, 0]} castShadow receiveShadow>
-        <boxGeometry args={[0.55, 0.12, 0.3]} />
-        <meshStandardMaterial
-          color="#302218"
-          roughness={0.95}
-          metalness={0}
-        />
-      </mesh>
-      {candles.map((c, i) => (
-        <group key={i} position={[c.pos[0], 0.12, c.pos[2]]}>
-          <mesh position={[0, c.h / 2, 0]} castShadow>
-            <cylinderGeometry args={[0.024, 0.026, c.h, 10]} />
-            <meshStandardMaterial color="#f2e6ca" roughness={0.75} />
-          </mesh>
-          <mesh position={[0, c.h + 0.04, 0]}>
-            <sphereGeometry args={[0.035, 10, 10]} />
-            <meshBasicMaterial color="#ffd08a" toneMapped={false} />
-          </mesh>
-          <pointLight
-            ref={(el) => {
-              lightRefs.current[i] = el;
-            }}
-            position={[0, c.h + 0.05, 0]}
-            color="#f0b070"
-            intensity={1.3}
-            distance={3.5}
-            decay={1.7}
-          />
-        </group>
-      ))}
-    </group>
-  );
-}
 
 function VenusBody({
   geometry,
@@ -555,27 +734,8 @@ function VenusBody({
     return mat;
   }, [tex]);
 
-  // Very slow breathing — a tiny y-oscillation + a fainter scale
-  // pulse on her chest area (achieved with uniform scale here;
-  // imperceptibly small). ~7s period.
-  const ref = useRef<THREE.Mesh>(null);
-  useFrame(({ clock }) => {
-    if (!ref.current) return;
-    const t = clock.elapsedTime;
-    const breath = Math.sin(t * 0.9) * 0.5 + Math.sin(t * 0.42 + 0.6) * 0.5;
-    ref.current.position.y = 1.51 + breath * 0.018;
-    const s = 1 + breath * 0.004;
-    ref.current.scale.set(s, s, 1);
-  });
-
-  return (
-    <mesh
-      ref={ref}
-      position={[0, 1.51, 0]}
-      geometry={geometry}
-      material={material}
-    />
-  );
+  // No breathing — a stone statue should be stone.
+  return <mesh position={[0, 1.51, 0]} geometry={geometry} material={material} />;
 }
 
 // ————— camera with a gentle mouse-parallax rig —————
@@ -1268,9 +1428,8 @@ export function RedRoom() {
         <Walls />
         <Stage />
 
-        {/* Candelabras on the stage deck, flanking the curtain */}
-        <Candelabra position={[-5.2, 1.0, -11.2]} />
-        <Candelabra position={[5.2, 1.0, -11.2]} />
+        {/* (Stage candelabras removed — the stage-deck candle ring
+            now handles this area.) */}
 
         {/* Four empty armchairs — two rows flanking the carpet.
             Armchairs are wider than the old boxy chairs so push x
