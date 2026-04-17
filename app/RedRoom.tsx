@@ -312,10 +312,12 @@ function makeContactShadowTexture(): THREE.CanvasTexture {
   const ctx = canvas.getContext("2d")!;
   const cx = SIZE / 2;
   const cy = SIZE / 2;
+  // Harder, darker shadow near the centre — more grounded.
   const gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, SIZE / 2);
-  gradient.addColorStop(0, "rgba(0,0,0,0.75)");
-  gradient.addColorStop(0.35, "rgba(0,0,0,0.55)");
-  gradient.addColorStop(0.7, "rgba(0,0,0,0.2)");
+  gradient.addColorStop(0, "rgba(0,0,0,0.95)");
+  gradient.addColorStop(0.22, "rgba(0,0,0,0.82)");
+  gradient.addColorStop(0.5, "rgba(0,0,0,0.4)");
+  gradient.addColorStop(0.8, "rgba(0,0,0,0.08)");
   gradient.addColorStop(1, "rgba(0,0,0,0)");
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, SIZE, SIZE);
@@ -347,6 +349,11 @@ function Venus() {
           vec4 c = texture2D(uMap, vUv);
           float lum = c.r + c.g + c.b - 0.06;
           if (lum < 0.12) discard;
+          // Discard the PNG's own painted pedestal (bottom ~13% of
+          // the image). A real 3D pedestal mesh lives here instead,
+          // so the pedestal picks up correct scene perspective +
+          // lighting + real cast shadow — no more 'floating' feel.
+          if (vUv.y < 0.13) discard;
           vec3 warm = c.rgb * vec3(1.0, 0.95, 0.82);
           gl_FragColor = vec4(warm * 0.94, 1.0);
         }
@@ -357,25 +364,46 @@ function Venus() {
 
   const shadowTex = useMemo(() => makeContactShadowTexture(), []);
 
-  // Group: ground shadow ellipse + Venus plane standing above.
-  // The shadow's elongated y radius (0.6) vs x radius (1.2) suggests
-  // the camera is looking down slightly — realistic foreshortened
-  // blob under her pedestal.
+  // Layout:
+  //   y=0.0 to 0.31  → 3D marble pedestal (height matches the PNG's
+  //                    own painted pedestal, which is masked out)
+  //   y=0.31 to 2.71 → Venus plane (height 2.4, with bottom 13% of
+  //                    the PNG discarded in the fragment shader)
   return (
     <group position={[-5.5, 0, -4.5]}>
-      {/* Contact shadow — ellipse of dark decal on the floor */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.015, 0]}>
-        <planeGeometry args={[2.4, 1.2]} />
+      {/* Ground shadow — larger, darker, sells weight */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.012, 0]}>
+        <planeGeometry args={[3.2, 1.8]} />
         <meshBasicMaterial
           map={shadowTex}
           transparent
           depthWrite={false}
-          opacity={0.9}
+          opacity={0.98}
         />
       </mesh>
-      {/* Venus herself — plane anchored at feet */}
-      <mesh position={[0, 1.15, 0]} material={material}>
-        <planeGeometry args={[1.55, 2.3]} />
+
+      {/* 3D marble pedestal block — cream stone, catches proper 3D
+          lighting from the torchieres, casts real shadow via the
+          AltarSpot. Dimensions: ~PNG pedestal's painted size. */}
+      <mesh position={[0, 0.155, 0]} castShadow receiveShadow>
+        <boxGeometry args={[0.9, 0.31, 0.55]} />
+        <meshStandardMaterial
+          color="#b0997a"
+          roughness={0.82}
+          metalness={0.02}
+        />
+      </mesh>
+      {/* Thin darker base line where pedestal meets floor */}
+      <mesh position={[0, 0.005, 0]} castShadow>
+        <boxGeometry args={[0.95, 0.01, 0.6]} />
+        <meshStandardMaterial color="#4a3e30" roughness={0.9} />
+      </mesh>
+
+      {/* Venus plane — feet (UV y≈0.13) align with the 3D pedestal's
+          top edge at y=0.31. The PNG's painted pedestal below that
+          is shader-discarded, so our 3D pedestal shows through. */}
+      <mesh position={[0, 1.2, 0]} material={material}>
+        <planeGeometry args={[1.6, 2.4]} />
       </mesh>
     </group>
   );
