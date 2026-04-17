@@ -203,14 +203,17 @@ function Walls() {
         pleatCount={16}
         pleatDepth={0.18}
       />
-      {/* Left wall */}
+      {/* Left wall — denser pleats, darker/muted so it recedes behind stage */}
       <CurtainPanel
         width={28}
         height={9}
         position={[-11, 4.5, -6]}
         rotation={[0, Math.PI / 2, 0]}
-        pleatCount={18}
-        pleatDepth={0.2}
+        pleatCount={32}
+        pleatDepth={0.22}
+        segments={180}
+        color="#5a0e0e"
+        sheenColor="#8a1818"
       />
       {/* Right wall */}
       <CurtainPanel
@@ -218,8 +221,11 @@ function Walls() {
         height={9}
         position={[11, 4.5, -6]}
         rotation={[0, -Math.PI / 2, 0]}
-        pleatCount={18}
-        pleatDepth={0.2}
+        pleatCount={32}
+        pleatDepth={0.22}
+        segments={180}
+        color="#5a0e0e"
+        sheenColor="#8a1818"
       />
       <VelvetCeiling />
     </group>
