@@ -194,46 +194,30 @@ function Walls() {
         pleatCount={18}
         pleatDepth={0.2}
       />
-      <RadialVelvetCeiling />
+      <VelvetCeiling />
     </group>
   );
 }
 
-function RadialVelvetCeiling() {
-  const geometry = useMemo(() => {
-    const radius = 14;
-    const geo = new THREE.CircleGeometry(radius, 80);
-    const pos = geo.attributes.position;
-    // Displace each vertex's z (i.e. "up" in the ceiling plane local
-    // coords) by a radial cosine — pleats radiating from the centre.
-    const pleatFreq = 16; // number of pleats around
-    for (let i = 0; i < pos.count; i++) {
-      const x = pos.getX(i);
-      const y = pos.getY(i);
-      const r = Math.sqrt(x * x + y * y);
-      const theta = Math.atan2(y, x);
-      const z = Math.cos(theta * pleatFreq) * 0.15 * (r / radius);
-      pos.setZ(i, z);
-    }
-    geo.computeVertexNormals();
-    return geo;
-  }, []);
-
+function VelvetCeiling() {
+  // Just a plain red velvet cloth above — flat, no pleats. Lets the
+  // pleated walls + ceiling-chandelier light do the drama; the ceiling
+  // is the quiet red "lid" closing the room.
   return (
     <mesh
       position={[0, 9, -6]}
       rotation={[Math.PI / 2, 0, 0]}
-      geometry={geometry}
       receiveShadow
     >
+      <planeGeometry args={[28, 28, 1, 1]} />
       <meshPhysicalMaterial
-        color="#4a0a0a"
+        color="#5a0f0f"
         roughness={0.95}
         metalness={0}
         sheen={1}
-        sheenColor="#8a1515"
-        sheenRoughness={0.35}
-        emissive="#1a0202"
+        sheenColor="#a01818"
+        sheenRoughness={0.4}
+        emissive="#1e0303"
         emissiveIntensity={0.3}
         side={THREE.DoubleSide}
       />
