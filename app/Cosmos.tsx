@@ -40,6 +40,17 @@ float hash(vec2 p) {
   return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
 }
 
+float noise2d(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(
+    mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x),
+    mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x),
+    f.y
+  );
+}
+
 void main() {
   vec2 uv = (gl_FragCoord.xy - u_resolution * 0.5) / min(u_resolution.x, u_resolution.y);
 
@@ -66,75 +77,76 @@ void main() {
 
   vec3 col = vec3(0.0);
 
-  // ————— concentric rings with a paper/ribbon feel —————
+  // ————— ink-blot cosmos: rings of organic painterly dots —————
   //
-  // Pure circles (no angular modulation). Each ring uses an asymmetric
-  // ribbon profile — peak shifted slightly so the band reads as a folded
-  // strip of paper catching light from one side. Crisp dark fold lines
-  // at band boundaries separate rings like stamped creases. Colours are
-  // warm bone against deep wine — desaturated, print-like, not orange.
+  // Tunnel structure is still concentric rings (so perspective rush
+  // survives), but each ring is populated by scattered bone-cream
+  // dots on deep indigo. Each (ring, slot) cell hosts one dot at a
+  // hash-based offset, with hash-based size, shape squash, and a 35%
+  // chance of being empty. Dot boundaries are noise-distorted so
+  // every edge looks like wet ink soaking into paper.
 
-  const float RING_FREQ = 1.4;
   const float PI = 3.14159265;
+  const float RING_FREQ = 1.2;
+  const float ANGULAR_SLOTS = 18.0;
 
   float bandIdx = floor(depth * RING_FREQ);
   float bandPos = fract(depth * RING_FREQ);
 
-  // ——— rope structure ———
-  // Each ring's surface is covered by several strands spiralling
-  // along its length. fiberCoord runs along the rope's "skin" on a
-  // diagonal: moving around the ring (phi) AND across the tube
-  // cross-section (bandPos) both advance it, which draws the twist.
+  float angPhase = (phi / (2.0 * PI)) * ANGULAR_SLOTS;
+  float slotIdx = floor(angPhase);
+  float slotLocal = fract(angPhase);
 
-  const float STRAND_COUNT = 4.0;
-  const float TWIST = 0.24;
+  vec2 cell = vec2(bandIdx, slotIdx);
+  float h1 = hash(cell);
+  float h2 = hash(cell + vec2(11.1, 7.3));
+  float h3 = hash(cell + vec2(23.7, 13.9));
+  float h4 = hash(cell + vec2(37.3, 19.1));
+  float h5 = hash(cell + vec2(41.7, 29.3));
 
-  float fiberCoord = (bandPos + phi * TWIST) * STRAND_COUNT;
-  float strandPos = fract(fiberCoord);
+  // Dot center anchored inside [0.32, 0.68] so it doesn't bleed into
+  // neighbouring cells even at max radius.
+  vec2 dotCenter = vec2(0.32 + h1 * 0.36, 0.32 + h2 * 0.36);
 
-  // Each strand has its own cylindrical cross-section (little tubes
-  // making up the big rope)
-  float fiberBump = sin(strandPos * PI);
+  float dotRadius = 0.14 + h3 * 0.18;
+  float squash = 0.7 + h4 * 0.6;
 
-  // Dark groove between strands — crisp, narrow, dominant
-  float grooveDist = min(strandPos, 1.0 - strandPos);
-  float groove = smoothstep(0.07, 0.0, grooveDist);
+  vec2 pixelPos = vec2(bandPos, slotLocal);
+  vec2 relPos = pixelPos - dotCenter;
+  relPos.x /= squash;
+  relPos.y *= squash;
+  float dist = length(relPos);
 
-  // Overall ring cross-section (subtle — the rope as a whole still has
-  // some curvature, but fibers do most of the shading now)
-  float ringCurve = sin(bandPos * PI);
+  // Painterly edge — two octaves of noise soak the boundary
+  float edgeN = noise2d(pixelPos * 22.0 + cell * 3.3) - 0.5;
+  edgeN += (noise2d(pixelPos * 48.0 + cell * 7.1) - 0.5) * 0.5;
+  float inked = smoothstep(
+    dotRadius + 0.025,
+    dotRadius - 0.015,
+    dist + edgeN * 0.05
+  );
 
-  // Combined rope shade
-  float rope = mix(0.35, 1.0, ringCurve) * (0.35 + 0.65 * fiberBump);
-  rope *= 1.0 - groove * 0.85;
+  // ~35% of cells have no dot — the scatter is sparse
+  float present = step(0.35, h5);
+  inked *= present;
 
-  // Crisp fold at the very band edge (separates neighbouring rings)
-  float fold = smoothstep(0.0, 0.025, bandPos) * smoothstep(1.0, 0.975, bandPos);
+  // Palette — deep indigo + bone cream, with a drifting warm hint
+  vec3 indigoDeep   = vec3(0.05, 0.06, 0.18);
+  vec3 indigo       = vec3(0.11, 0.13, 0.36);
+  vec3 creamDot     = vec3(0.92, 0.85, 0.66);
+  vec3 creamEdge    = vec3(0.45, 0.38, 0.24);
 
-  float parity = mod(bandIdx, 2.0);
+  // Background: indigo with a subtle orbit — hints there's a warm
+  // light somewhere in the void (the ghost light ahead)
+  float orbit = cos(phi - t * 0.3) * 0.5 + 0.5;
+  vec3 base = mix(indigoDeep, indigo, 0.35 + orbit * 0.55);
+  base += vec3(0.025, 0.018, 0.0) * orbit;
 
-  // Palette — warm bone vs deep wine, both desaturated
-  vec3 creamLight = vec3(0.90, 0.80, 0.58);
-  vec3 creamShadow = vec3(0.26, 0.16, 0.08);
-  vec3 darkLight = vec3(0.22, 0.10, 0.06);
-  vec3 darkShadow = vec3(0.05, 0.018, 0.01);
-  vec3 foldInk = vec3(0.015, 0.005, 0.003);
-  vec3 grooveInk = vec3(0.02, 0.008, 0.004);
+  // Dot: cream with a painted darker rim just inside the edge
+  float dotCore = smoothstep(dotRadius * 0.55, 0.0, dist + edgeN * 0.05);
+  vec3 dotCol = mix(creamEdge, creamDot, dotCore);
 
-  vec3 lightStrand = mix(creamShadow, creamLight, rope);
-  vec3 darkStrand  = mix(darkShadow, darkLight, rope * 0.7);
-
-  vec3 wallCol = mix(darkStrand, lightStrand, parity);
-
-  // Dark the grooves explicitly (not just scaled)
-  wallCol = mix(wallCol, grooveInk, groove * 0.6);
-
-  // Stamp the fold crease at ring boundaries
-  wallCol = mix(foldInk, wallCol, fold);
-
-  // Directional tilt orbiting the axis — a light source racing around
-  float rotTilt = cos(phi - t * 0.45) * 0.2;
-  wallCol *= 1.0 + rotTilt;
+  vec3 wallCol = mix(base, dotCol, inked);
 
   // Depth fade — driven by baseDepth so brightness is stable over time.
   float depthFade = exp(-baseDepth * 0.06);
@@ -150,7 +162,8 @@ void main() {
   float gFine = hash(gPos * 1.6) - 0.5;
   float gCoarse = hash(floor(gPos * 0.35)) - 0.5;
   float grain = gFine * 0.14 + gCoarse * 0.07;
-  wallCol += vec3(grain * 1.1, grain * 0.9, grain * 0.75) * depthFade;
+  // Grain tinted slightly cool to sit inside the indigo field
+  wallCol += vec3(grain * 0.9, grain * 0.95, grain * 1.15) * depthFade;
 
   // Smooth mask at center and outer edge
   float tunnelMask = smoothstep(0.08, 0.2, r) * smoothstep(2.2, 0.6, r);
