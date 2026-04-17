@@ -58,7 +58,7 @@ void main() {
   float baseDepth = 0.45 / rSafe;
 
   // Flowing depth = base + time. Only used to advance the ring pattern.
-  float speed = 0.42 + u_progress * u_progress * 0.45;
+  float speed = 0.75 + u_progress * u_progress * 0.6;
   float depth = baseDepth + t * speed;
 
   // Angular rotation — slow spin down the corridor + a little mouse yaw
@@ -74,7 +74,7 @@ void main() {
   // at band boundaries separate rings like stamped creases. Colours are
   // warm bone against deep wine — desaturated, print-like, not orange.
 
-  const float RING_FREQ = 0.48;
+  const float RING_FREQ = 1.4;
   const float PI = 3.14159265;
 
   float bandIdx = floor(depth * RING_FREQ);
@@ -103,8 +103,8 @@ void main() {
   // Stamp the fold crease at the edges
   wallCol = mix(foldInk, wallCol, fold);
 
-  // A soft directional tilt orbiting the axis — light source drifting
-  float rotTilt = cos(phi - t * 0.28) * 0.14;
+  // Directional tilt orbiting the axis — a light source racing around
+  float rotTilt = cos(phi - t * 0.45) * 0.2;
   wallCol *= 1.0 + rotTilt;
 
   // Depth fade — driven by baseDepth so brightness is stable over time.
