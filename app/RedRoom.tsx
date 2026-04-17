@@ -332,46 +332,31 @@ function Venus() {
     t.anisotropy = 8;
   }) as THREE.Texture;
 
-  const material = useMemo(() => {
-    return new THREE.ShaderMaterial({
-      uniforms: { uMap: { value: tex } },
-      vertexShader: /* glsl */ `
-        varying vec2 vUv;
-        void main() {
-          vUv = uv;
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }
-      `,
-      fragmentShader: /* glsl */ `
-        uniform sampler2D uMap;
-        varying vec2 vUv;
-        void main() {
-          vec4 c = texture2D(uMap, vUv);
-          float lum = c.r + c.g + c.b - 0.06;
-          if (lum < 0.12) discard;
-          // Discard the PNG's own painted pedestal (bottom ~13% of
-          // the image). A real 3D pedestal mesh lives here instead,
-          // so the pedestal picks up correct scene perspective +
-          // lighting + real cast shadow — no more 'floating' feel.
-          if (vUv.y < 0.13) discard;
-          vec3 warm = c.rgb * vec3(1.0, 0.95, 0.82);
-          gl_FragColor = vec4(warm * 0.94, 1.0);
-        }
-      `,
-      transparent: true,
-    });
-  }, [tex]);
+  // Plane geometry with UVs remapped so the bottom 13% of the PNG
+  // (the painted pedestal) is simply NOT SAMPLED. This lets the
+  // material be a plain MeshStandardMaterial instead of a custom
+  // shader — she now responds to all scene lights (hemisphere,
+  // torchieres, sconces, altar spot) like everything else.
+  const geometry = useMemo(() => {
+    const geo = new THREE.PlaneGeometry(1.7, 2.4, 1, 1);
+    const uv = geo.attributes.uv;
+    for (let i = 0; i < uv.count; i++) {
+      const v = uv.getY(i);
+      // Map plane v∈[0,1] to texture v∈[0.13, 1.0] — skip painted pedestal
+      uv.setY(i, 0.13 + v * 0.87);
+    }
+    uv.needsUpdate = true;
+    return geo;
+  }, []);
 
   const shadowTex = useMemo(() => makeContactShadowTexture(), []);
 
   // Layout:
-  //   y=0.0 to 0.31  → 3D marble pedestal (height matches the PNG's
-  //                    own painted pedestal, which is masked out)
-  //   y=0.31 to 2.71 → Venus plane (height 2.4, with bottom 13% of
-  //                    the PNG discarded in the fragment shader)
+  //   y=0 to 0.31       → 3D marble pedestal
+  //   y=0.31 to 2.71    → Venus body plane (feet at bottom, head at top)
   return (
     <group position={[-5.5, 0, -4.5]}>
-      {/* Ground shadow — larger, darker, sells weight */}
+      {/* Ground shadow */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.012, 0]}>
         <planeGeometry args={[3.2, 1.8]} />
         <meshBasicMaterial
@@ -382,9 +367,7 @@ function Venus() {
         />
       </mesh>
 
-      {/* 3D marble pedestal block — cream stone, catches proper 3D
-          lighting from the torchieres, casts real shadow via the
-          AltarSpot. Dimensions: ~PNG pedestal's painted size. */}
+      {/* 3D marble pedestal — cream stone, picks up scene lighting */}
       <mesh position={[0, 0.155, 0]} castShadow receiveShadow>
         <boxGeometry args={[0.9, 0.31, 0.55]} />
         <meshStandardMaterial
@@ -399,11 +382,27 @@ function Venus() {
         <meshStandardMaterial color="#4a3e30" roughness={0.9} />
       </mesh>
 
-      {/* Venus plane — feet (UV y≈0.13) align with the 3D pedestal's
-          top edge at y=0.31. The PNG's painted pedestal below that
-          is shader-discarded, so our 3D pedestal shows through. */}
-      <mesh position={[0, 1.2, 0]} material={material}>
-        <planeGeometry args={[1.6, 2.4]} />
+      {/* Venus body — plane centred at y=1.51 (midway between
+          pedestal top y=0.31 and her head at y=2.71). UV is
+          already remapped so the PNG's painted pedestal is cropped
+          out by the geometry — no shader discard needed.
+          MeshStandardMaterial with alphaMap = same texture (green
+          channel) + alphaTest threshold 0.1 keys out the black
+          background. Emissive keeps her readable even in the
+          darker corners of the room. */}
+      <mesh position={[0, 1.51, 0]} geometry={geometry} castShadow>
+        <meshStandardMaterial
+          map={tex}
+          alphaMap={tex}
+          transparent
+          alphaTest={0.1}
+          color="#d8c4a8"
+          emissive="#4a2a18"
+          emissiveIntensity={0.22}
+          roughness={0.72}
+          metalness={0.02}
+          side={THREE.DoubleSide}
+        />
       </mesh>
     </group>
   );
