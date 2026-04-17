@@ -413,6 +413,63 @@ function CameraRig() {
   );
 }
 
+// ————— ceremonial spotlight on the stage, with subtle candle flicker —————
+
+function CeremonialSpot() {
+  const ref = useRef<THREE.SpotLight>(null);
+  useFrame(({ clock }) => {
+    if (ref.current) {
+      const t = clock.elapsedTime;
+      // Three uncorrelated sines — gives an irregular flame-like
+      // wobble instead of a metronome pulse. Amplitude ±15 of 65.
+      const flicker =
+        Math.sin(t * 2.3) * 0.09 +
+        Math.sin(t * 3.7 + 1.2) * 0.06 +
+        Math.sin(t * 7.1 + 0.3) * 0.035;
+      ref.current.intensity = 65 + flicker * 18;
+    }
+  });
+  return (
+    <spotLight
+      ref={ref}
+      position={[0, 13, -6]}
+      angle={Math.PI / 4.5}
+      penumbra={0.55}
+      intensity={65}
+      distance={30}
+      decay={1.35}
+      color="#f0c880"
+      castShadow
+      shadow-mapSize={[1024, 1024]}
+    >
+      <object3D position={[0, 0, -13]} attach="target" />
+    </spotLight>
+  );
+}
+
+function SideSconce({ position }: { position: [number, number, number] }) {
+  const ref = useRef<THREE.PointLight>(null);
+  // Subtle candle-flame flicker per sconce
+  const seed = useMemo(() => Math.random() * 10, []);
+  useFrame(({ clock }) => {
+    if (ref.current) {
+      const t = clock.elapsedTime + seed;
+      const f = Math.sin(t * 4.1) * 0.15 + Math.sin(t * 6.7) * 0.08;
+      ref.current.intensity = 5.5 + f;
+    }
+  });
+  return (
+    <pointLight
+      ref={ref}
+      position={position}
+      color="#e0a050"
+      intensity={5.5}
+      distance={7}
+      decay={1.6}
+    />
+  );
+}
+
 // ————— main scene —————
 
 export function RedRoom() {
@@ -428,47 +485,32 @@ export function RedRoom() {
       dpr={[1, 2]}
       style={{ position: "absolute", inset: 0 }}
     >
-      <color attach="background" args={["#2a0a0a"]} />
-      <fog attach="fog" args={["#2a0a0a", 22, 60]} />
+      <color attach="background" args={["#1a0606"]} />
+      <fog attach="fog" args={["#1a0606", 16, 50]} />
 
       <Suspense fallback={null}>
         <CameraRig />
 
-        {/* Hemisphere light fills the room from above and below at
-            once — sky is a warm red (the curtains reflecting onto
-            each other), ground is a deeper warm. This is what gives
-            the Red Room its "the red is everywhere" quality — not a
-            single key light, but a soft red environmental wash. */}
-        <hemisphereLight
-          args={["#a02828", "#3a0a0a", 1.2]}
-        />
+        {/* Reduced red ambient wash — the room exists, but it's dim.
+            The spotlight on stage is the focus now. */}
+        <hemisphereLight args={["#5a1818", "#1a0505", 0.4]} />
+        <ambientLight intensity={0.14} color="#5a1818" />
 
-        {/* Soft omnidirectional ambient, same warm */}
-        <ambientLight intensity={0.35} color="#6a2020" />
+        {/* Ceremonial spotlight — high overhead, narrow cone, aimed
+            at the stage. Flickers subtly like a flame. This is the
+            beam of "being seen". */}
+        <CeremonialSpot />
 
-        {/* Central "chandelier" — a single bright warm point high in
-            the room, casting onto everything below */}
-        <pointLight
-          position={[0, 8, -6]}
-          intensity={35}
-          distance={22}
-          decay={1.5}
-          color="#f0c480"
-        />
+        {/* Two side sconces — small warm point-lights on the side
+            walls, like candelabras burning alone in the shadows */}
+        <SideSconce position={[-9, 5, -7]} />
+        <SideSconce position={[9, 5, -7]} />
 
-        {/* Warm rim from the back so the stage is illuminated from
-            behind the audience too */}
+        {/* A weak back rim so the audience floor isn't pure black */}
         <directionalLight
-          position={[0, 5, 14]}
-          intensity={0.5}
-          color="#d4a363"
-        />
-
-        {/* Soft side fill from the right, gives Venus a rim */}
-        <directionalLight
-          position={[8, 3, -4]}
-          intensity={0.4}
-          color="#c88a3a"
+          position={[0, 4, 12]}
+          intensity={0.12}
+          color="#8a4818"
         />
 
         <Floor />
