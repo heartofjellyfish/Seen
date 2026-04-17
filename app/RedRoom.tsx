@@ -382,30 +382,55 @@ function Venus() {
         <meshStandardMaterial color="#4a3e30" roughness={0.9} />
       </mesh>
 
-      {/* Venus body — plane centred at y=1.51 (midway between
-          pedestal top y=0.31 and her head at y=2.71). UV is
-          already remapped so the PNG's painted pedestal is cropped
-          out by the geometry — no shader discard needed.
-          MeshStandardMaterial with alphaMap = same texture (green
-          channel) + alphaTest threshold 0.1 keys out the black
-          background. Emissive keeps her readable even in the
-          darker corners of the room. */}
-      <mesh position={[0, 1.51, 0]} geometry={geometry} castShadow>
-        <meshStandardMaterial
-          map={tex}
-          alphaMap={tex}
-          transparent
-          alphaTest={0.1}
-          color="#d8c4a8"
-          emissive="#4a2a18"
-          emissiveIntensity={0.22}
-          roughness={0.72}
-          metalness={0.02}
-          side={THREE.DoubleSide}
-        />
-      </mesh>
+      {/* Venus body. MeshStandardMaterial gives her full PBR
+          lighting — every torchiere, sconce, altar spot, and the
+          hemisphere wash will affect her. Black-background keying
+          is done via an onBeforeCompile hook that injects a
+          luminance-based discard right after the map is sampled —
+          avoids the alphaMap-goes-semi-transparent bug that
+          alphaMap + transparent=true was causing. */}
+      <VenusBody geometry={geometry} tex={tex} />
     </group>
   );
+}
+
+function VenusBody({
+  geometry,
+  tex,
+}: {
+  geometry: THREE.BufferGeometry;
+  tex: THREE.Texture;
+}) {
+  const material = useMemo(() => {
+    const mat = new THREE.MeshStandardMaterial({
+      map: tex,
+      color: new THREE.Color("#d8c4a8"),
+      emissive: new THREE.Color("#4a2a18"),
+      emissiveIntensity: 0.22,
+      roughness: 0.72,
+      metalness: 0.02,
+      side: THREE.DoubleSide,
+    });
+
+    mat.onBeforeCompile = (shader) => {
+      // Inject luminance-based discard right after the map sample.
+      // `diffuseColor` here is already color * mapTexel, so very-
+      // dark pixels (the PNG's black background) get dropped.
+      shader.fragmentShader = shader.fragmentShader.replace(
+        "#include <map_fragment>",
+        `
+          #include <map_fragment>
+          vec4 venusTexel = texture2D(map, vMapUv);
+          float venusLum = venusTexel.r + venusTexel.g + venusTexel.b - 0.06;
+          if (venusLum < 0.15) discard;
+        `
+      );
+    };
+
+    return mat;
+  }, [tex]);
+
+  return <mesh position={[0, 1.51, 0]} geometry={geometry} material={material} />;
 }
 
 // ————— camera with a gentle mouse-parallax rig —————
