@@ -14,13 +14,67 @@ import * as THREE from "three";
    very mild mouse parallax shifts it without distortion.
    ———————————————————————————————————————————————— */
 
+/* Generate the chevron pattern as a Canvas texture. Because we
+   compute each pixel as a pure function of (x, y) — no polygon
+   drawing, no stroke rounding, no AA artefacts at stripe edges —
+   the pattern is seamless to tile in BOTH axes as long as the
+   tile dimensions are integer multiples of the pattern's period. */
+function makeChevronTexture(): THREE.CanvasTexture {
+  const SIZE = 1024;
+  const N_ZIGZAGS = 8; // zigzag cycles across the tile width
+  const N_STRIPES = 16; // alternating bands (integer multiple of 2 for seam)
+  const STRIPE_H = SIZE / N_STRIPES;
+  const PERIOD = SIZE / N_ZIGZAGS;
+  const AMP = STRIPE_H * 0.55;
+
+  const cream = [232, 213, 168]; // #e8d5a8
+  const wine = [74, 16, 16];      // #4a1010
+
+  const canvas = document.createElement("canvas");
+  canvas.width = SIZE;
+  canvas.height = SIZE;
+  const ctx = canvas.getContext("2d", { willReadFrequently: false })!;
+  const imgData = ctx.createImageData(SIZE, SIZE);
+  const data = imgData.data;
+
+  for (let y = 0; y < SIZE; y++) {
+    for (let x = 0; x < SIZE; x++) {
+      // Triangle wave in x: -1 at x=0, +1 at x=PERIOD/2, -1 at x=PERIOD
+      const phase = (x / PERIOD) % 1;
+      const tri = Math.abs(phase - 0.5) * 4 - 1;
+
+      // Shift y by the zigzag amplitude, then find stripe index
+      const yShifted = y + tri * AMP;
+      const stripeIdx = Math.floor(yShifted / STRIPE_H);
+      const parity = ((stripeIdx % 2) + 2) % 2; // safe mod for negatives
+
+      const c = parity === 0 ? wine : cream;
+      const idx = (y * SIZE + x) * 4;
+      data[idx] = c[0];
+      data[idx + 1] = c[1];
+      data[idx + 2] = c[2];
+      data[idx + 3] = 255;
+    }
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.generateMipmaps = true;
+  tex.needsUpdate = true;
+  return tex;
+}
+
 function Floor() {
-  const tex = useTexture("/floor.png", (t) => {
-    t.wrapS = t.wrapT = THREE.RepeatWrapping;
-    t.repeat.set(7, 18);
-    t.colorSpace = THREE.SRGBColorSpace;
-    t.anisotropy = 8;
-  }) as THREE.Texture;
+  const tex = useMemo(() => makeChevronTexture(), []);
+  // Repeat in world space — one canvas tile covers ~4 world units.
+  // With plane 28 wide x 50 deep, that's 7 tiles across, 12.5 down.
+  tex.repeat.set(7, 12);
 
   return (
     <mesh
