@@ -761,17 +761,30 @@ function ForegroundApron() {
             <stop offset="60%" stopColor="#7a5a34" stopOpacity="0.1" />
             <stop offset="100%" stopColor="#f0dcae" stopOpacity="0" />
           </linearGradient>
-          <linearGradient id="apronVenusStone" x1="0.2" y1="0" x2="0.8" y2="1">
-            <stop offset="0%" stopColor="#f5e4b6" />
-            <stop offset="45%" stopColor="#d4be8a" />
-            <stop offset="85%" stopColor="#8a7858" />
-            <stop offset="100%" stopColor="#5a4a30" />
-          </linearGradient>
           <linearGradient id="apronCarpet" x1="0" x2="0" y1="0" y2="1">
             <stop offset="0%" stopColor="#2f0b10" />
             <stop offset="55%" stopColor="#551820" />
             <stop offset="100%" stopColor="#6b1f27" />
           </linearGradient>
+
+          {/* Key out the pure-black background behind the Venus PNG.
+              Alpha gets computed as (R + G + B) - 0.05, so any pixel
+              with all three channels near zero drops to 0 and becomes
+              transparent. Marble pixels stay fully opaque with their
+              original RGB intact. Then componentTransfer snaps alpha
+              to hard {0, 1} so the matte is crisp, not fringe-y. */}
+          <filter id="venusKey" x="0" y="0" width="100%" height="100%">
+            <feColorMatrix
+              type="matrix"
+              values="1 0 0 0 0
+                      0 1 0 0 0
+                      0 0 1 0 0
+                      1 1 1 0 -0.05"
+            />
+            <feComponentTransfer>
+              <feFuncA type="discrete" tableValues="0 1" />
+            </feComponentTransfer>
+          </filter>
         </defs>
 
         {/* Cream base */}
@@ -795,39 +808,23 @@ function ForegroundApron() {
         <path d="M 635 0 L 420 300" stroke="rgba(232,192,137,0.12)" strokeWidth="1.2" fill="none" />
         <path d="M 765 0 L 980 300" stroke="rgba(232,192,137,0.12)" strokeWidth="1.2" fill="none" />
 
-        {/* Venus — LEFT apron, tall, standing on the chevron */}
-        <g transform="translate(235, 85) scale(1.9)" className={styles.venus}>
-          {/* Pedestal */}
-          <rect x="-22" y="105" width="44" height="18" fill="#1a0e08" />
-          <rect x="-22" y="105" width="44" height="3" fill="#3a2a14" />
-          {/* Drapery */}
-          <path
-            d="M -18 105
-               C -22 85, -20 60, -15 40
-               L 15 40
-               C 20 60, 22 85, 18 105
-               Z"
-            fill="url(#apronVenusStone)"
+        {/* Venus de Milo — Louvre PNG, black-keyed to transparent.
+            CSS filter chains the black-keyer (#venusKey) with a
+            sepia/contrast pass so the marble reads warm, not cold-
+            white, against the crimson curtains. */}
+        <g className={styles.venus}>
+          <image
+            href="/venus.png"
+            x="135"
+            y="30"
+            width="180"
+            height="260"
+            preserveAspectRatio="xMidYMax meet"
+            style={{
+              filter:
+                "url(#venusKey) sepia(0.28) saturate(0.85) brightness(0.94) contrast(1.05)",
+            }}
           />
-          <path d="M -12 100 Q -8 80 -5 55" stroke="#8a7858" strokeWidth="0.6" fill="none" opacity="0.6" />
-          <path d="M 12 100 Q 8 80 5 55" stroke="#8a7858" strokeWidth="0.6" fill="none" opacity="0.6" />
-          <path d="M -4 100 Q -2 80 -1 55" stroke="#8a7858" strokeWidth="0.45" fill="none" opacity="0.5" />
-          <path d="M 4 100 Q 2 80 1 55" stroke="#8a7858" strokeWidth="0.45" fill="none" opacity="0.5" />
-          {/* Waist */}
-          <ellipse cx="0" cy="32" rx="11" ry="14" fill="url(#apronVenusStone)" />
-          {/* Torso */}
-          <path d="M -9 18 C -11 10, -10 2, -8 -6 L 8 -6 C 10 2, 11 10, 9 18 Z" fill="url(#apronVenusStone)" />
-          {/* Chest shadow */}
-          <ellipse cx="-3" cy="5" rx="6" ry="7" fill="#a6906c" opacity="0.35" />
-          {/* Neck stump */}
-          <path d="M -3 -9 L 3 -9 L 3 -14 L -3 -14 Z" fill="url(#apronVenusStone)" />
-          {/* Arm stumps */}
-          <ellipse cx="-10" cy="-2" rx="4" ry="5" fill="url(#apronVenusStone)" />
-          <ellipse cx="-10" cy="-2" rx="3" ry="2" fill="#7a6848" opacity="0.5" />
-          <ellipse cx="10" cy="-2" rx="4" ry="5" fill="url(#apronVenusStone)" />
-          <ellipse cx="10" cy="-2" rx="3" ry="2" fill="#7a6848" opacity="0.5" />
-          {/* Highlight */}
-          <ellipse cx="-4" cy="-2" rx="5" ry="18" fill="#fff" opacity="0.15" />
         </g>
 
         {/* Traffic light — RIGHT apron */}
