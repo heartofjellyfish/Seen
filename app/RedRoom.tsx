@@ -6,48 +6,54 @@ import { PerspectiveCamera, useTexture } from "@react-three/drei";
 import * as THREE from "three";
 
 /* ————————————————————————————————————————————————
-   Red Room — real 3D via Three.js / react-three-fiber.
+   Red Room — a real 3D stage-in-a-curtained-room.
 
-   A small room: chevron floor, three red velvet walls + ceiling,
-   a ghost-lit brass lamp at the back, and Venus standing on the
-   left. The camera sits at eye level looking slightly down; a
-   very mild mouse parallax shifts it without distortion.
+   Layout (top-down, camera looking in -z):
+
+                  [back curtain z=-22]
+                  ┌────────────────┐
+                  │ [raised stage]  │
+                  │ ┌──────────┐    │
+   left curtain  ─┤ │ closed   │    ├─ right curtain
+                  │ │ curtain  │    │
+                  │ └──────────┘    │
+                  │   chevron       │
+                  │   floor         │
+                  │                 │
+   venus ·        │                 │
+                  │                 │
+                  └─────────────────┘
+                         ▲
+                       camera
    ———————————————————————————————————————————————— */
 
-/* Generate the chevron pattern as a Canvas texture. Because we
-   compute each pixel as a pure function of (x, y) — no polygon
-   drawing, no stroke rounding, no AA artefacts at stripe edges —
-   the pattern is seamless to tile in BOTH axes as long as the
-   tile dimensions are integer multiples of the pattern's period. */
+// ————— procedural chevron floor (seamless) —————
+
 function makeChevronTexture(): THREE.CanvasTexture {
   const SIZE = 1024;
-  const N_ZIGZAGS = 8; // zigzag cycles across the tile width
-  const N_STRIPES = 16; // alternating bands (integer multiple of 2 for seam)
+  const N_ZIGZAGS = 8;
+  const N_STRIPES = 16;
   const STRIPE_H = SIZE / N_STRIPES;
   const PERIOD = SIZE / N_ZIGZAGS;
   const AMP = STRIPE_H * 0.55;
 
-  const cream = [232, 213, 168]; // #e8d5a8
-  const wine = [74, 16, 16];      // #4a1010
+  const cream = [232, 213, 168];
+  const wine = [74, 16, 16];
 
   const canvas = document.createElement("canvas");
   canvas.width = SIZE;
   canvas.height = SIZE;
-  const ctx = canvas.getContext("2d", { willReadFrequently: false })!;
+  const ctx = canvas.getContext("2d")!;
   const imgData = ctx.createImageData(SIZE, SIZE);
   const data = imgData.data;
 
   for (let y = 0; y < SIZE; y++) {
     for (let x = 0; x < SIZE; x++) {
-      // Triangle wave in x: -1 at x=0, +1 at x=PERIOD/2, -1 at x=PERIOD
       const phase = (x / PERIOD) % 1;
       const tri = Math.abs(phase - 0.5) * 4 - 1;
-
-      // Shift y by the zigzag amplitude, then find stripe index
       const yShifted = y + tri * AMP;
       const stripeIdx = Math.floor(yShifted / STRIPE_H);
-      const parity = ((stripeIdx % 2) + 2) % 2; // safe mod for negatives
-
+      const parity = ((stripeIdx % 2) + 2) % 2;
       const c = parity === 0 ? wine : cream;
       const idx = (y * SIZE + x) * 4;
       data[idx] = c[0];
@@ -66,50 +72,91 @@ function makeChevronTexture(): THREE.CanvasTexture {
   tex.minFilter = THREE.LinearMipmapLinearFilter;
   tex.magFilter = THREE.LinearFilter;
   tex.generateMipmaps = true;
-  tex.needsUpdate = true;
   return tex;
 }
 
 function Floor() {
   const tex = useMemo(() => makeChevronTexture(), []);
-  // Repeat in world space — one canvas tile covers ~4 world units.
-  // With plane 28 wide x 50 deep, that's 7 tiles across, 12.5 down.
-  tex.repeat.set(7, 12);
+  tex.repeat.set(7, 14);
 
   return (
     <mesh
       rotation={[-Math.PI / 2, 0, 0]}
-      position={[0, 0, -5]}
+      position={[0, 0, -8]}
       receiveShadow
     >
-      <planeGeometry args={[28, 50, 1, 1]} />
-      <meshStandardMaterial
-        map={tex}
-        roughness={0.92}
-        metalness={0.02}
-      />
+      <planeGeometry args={[28, 48, 1, 1]} />
+      <meshStandardMaterial map={tex} roughness={0.92} metalness={0.02} />
     </mesh>
   );
 }
 
-function VelvetPanel({
-  width = 8,
-  height = 8,
+// ————— pleated velvet curtain panel —————
+//
+// A plane with vertical pleats baked into the geometry (cosine
+// displacement along x, vertex normals recomputed). The material
+// uses MeshPhysicalMaterial.sheen so you get the characteristic
+// velvet back-scatter glow at grazing angles.
+
+function CurtainPanel({
+  width,
+  height,
   position,
   rotation,
+  pleatCount = 14,
+  pleatDepth = 0.18,
+  color = "#3a0505",
+  sheenColor = "#9a1a1a",
+  segments = 80,
 }: {
-  width?: number;
-  height?: number;
+  width: number;
+  height: number;
   position: [number, number, number];
   rotation?: [number, number, number];
+  pleatCount?: number;
+  pleatDepth?: number;
+  color?: string;
+  sheenColor?: string;
+  segments?: number;
 }) {
+  const geometry = useMemo(() => {
+    const geo = new THREE.PlaneGeometry(width, height, segments, 6);
+    const pos = geo.attributes.position;
+    const pleatFreq = (pleatCount * Math.PI * 2) / width;
+    // Also introduce a very slow large-scale undulation so the
+    // curtain reads as hanging cloth, not a corrugated sheet.
+    const bigFreq = (Math.PI * 2) / width;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i);
+      const y = pos.getY(i);
+      // Pleats: main cosine; amplitude tapers near the top (hang
+      // gather) and grows toward the bottom (free cloth)
+      const topFalloff = THREE.MathUtils.smoothstep(y, height / 2, height / 2 - 0.8);
+      const amp = pleatDepth * (0.55 + 0.45 * (1 - topFalloff));
+      const z =
+        Math.cos(x * pleatFreq) * amp +
+        Math.cos(x * bigFreq + 0.6) * pleatDepth * 0.25;
+      pos.setZ(i, z);
+    }
+    geo.computeVertexNormals();
+    return geo;
+  }, [width, height, pleatCount, pleatDepth, segments]);
+
   return (
-    <mesh position={position} rotation={rotation} receiveShadow>
-      <planeGeometry args={[width, height, 32, 1]} />
-      <meshStandardMaterial
-        color="#4a0a0a"
+    <mesh
+      position={position}
+      rotation={rotation}
+      geometry={geometry}
+      receiveShadow
+      castShadow
+    >
+      <meshPhysicalMaterial
+        color={color}
         roughness={0.95}
-        metalness={0.04}
+        metalness={0}
+        sheen={1}
+        sheenColor={sheenColor}
+        sheenRoughness={0.35}
         side={THREE.DoubleSide}
       />
     </mesh>
@@ -119,47 +166,134 @@ function VelvetPanel({
 function Walls() {
   return (
     <group>
+      {/* Back wall — behind the stage */}
+      <CurtainPanel
+        width={28}
+        height={11}
+        position={[0, 5.5, -22]}
+        pleatCount={18}
+        pleatDepth={0.2}
+      />
       {/* Left wall */}
-      <VelvetPanel
-        width={14}
-        height={8}
-        position={[-7, 4, -5]}
+      <CurtainPanel
+        width={36}
+        height={11}
+        position={[-14, 5.5, -8]}
         rotation={[0, Math.PI / 2, 0]}
+        pleatCount={22}
+        pleatDepth={0.22}
       />
       {/* Right wall */}
-      <VelvetPanel
-        width={14}
-        height={8}
-        position={[7, 4, -5]}
+      <CurtainPanel
+        width={36}
+        height={11}
+        position={[14, 5.5, -8]}
         rotation={[0, -Math.PI / 2, 0]}
+        pleatCount={22}
+        pleatDepth={0.22}
       />
-      {/* Back wall */}
-      <VelvetPanel
-        width={14}
-        height={8}
-        position={[0, 4, -12]}
-      />
-      {/* Ceiling */}
-      <VelvetPanel
-        width={14}
-        height={14}
-        position={[0, 8, -5]}
+      {/* Ceiling — darker red, flat */}
+      <mesh
+        position={[0, 11, -8]}
         rotation={[Math.PI / 2, 0, 0]}
+        receiveShadow
+      >
+        <planeGeometry args={[28, 36]} />
+        <meshStandardMaterial
+          color="#1a0404"
+          roughness={0.95}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+    </group>
+  );
+}
+
+// ————— raised stage + its own proscenium curtains —————
+
+function Stage() {
+  const stageZ = -18;
+  const stageW = 9;
+  const stageD = 3.5;
+  const stageH = 0.9;
+  const curtainHeight = 7.5;
+  const pelmetHeight = 0.9;
+
+  return (
+    <group position={[0, 0, stageZ]}>
+      {/* Raised platform */}
+      <mesh position={[0, stageH / 2, 0]} castShadow receiveShadow>
+        <boxGeometry args={[stageW, stageH, stageD]} />
+        <meshStandardMaterial color="#1a0505" roughness={0.88} />
+      </mesh>
+      {/* Stage floor trim — a thin brass strip at the front edge */}
+      <mesh position={[0, stageH + 0.03, stageD / 2]} castShadow>
+        <boxGeometry args={[stageW, 0.06, 0.06]} />
+        <meshStandardMaterial
+          color="#8b6a34"
+          metalness={0.75}
+          roughness={0.45}
+        />
+      </mesh>
+
+      {/* Pelmet above stage curtain (valance) */}
+      <mesh
+        position={[0, stageH + curtainHeight + pelmetHeight / 2, stageD / 2]}
+        castShadow
+      >
+        <boxGeometry args={[stageW + 0.6, pelmetHeight, 0.35]} />
+        <meshPhysicalMaterial
+          color="#2a0404"
+          roughness={0.95}
+          metalness={0}
+          sheen={1}
+          sheenColor="#6a1010"
+          sheenRoughness={0.35}
+        />
+      </mesh>
+
+      {/* Stage curtain — two pleated panels meeting in the middle */}
+      <CurtainPanel
+        width={stageW / 2 + 0.3}
+        height={curtainHeight}
+        position={[-stageW / 4 + 0.15, stageH + curtainHeight / 2, stageD / 2]}
+        pleatCount={14}
+        pleatDepth={0.15}
+        color="#4a0808"
+        sheenColor="#a01818"
+      />
+      <CurtainPanel
+        width={stageW / 2 + 0.3}
+        height={curtainHeight}
+        position={[stageW / 4 - 0.15, stageH + curtainHeight / 2, stageD / 2]}
+        pleatCount={14}
+        pleatDepth={0.15}
+        color="#4a0808"
+        sheenColor="#a01818"
+      />
+
+      {/* Tiny inner warm glow as if the stage behind the curtain is lit */}
+      <pointLight
+        position={[0, stageH + 3, -0.3]}
+        color="#d4a363"
+        intensity={2.5}
+        distance={6}
+        decay={2}
       />
     </group>
   );
 }
 
+// ————— ghost light on the audience floor, facing the stage —————
+
 function GhostLight() {
   return (
-    <group position={[0, 2.2, -7]}>
-      {/* Glowing bulb */}
-      <mesh>
-        <sphereGeometry args={[0.17, 24, 24]} />
+    <group position={[0, 0, -10]}>
+      <mesh position={[0, 2.3, 0]}>
+        <sphereGeometry args={[0.16, 24, 24]} />
         <meshBasicMaterial color="#fff2c6" toneMapped={false} />
       </mesh>
-      {/* Bulb halo (larger dim sphere) */}
-      <mesh>
+      <mesh position={[0, 2.3, 0]}>
         <sphereGeometry args={[0.35, 16, 16]} />
         <meshBasicMaterial
           color="#f0c47c"
@@ -169,39 +303,31 @@ function GhostLight() {
           blending={THREE.AdditiveBlending}
         />
       </mesh>
-      {/* Warm point light */}
       <pointLight
+        position={[0, 2.3, 0]}
         color="#f0c47c"
-        intensity={18}
-        distance={22}
-        decay={1.6}
+        intensity={14}
+        distance={20}
+        decay={1.7}
         castShadow
         shadow-mapSize={[1024, 1024]}
       />
-      {/* Brass pole */}
-      <mesh position={[0, -1.1, 0]} castShadow>
-        <cylinderGeometry args={[0.04, 0.04, 2.2, 10]} />
-        <meshStandardMaterial
-          color="#8b6a34"
-          metalness={0.75}
-          roughness={0.42}
-        />
+      {/* Pole */}
+      <mesh position={[0, 1.1, 0]} castShadow>
+        <cylinderGeometry args={[0.04, 0.04, 2.3, 10]} />
+        <meshStandardMaterial color="#8b6a34" metalness={0.75} roughness={0.42} />
       </mesh>
       {/* Base */}
-      <mesh position={[0, -2.22, 0]} castShadow>
-        <cylinderGeometry args={[0.22, 0.28, 0.12, 20]} />
-        <meshStandardMaterial
-          color="#4a3518"
-          metalness={0.7}
-          roughness={0.55}
-        />
+      <mesh position={[0, 0.05, 0]} castShadow>
+        <cylinderGeometry args={[0.25, 0.3, 0.1, 20]} />
+        <meshStandardMaterial color="#4a3518" metalness={0.7} roughness={0.55} />
       </mesh>
     </group>
   );
 }
 
-/* Venus — plane with a shader material that keys out the PNG's
-   black background at the GPU, preserving marble shadows. */
+// ————— Venus — decor in the left corner —————
+
 function Venus() {
   const tex = useTexture("/venus.png", (t) => {
     t.colorSpace = THREE.SRGBColorSpace;
@@ -223,10 +349,8 @@ function Venus() {
         varying vec2 vUv;
         void main() {
           vec4 c = texture2D(uMap, vUv);
-          // Luminance-to-alpha: black becomes transparent, marble stays
           float lum = c.r + c.g + c.b - 0.06;
           if (lum < 0.12) discard;
-          // Slight warm tone-match to SEEN's palette
           vec3 warm = c.rgb * vec3(1.0, 0.95, 0.82);
           gl_FragColor = vec4(warm * 0.94, 1.0);
         }
@@ -236,11 +360,13 @@ function Venus() {
   }, [tex]);
 
   return (
-    <mesh position={[-3.3, 1.7, -2.2]} material={material}>
+    <mesh position={[-7, 1.35, -6]} material={material}>
       <planeGeometry args={[1.8, 2.7]} />
     </mesh>
   );
 }
+
+// ————— camera with a gentle mouse-parallax rig —————
 
 function CameraRig() {
   const cameraRef = useRef<THREE.PerspectiveCamera>(null);
@@ -248,16 +374,15 @@ function CameraRig() {
   const current = useRef({ x: 0, y: 0 });
 
   useFrame(({ mouse }) => {
-    // Smooth the mouse toward damped target
     target.current.x = mouse.x * 0.35;
-    target.current.y = mouse.y * 0.18;
+    target.current.y = mouse.y * 0.2;
     current.current.x += (target.current.x - current.current.x) * 0.06;
     current.current.y += (target.current.y - current.current.y) * 0.06;
 
     if (cameraRef.current) {
       cameraRef.current.position.x = current.current.x;
-      cameraRef.current.position.y = 1.65 + current.current.y;
-      cameraRef.current.lookAt(0, 1.5, -6);
+      cameraRef.current.position.y = 1.7 + current.current.y;
+      cameraRef.current.lookAt(0, 2.5, -18);
     }
   });
 
@@ -265,13 +390,15 @@ function CameraRig() {
     <PerspectiveCamera
       ref={cameraRef}
       makeDefault
-      position={[0, 1.65, 5.5]}
+      position={[0, 1.7, 8]}
       fov={52}
       near={0.1}
       far={100}
     />
   );
 }
+
+// ————— main scene —————
 
 export function RedRoom() {
   return (
@@ -281,30 +408,31 @@ export function RedRoom() {
         antialias: true,
         alpha: false,
         toneMapping: THREE.ACESFilmicToneMapping,
-        toneMappingExposure: 1.1,
+        toneMappingExposure: 1.05,
       }}
       dpr={[1, 2]}
       style={{ position: "absolute", inset: 0 }}
     >
-      <color attach="background" args={["#0a0605"]} />
-      <fog attach="fog" args={["#0a0605", 8, 24]} />
+      <color attach="background" args={["#0a0404"]} />
+      <fog attach="fog" args={["#0a0404", 12, 32]} />
 
       <Suspense fallback={null}>
         <CameraRig />
 
-        {/* Very low ambient — just enough so deep shadows aren't black */}
-        <ambientLight intensity={0.08} color="#3a1a0a" />
+        {/* Ambient — just enough so shadows aren't pitch black */}
+        <ambientLight intensity={0.07} color="#3a1a0a" />
 
-        {/* Fill light from front so the room isn't purely backlit */}
+        {/* Warm frontal fill from above, soft */}
         <directionalLight
-          position={[2, 4, 8]}
-          intensity={0.18}
-          color="#3a2a1a"
+          position={[0, 6, 10]}
+          intensity={0.22}
+          color="#4a2a1a"
         />
 
-        <GhostLight />
         <Floor />
         <Walls />
+        <Stage />
+        <GhostLight />
         <Venus />
       </Suspense>
     </Canvas>
