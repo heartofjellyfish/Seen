@@ -2,7 +2,7 @@
 
 import { Suspense, useMemo, useRef } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { Cloud, Clouds, PerspectiveCamera, useTexture } from "@react-three/drei";
+import { Cloud, Clouds, PerspectiveCamera, Sparkles, useTexture } from "@react-three/drei";
 import * as THREE from "three";
 
 /* ————————————————————————————————————————————————
@@ -462,10 +462,13 @@ function StageCandleRing({
 }
 
 // ————— stage mist — dry-ice fog on the apron —————
-// Swapped the hand-rolled billboard puffs for drei's <Clouds> +
-// <Cloud>, which instances N soft particles with proper soft-edge
-// alpha and internal depth fading — no more visible rectangular
-// seams between overlapping planes. Ground-hugging, central, warm.
+// Ground-hugging dry-ice effect. The secret is very flat bounds[1]
+// (height) so particles can't stack vertically into sky-cloud puffs,
+// small growth so individual particles stay tight, and high fade so
+// edges blend into the scene. Two layers at slightly different y
+// blend into one continuous flat bank; the candle ring's
+// MeshLambertMaterial response means the flickering pointLights
+// still animate the fog as warm breath.
 
 function StageMist({
   stageD,
@@ -475,58 +478,44 @@ function StageMist({
   stageD: number;
   stageH: number;
 }) {
-  // Anchor the cloud volume at the apron, centred on the stage
-  // front, rising from deck level to ~0.5m above it.
-  const anchor: [number, number, number] = [0, stageH + 0.25, stageD / 2 + 0.3];
+  // Anchor sits just above the deck surface so the fog hugs the floor.
+  const anchor: [number, number, number] = [0, stageH + 0.06, stageD / 2 + 0.2];
   return (
     <group position={anchor}>
-      {/* Using MeshLambertMaterial so the flickering front-row
-          candle lights register on the fog as warm breath. */}
-      <Clouds material={THREE.MeshLambertMaterial} limit={220}>
-        {/* Main thick bank — wide, short, living in the middle */}
+      <Clouds material={THREE.MeshLambertMaterial} limit={300}>
+        {/* Dense flat base — wide and pancake-thin so it reads as a
+            ground-level gas, not a cumulus cloud. High segments fill
+            the volume continuously; low growth keeps each particle
+            small so they merge rather than standing out individually. */}
         <Cloud
-          seed={7}
-          segments={48}
-          bounds={[6, 0.55, 0.9]}
-          volume={4.2}
-          smallestVolume={0.4}
-          growth={2.5}
-          speed={0.18}
-          concentrate="inside"
-          color="#d8c6a4"
-          opacity={0.95}
-          fade={14}
-        />
-        {/* Second softer bank — slightly offset + different phase
-            so the two layers roll against each other */}
-        <Cloud
-          seed={19}
-          segments={32}
-          bounds={[4.5, 0.5, 0.7]}
-          volume={3}
+          seed={3}
+          segments={90}
+          bounds={[10, 0.10, 1.1]}
+          volume={2.2}
           smallestVolume={0.3}
-          growth={2}
-          speed={0.26}
-          concentrate="random"
-          color="#e8d2a8"
-          opacity={0.75}
-          fade={14}
-          position={[0.3, 0.05, 0.05]}
+          growth={0.9}
+          speed={0.07}
+          concentrate="inside"
+          color="#cbbda0"
+          opacity={0.92}
+          fade={28}
         />
-        {/* Thin wisps that drift wider, thinning out at the edges */}
+        {/* Slightly wider fringe layer at the same height — the
+            outer wisps that trail off the apron edges. Very thin,
+            barely opaque, drift a little faster. */}
         <Cloud
-          seed={31}
-          segments={24}
-          bounds={[3.2, 0.35, 0.5]}
-          volume={1.8}
-          smallestVolume={0.25}
-          growth={1.5}
-          speed={0.3}
-          concentrate="outside"
-          color="#f0dcb0"
-          opacity={0.55}
-          fade={14}
-          position={[-0.4, 0.12, 0.02]}
+          seed={17}
+          segments={50}
+          bounds={[12, 0.08, 1.4]}
+          volume={1.6}
+          smallestVolume={0.2}
+          growth={0.7}
+          speed={0.11}
+          concentrate="inside"
+          color="#ddd0b5"
+          opacity={0.60}
+          fade={35}
+          position={[0, 0.02, 0.08]}
         />
       </Clouds>
     </group>
@@ -1236,72 +1225,25 @@ function CandleStand({ position }: { position: [number, number, number] }) {
   );
 }
 
-// ————— 4iii dust motes —————
-// Fewer, smaller, confined to the central corridor so they don't
-// speckle the curtains like stars. Additive blending so they only
-// show as a warm shimmer where they're actually in a lit pool,
-// and vanish against the dark walls.
+// ————— 4iii dust motes — drei <Sparkles> —————
+// Replaced the hand-rolled Points loop with drei's Sparkles, which
+// handles spawning, drift, and size-attenuation internally. The
+// scale box keeps motes confined to the central corridor (away from
+// the side curtains). Speed is low so they drift rather than dart.
 
 function DustMotes() {
-  const ref = useRef<THREE.Points>(null);
-  const { positions, speeds } = useMemo(() => {
-    const N = 80;
-    const positions = new Float32Array(N * 3);
-    const speeds = new Float32Array(N);
-    const X_HALF = 4.5; // keep away from side curtains
-    const Z_FAR = -9; // keep away from back curtain
-    const Z_NEAR = 3;
-    for (let i = 0; i < N; i++) {
-      positions[i * 3] = (Math.random() - 0.5) * X_HALF * 2;
-      positions[i * 3 + 1] = Math.random() * 5 + 0.2;
-      positions[i * 3 + 2] = Math.random() * (Z_NEAR - Z_FAR) + Z_FAR;
-      speeds[i] = 0.03 + Math.random() * 0.06;
-    }
-    return { positions, speeds };
-  }, []);
-
-  useFrame(({ clock }, dt) => {
-    if (!ref.current) return;
-    const geo = ref.current.geometry as THREE.BufferGeometry;
-    const arr = geo.attributes.position.array as Float32Array;
-    const t = clock.elapsedTime;
-    const step = Math.min(dt, 0.05);
-    const X_HALF = 4.5;
-    const Z_FAR = -9;
-    const Z_NEAR = 3;
-    for (let i = 0; i < speeds.length; i++) {
-      arr[i * 3 + 1] += speeds[i] * step;
-      arr[i * 3] += Math.sin(t * 0.25 + i) * step * 0.04;
-      arr[i * 3 + 2] += Math.cos(t * 0.2 + i * 1.3) * step * 0.025;
-      if (arr[i * 3 + 1] > 6) {
-        arr[i * 3 + 1] = 0.2;
-        arr[i * 3] = (Math.random() - 0.5) * X_HALF * 2;
-        arr[i * 3 + 2] = Math.random() * (Z_NEAR - Z_FAR) + Z_FAR;
-      }
-    }
-    geo.attributes.position.needsUpdate = true;
-  });
-
   return (
-    <points ref={ref}>
-      <bufferGeometry>
-        <bufferAttribute
-          attach="attributes-position"
-          count={positions.length / 3}
-          array={positions}
-          itemSize={3}
-        />
-      </bufferGeometry>
-      <pointsMaterial
-        size={0.028}
-        color="#d8a46a"
-        transparent
-        opacity={0.28}
-        sizeAttenuation
-        depthWrite={false}
-        toneMapped={true}
-      />
-    </points>
+    <Sparkles
+      count={80}
+      // [x, y, z] box centred on position — 9m wide, 5m tall, 12m deep
+      scale={[9, 5, 12]}
+      position={[0, 2.8, -3]}
+      size={1.4}
+      speed={0.18}
+      opacity={0.28}
+      color="#d8a46a"
+      noise={0.5}
+    />
   );
 }
 
