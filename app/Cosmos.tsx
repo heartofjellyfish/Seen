@@ -64,13 +64,13 @@ void main() {
 
   vec3 col = vec3(0.0);
 
-  // ————— pure concentric rings, each a 3D tube in cross-section —————
+  // ————— concentric rings with a paper/ribbon feel —————
   //
-  // No angular wave modulation: the band boundaries are perfect circles.
-  // The sense of motion comes from (a) depth shifting the rings toward
-  // the viewer and (b) a very slow rotating directional tilt that
-  // favours one side of each ring in brightness — like a light source
-  // orbiting the tunnel axis.
+  // Pure circles (no angular modulation). Each ring uses an asymmetric
+  // ribbon profile — peak shifted slightly so the band reads as a folded
+  // strip of paper catching light from one side. Crisp dark fold lines
+  // at band boundaries separate rings like stamped creases. Colours are
+  // warm bone against deep wine — desaturated, print-like, not orange.
 
   const float RING_FREQ = 0.48;
   const float PI = 3.14159265;
@@ -78,47 +78,52 @@ void main() {
   float bandIdx = floor(depth * RING_FREQ);
   float bandPos = fract(depth * RING_FREQ);
 
-  // Cylindrical cross-section per ring: 0 at edges, 1 at apex
-  float cross_ = sin(bandPos * PI);
-  float cyl = pow(cross_, 1.3);
+  // Asymmetric ribbon: peak at 0.4, steep climb, gentle fall
+  float ribbon = smoothstep(0.0, 0.4, bandPos) * smoothstep(1.0, 0.4, bandPos);
+
+  // Crisp fold at the very band edge (thin dark line)
+  float fold = smoothstep(0.0, 0.035, bandPos) * smoothstep(1.0, 0.965, bandPos);
 
   float parity = mod(bandIdx, 2.0);
 
-  vec3 cream = vec3(0.78, 0.48, 0.22);
-  vec3 creamEdge = vec3(0.14, 0.05, 0.025);
-  vec3 dark = vec3(0.06, 0.02, 0.012);
-  vec3 darkMid = vec3(0.22, 0.1, 0.05);
+  // Palette — warm bone vs deep wine, both desaturated
+  vec3 creamLight = vec3(0.88, 0.78, 0.56);  // warm bone
+  vec3 creamShadow = vec3(0.36, 0.24, 0.14); // bone in shadow
+  vec3 darkLight = vec3(0.22, 0.10, 0.06);   // wine highlight
+  vec3 darkShadow = vec3(0.05, 0.018, 0.01); // deep wine
+  vec3 foldInk = vec3(0.02, 0.008, 0.004);   // near-black crease
 
-  vec3 lightStrand = mix(creamEdge, cream, cyl);
-  lightStrand += vec3(0.18, 0.09, 0.03) * pow(cyl, 3.5);
-  vec3 darkStrand = mix(dark, darkMid, cyl * 0.75);
+  vec3 lightStrand = mix(creamShadow, creamLight, ribbon);
+  vec3 darkStrand  = mix(darkShadow, darkLight, ribbon * 0.7);
 
   vec3 wallCol = mix(darkStrand, lightStrand, parity);
 
-  // A soft directional tilt that orbits the tunnel axis — adds the
-  // sense of rotation without breaking the perfect circles.
-  float rotTilt = cos(phi - t * 0.28) * 0.11;
+  // Stamp the fold crease at the edges
+  wallCol = mix(foldInk, wallCol, fold);
+
+  // A soft directional tilt orbiting the axis — light source drifting
+  float rotTilt = cos(phi - t * 0.28) * 0.14;
   wallCol *= 1.0 + rotTilt;
 
-  // Depth falloff
-  float depthFade = exp(-depth * 0.058);
+  // Depth fade
+  float depthFade = exp(-depth * 0.06);
   wallCol *= depthFade;
+
+  // ————— paper grain (risograph / screen-print texture) —————
+  //
+  // Two layers of hash noise pinned to screen coordinates — the paper
+  // itself doesn't move, only the printed rings on it do. Tinted warm
+  // so grain still reads inside SEEN's palette.
+
+  vec2 gPos = gl_FragCoord.xy;
+  float gFine = hash(gPos * 1.6) - 0.5;
+  float gCoarse = hash(floor(gPos * 0.35)) - 0.5;
+  float grain = gFine * 0.14 + gCoarse * 0.07;
+  wallCol += vec3(grain * 1.1, grain * 0.9, grain * 0.75) * depthFade;
 
   // Smooth mask at center and outer edge
   float tunnelMask = smoothstep(0.08, 0.2, r) * smoothstep(2.2, 0.6, r);
   col += wallCol * tunnelMask;
-
-  // ————— fine dust grain on walls —————
-
-  vec2 grid = vec2(phi * 36.0, depth * 11.0);
-  vec2 ig = floor(grid);
-  vec2 fg = fract(grid);
-  float h = hash(ig);
-  if (h > 0.94 && tunnelMask > 0.3) {
-    float d = length(fg - 0.5);
-    float g = smoothstep(0.16, 0.0, d) * (h - 0.94) * 11.0;
-    col += vec3(0.55, 0.33, 0.16) * g * depthFade * 0.4;
-  }
 
   // ————— outer vignette —————
 
