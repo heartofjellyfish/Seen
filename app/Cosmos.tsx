@@ -80,27 +80,56 @@ void main() {
   float bandIdx = floor(depth * RING_FREQ);
   float bandPos = fract(depth * RING_FREQ);
 
-  // Asymmetric ribbon: peak at 0.4, steep climb, gentle fall
-  float ribbon = smoothstep(0.0, 0.4, bandPos) * smoothstep(1.0, 0.4, bandPos);
+  // ——— rope structure ———
+  // Each ring's surface is covered by several strands spiralling
+  // along its length. fiberCoord runs along the rope's "skin" on a
+  // diagonal: moving around the ring (phi) AND across the tube
+  // cross-section (bandPos) both advance it, which draws the twist.
 
-  // Crisp fold at the very band edge (thin dark line)
-  float fold = smoothstep(0.0, 0.035, bandPos) * smoothstep(1.0, 0.965, bandPos);
+  const float STRAND_COUNT = 4.0;
+  const float TWIST = 0.24;
+
+  float fiberCoord = (bandPos + phi * TWIST) * STRAND_COUNT;
+  float strandPos = fract(fiberCoord);
+
+  // Each strand has its own cylindrical cross-section (little tubes
+  // making up the big rope)
+  float fiberBump = sin(strandPos * PI);
+
+  // Dark groove between strands — crisp, narrow, dominant
+  float grooveDist = min(strandPos, 1.0 - strandPos);
+  float groove = smoothstep(0.07, 0.0, grooveDist);
+
+  // Overall ring cross-section (subtle — the rope as a whole still has
+  // some curvature, but fibers do most of the shading now)
+  float ringCurve = sin(bandPos * PI);
+
+  // Combined rope shade
+  float rope = mix(0.35, 1.0, ringCurve) * (0.35 + 0.65 * fiberBump);
+  rope *= 1.0 - groove * 0.85;
+
+  // Crisp fold at the very band edge (separates neighbouring rings)
+  float fold = smoothstep(0.0, 0.025, bandPos) * smoothstep(1.0, 0.975, bandPos);
 
   float parity = mod(bandIdx, 2.0);
 
   // Palette — warm bone vs deep wine, both desaturated
-  vec3 creamLight = vec3(0.88, 0.78, 0.56);  // warm bone
-  vec3 creamShadow = vec3(0.36, 0.24, 0.14); // bone in shadow
-  vec3 darkLight = vec3(0.22, 0.10, 0.06);   // wine highlight
-  vec3 darkShadow = vec3(0.05, 0.018, 0.01); // deep wine
-  vec3 foldInk = vec3(0.02, 0.008, 0.004);   // near-black crease
+  vec3 creamLight = vec3(0.90, 0.80, 0.58);
+  vec3 creamShadow = vec3(0.26, 0.16, 0.08);
+  vec3 darkLight = vec3(0.22, 0.10, 0.06);
+  vec3 darkShadow = vec3(0.05, 0.018, 0.01);
+  vec3 foldInk = vec3(0.015, 0.005, 0.003);
+  vec3 grooveInk = vec3(0.02, 0.008, 0.004);
 
-  vec3 lightStrand = mix(creamShadow, creamLight, ribbon);
-  vec3 darkStrand  = mix(darkShadow, darkLight, ribbon * 0.7);
+  vec3 lightStrand = mix(creamShadow, creamLight, rope);
+  vec3 darkStrand  = mix(darkShadow, darkLight, rope * 0.7);
 
   vec3 wallCol = mix(darkStrand, lightStrand, parity);
 
-  // Stamp the fold crease at the edges
+  // Dark the grooves explicitly (not just scaled)
+  wallCol = mix(wallCol, grooveInk, groove * 0.6);
+
+  // Stamp the fold crease at ring boundaries
   wallCol = mix(foldInk, wallCol, fold);
 
   // Directional tilt orbiting the axis — a light source racing around
