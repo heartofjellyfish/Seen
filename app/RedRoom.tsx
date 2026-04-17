@@ -3,7 +3,11 @@
 import { Suspense, useMemo, useRef } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Cloud, Clouds, PerspectiveCamera, Sparkles, useTexture } from "@react-three/drei";
+import { RectAreaLightUniformsLib } from "three/examples/jsm/lights/RectAreaLightUniformsLib.js";
 import * as THREE from "three";
+
+// Must be called once before any RectAreaLight renders
+RectAreaLightUniformsLib.init();
 
 /* ————————————————————————————————————————————————
    Red Room — a real 3D stage-in-a-curtained-room.
@@ -345,13 +349,13 @@ function Stage() {
           lights crawls through it as warm breath. */}
       <StageMist stageW={stageW} stageD={stageD} stageH={stageH} />
 
-      {/* Bleed-through glow on the front of the curtain — fakes the
-          side/back candle firelight passing through the velvet. */}
       <CurtainBleedGlow stageD={stageD} stageH={stageH} />
     </group>
   );
 }
 
+// ————— parametric backlit curtain grid —————
+// pointLights placed BEHIND the stage curtain + corresponding additive
 // ————— candle ring on stage deck perimeter —————
 
 function StageCandleRing({
@@ -1348,9 +1352,38 @@ function Walker() {
   );
 }
 
+// ————— side wall RectAreaLight —————
+// Two rectangular area lights aimed inward from the side walls,
+// sitting just behind the velvet wall curtains. Soft amber wash,
+// no visible fixture geometry — the curtain fabric is the source.
+
+function WallCurtainLights() {
+  return (
+    <group>
+      <rectAreaLight
+        position={[-10.5, 3.2, -9.6]}
+        rotation={[0, Math.PI / 2, 0]}
+        width={4}
+        height={5}
+        color="#e8960a"
+        intensity={8}
+      />
+      <rectAreaLight
+        position={[10.5, 3.2, -9.6]}
+        rotation={[0, -Math.PI / 2, 0]}
+        width={4}
+        height={5}
+        color="#e8960a"
+        intensity={8}
+      />
+    </group>
+  );
+}
+
 // ————— main scene —————
 
 export function RedRoom() {
+
   return (
     <Canvas
       shadows
@@ -1369,21 +1402,13 @@ export function RedRoom() {
       <Suspense fallback={null}>
         <CameraRig />
 
-        {/* Byzantine layer — a warm red environmental wash, the room
-            'glows' from all directions. Lifted a step so the scene
-            no longer reads as a tomb: still dim, but breathing. */}
         <hemisphereLight args={["#8a3030", "#2a0808", 1.05]} />
         <ambientLight intensity={0.38} color="#7a2828" />
-
-        {/* Altar layer — a gentle broad spot on the stage curtain.
-            Reads as 'altar highlight' more than a harsh beam. */}
         <AltarSpot />
 
-        {/* La Tour layer — distributed warm sources across the room.
-            Candle stands flanking the stage replace the old floor
-            torchieres; sconces fill the corners. */}
-        <CandleStand position={[-5.8, 0, -9.6]} />
-        <CandleStand position={[5.8, 0, -9.6]} />
+        {/* Soft amber area lights behind the side velvet wall curtains */}
+        <WallCurtainLights />
+
         <SideSconce position={[-10, 5.5, -4]} />
         <SideSconce position={[10, 5.5, -4]} />
         <SideSconce position={[-10, 3, -11]} />
