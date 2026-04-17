@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import styles from "./stage.module.css";
+import { Cosmos } from "./Cosmos";
 
 /**
  * A full-viewport theater before the show.
@@ -45,6 +46,9 @@ export function Stage({
     <div className={styles.hall}>
       {/* ————— decorative layer ————— */}
       <div className={styles.bg}>
+        {/* Rotating cosmos behind the stage opening */}
+        <Cosmos />
+
         {/* Side curtains (CSS velvet) */}
         <div className={`${styles.curtain} ${styles.curtainL}`} />
         <div className={`${styles.curtain} ${styles.curtainR}`} />

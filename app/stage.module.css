@@ -141,6 +141,21 @@
   filter: drop-shadow(0 3px 10px rgba(0, 0, 0, 0.75));
 }
 
+/* ————— cosmos (WebGL) behind the stage opening ————— */
+
+.cosmos {
+  position: absolute;
+  top: clamp(48px, 7vh, 84px);
+  left: clamp(140px, 26vw, 440px);
+  right: clamp(140px, 26vw, 440px);
+  bottom: 0;
+  width: auto;
+  height: auto;
+  display: block;
+  z-index: 0;
+  pointer-events: none;
+}
+
 /* ————— central stage scene SVG ————— */
 
 .stageScene {
@@ -319,6 +334,7 @@
   .curtain {
     width: clamp(70px, 20vw, 160px);
   }
+  .cosmos,
   .stageScene {
     left: clamp(70px, 20vw, 160px);
     right: clamp(70px, 20vw, 160px);
