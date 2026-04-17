@@ -1361,13 +1361,13 @@ function WallCurtainLights() {
   return (
     <group>
       {/* Left wall — near stage */}
-      <rectAreaLight position={[-10.5, 3.2, -9.6]} rotation={[0,  Math.PI / 2, 0]} width={3} height={5} color="#e8960a" intensity={5} />
-      {/* Left wall — far from stage */}
-      <rectAreaLight position={[-10.5, 3.2, -3.5]} rotation={[0,  Math.PI / 2, 0]} width={3} height={5} color="#e8960a" intensity={5} />
+      <rectAreaLight position={[-10.5, 3.2, -11.5]} rotation={[0,  Math.PI / 2, 0]} width={3} height={5} color="#e8960a" intensity={2} />
+      {/* Left wall — second block */}
+      <rectAreaLight position={[-10.5, 3.2, -7.0]} rotation={[0,  Math.PI / 2, 0]} width={3} height={5} color="#e8960a" intensity={2} />
       {/* Right wall — near stage */}
-      <rectAreaLight position={[10.5,  3.2, -9.6]} rotation={[0, -Math.PI / 2, 0]} width={3} height={5} color="#e8960a" intensity={5} />
-      {/* Right wall — far from stage */}
-      <rectAreaLight position={[10.5,  3.2, -3.5]} rotation={[0, -Math.PI / 2, 0]} width={3} height={5} color="#e8960a" intensity={5} />
+      <rectAreaLight position={[10.5,  3.2, -11.5]} rotation={[0, -Math.PI / 2, 0]} width={3} height={5} color="#e8960a" intensity={2} />
+      {/* Right wall — second block */}
+      <rectAreaLight position={[10.5,  3.2, -7.0]} rotation={[0, -Math.PI / 2, 0]} width={3} height={5} color="#e8960a" intensity={2} />
     </group>
   );
 }
