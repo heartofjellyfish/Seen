@@ -382,6 +382,30 @@ function Venus() {
         <meshStandardMaterial color="#4a3e30" roughness={0.9} />
       </mesh>
 
+      {/* Altar uplight — a small warm point-light at the front of
+          the pedestal, washing upward over the statue. Turns her
+          from a dim silhouette into a visible piece of marble.
+          Short distance so it doesn't bleed onto the curtains. */}
+      <pointLight
+        position={[0, 0.4, 0.35]}
+        color="#ffd8a0"
+        intensity={7}
+        distance={4.5}
+        decay={1.4}
+      />
+      {/* Visible tiny brass cap at the uplight origin so the light
+          has a believable source in the scene */}
+      <mesh position={[0, 0.35, 0.35]} castShadow>
+        <cylinderGeometry args={[0.08, 0.09, 0.05, 16]} />
+        <meshStandardMaterial
+          color="#8b6a34"
+          metalness={0.7}
+          roughness={0.45}
+          emissive="#f0c47c"
+          emissiveIntensity={0.6}
+        />
+      </mesh>
+
       {/* Venus body. MeshStandardMaterial gives her full PBR
           lighting — every torchiere, sconce, altar spot, and the
           hemisphere wash will affect her. Black-background keying
@@ -404,10 +428,10 @@ function VenusBody({
   const material = useMemo(() => {
     const mat = new THREE.MeshStandardMaterial({
       map: tex,
-      color: new THREE.Color("#d8c4a8"),
-      emissive: new THREE.Color("#4a2a18"),
-      emissiveIntensity: 0.22,
-      roughness: 0.72,
+      color: new THREE.Color("#e0ccb0"),
+      emissive: new THREE.Color("#5a3018"),
+      emissiveIntensity: 0.38,
+      roughness: 0.68,
       metalness: 0.02,
       side: THREE.DoubleSide,
     });
