@@ -465,104 +465,11 @@ function StageCandleRing({
   );
 }
 
-// ————— stage mist — volumetric ray-marched dry-ice fog —————
-// A box geometry whose fragment shader casts a ray from cameraPosition
-// through a world-space AABB, accumulating 3D double-FBM density.
-// No billboards, no flat planes — genuine volumetric appearance.
-
-const VOL_VERT = /* glsl */`
-  varying vec3 vWorldPos;
-  void main() {
-    vec4 wp = modelMatrix * vec4(position, 1.0);
-    vWorldPos = wp.xyz;
-    gl_Position = projectionMatrix * viewMatrix * wp;
-  }
-`;
-
-// Build the fragment shader with the fog AABB baked in as literals.
-function volFrag(
-  minX: number, maxX: number,
-  minY: number, maxY: number,
-  minZ: number, maxZ: number,
-): string {
-  const f = (n: number) => n.toFixed(3);
-  return /* glsl */`
-    uniform float uTime;
-    varying vec3 vWorldPos;
-
-    // 3-D value noise
-    float h3(vec3 p) {
-      p = fract(p * vec3(443.9, 397.3, 491.2));
-      p += dot(p, p.yxz + 19.19);
-      return fract((p.x + p.y) * p.z);
-    }
-    float n3(vec3 p) {
-      vec3 i = floor(p), f = fract(p);
-      f = f * f * (3.0 - 2.0 * f);
-      return mix(
-        mix(mix(h3(i),             h3(i+vec3(1,0,0)), f.x),
-            mix(h3(i+vec3(0,1,0)), h3(i+vec3(1,1,0)), f.x), f.y),
-        mix(mix(h3(i+vec3(0,0,1)), h3(i+vec3(1,0,1)), f.x),
-            mix(h3(i+vec3(0,1,1)), h3(i+vec3(1,1,1)), f.x), f.y),
-        f.z);
-    }
-    // 4-octave FBM — enough detail without excess cost
-    float fbm(vec3 p) {
-      float v = 0.0, a = 0.5;
-      for (int i = 0; i < 4; i++) {
-        v += a * n3(p);
-        p = p * 2.01 + vec3(100.0, 73.0, 51.0);
-        a *= 0.5;
-      }
-      return v;
-    }
-
-    void main() {
-      vec3 ro = cameraPosition;              // world-space ray origin
-      vec3 rd = normalize(vWorldPos - ro);   // ray direction
-
-      // Ray–AABB intersection against the fog slab (world space)
-      vec3 bMin = vec3(${f(minX)}, ${f(minY)}, ${f(minZ)});
-      vec3 bMax = vec3(${f(maxX)}, ${f(maxY)}, ${f(maxZ)});
-      vec3 tA = (bMin - ro) / rd, tB = (bMax - ro) / rd;
-      vec3 t1 = min(tA, tB), t2 = max(tA, tB);
-      float tNear = max(max(t1.x, t1.y), t1.z);
-      float tFar  = min(min(t2.x, t2.y), t2.z);
-      if (tNear >= tFar || tFar <= 0.0) discard;
-      tNear = max(tNear, 0.0);
-
-      // March 16 steps through the volume
-      const int N = 16;
-      float dt = (tFar - tNear) / float(N);
-      float density = 0.0;
-
-      for (int i = 0; i < N; i++) {
-        vec3 p = ro + rd * (tNear + (float(i) + 0.5) * dt);
-
-        // Squash Y heavily → noise reads as horizontal gas sheets
-        vec3 sp = vec3(p.x * 0.28, p.y * 3.0, p.z * 0.28)
-                + vec3(uTime * 0.038, 0.0, -uTime * 0.024);
-
-        float f = fbm(sp);
-        f = fbm(sp + f * vec3(1.1, 0.15, 1.1));  // domain-warp for tendrils
-
-        // Density falls off toward the top of the slab
-        float yFade = 1.0 - smoothstep(${f(minY)}, ${f(maxY)}, p.y);
-        density += f * yFade * dt;
-      }
-
-      density = clamp(density * 2.2, 0.0, 1.0);
-      if (density < 0.015) discard;
-
-      // Cool blue-white — reads as gas against warm red room
-      vec3 col = mix(vec3(0.74, 0.81, 0.92), vec3(0.95, 0.97, 1.0), density);
-      gl_FragColor = vec4(col, density * 0.72);
-    }
-  `;
-}
-
-// World Z of the Stage group (must match stageZ in Stage())
-const STAGE_WORLD_Z = -13;
+// ————— stage mist — particle fog —————
+// 350 soft gaussian sprites drifting slowly at stage-floor level.
+// Collective density ≈ 10-14x overlap at 0.025 opacity each → ~22%
+// effective opacity. No FBM noise, no billboard quads, no planes.
+// The fog texture comes from density variation, not noise shape.
 
 function StageMist({
   stageW,
@@ -573,43 +480,73 @@ function StageMist({
   stageD: number;
   stageH: number;
 }) {
-  const matRef = useRef<THREE.ShaderMaterial>(null);
-  useFrame(({ clock }) => {
-    if (matRef.current) matRef.current.uniforms.uTime.value = clock.elapsedTime;
+  const COUNT = 220;
+  const hw = stageW * 0.22;        // half-width ≈ 2.9 m — concentrated, not wall-to-wall
+  const hd = (stageD + 0.4) * 0.5; // half-depth ≈ 2.45 m
+
+  // Radial-gradient sprite — soft centre, transparent edge
+  const spriteTex = useMemo(() => {
+    const S = 64;
+    const c = document.createElement("canvas");
+    c.width = c.height = S;
+    const ctx = c.getContext("2d")!;
+    const g = ctx.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+    g.addColorStop(0,    "rgba(255,255,255,1)");
+    g.addColorStop(0.45, "rgba(255,255,255,0.5)");
+    g.addColorStop(1,    "rgba(255,255,255,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, S, S);
+    return new THREE.CanvasTexture(c);
+  }, []);
+
+  // Build geometry + velocity buffer once
+  const { geo, vel } = useMemo(() => {
+    const pos = new Float32Array(COUNT * 3);
+    const vel = new Float32Array(COUNT * 2); // vx, vz
+    for (let i = 0; i < COUNT; i++) {
+      pos[i * 3 + 0] = (Math.random() - 0.5) * 2 * hw;
+      pos[i * 3 + 1] = stageH + Math.random() * 0.20; // 0–20 cm above deck
+      pos[i * 3 + 2] = (Math.random() - 0.5) * 2 * hd;
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 0.002 + Math.random() * 0.004;
+      vel[i * 2 + 0] = Math.cos(angle) * speed;
+      vel[i * 2 + 1] = Math.sin(angle) * speed;
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    return { geo: g, vel };
+  }, [hw, hd, stageH]);
+
+  // Drift particles, wrap at stage edges
+  useFrame(() => {
+    const attr = geo.attributes.position as THREE.BufferAttribute;
+    for (let i = 0; i < COUNT; i++) {
+      let x = attr.getX(i) + vel[i * 2 + 0];
+      let z = attr.getZ(i) + vel[i * 2 + 1];
+      if (x >  hw) x -= 2 * hw;
+      if (x < -hw) x += 2 * hw;
+      if (z >  hd) z -= 2 * hd;
+      if (z < -hd) z += 2 * hd;
+      attr.setX(i, x);
+      attr.setZ(i, z);
+    }
+    attr.needsUpdate = true;
   });
-  const uniforms = useMemo(() => ({ uTime: { value: 0 } }), []);
-
-  // Fog volume in world space
-  const hw  = stageW * 0.41;           // half-width  ≈ 5.33 m
-  const hd  = (stageD + 1.2) * 0.5;   // half-depth  ≈ 2.85 m
-  const cz  = STAGE_WORLD_Z + 0.3;     // world centre-Z = −12.7
-  const minY = stageH - 0.05;          // just below deck surface
-  const maxY = stageH + 0.72;          // ~72 cm above deck
-
-  const fragSrc = useMemo(
-    () => volFrag(-hw, hw, minY, maxY, cz - hd, cz + hd),
-    [hw, minY, maxY, hd, cz],
-  );
-
-  // Bounding-box mesh (stage-local) — slightly generous so no pixel is missed.
-  // The fragment shader clips to the actual fog AABB via ray–box intersection.
-  const bw = hw * 2 + 2.0;   // 12.7 m wide
-  const bh = maxY - minY + 0.3;  // ~1.0 m tall
-  const bd = hd * 2 + 2.0;   // 7.7 m deep
 
   return (
-    <mesh position={[0, (minY + maxY) * 0.5, 0.3]}>
-      <boxGeometry args={[bw, bh, bd]} />
-      <shaderMaterial
-        ref={matRef}
-        vertexShader={VOL_VERT}
-        fragmentShader={fragSrc}
-        uniforms={uniforms}
+    <points geometry={geo}>
+      <pointsMaterial
+        size={1.6}
+        sizeAttenuation
+        map={spriteTex}
+        color="#c6d0e0"
         transparent
+        opacity={0.025}
         depthWrite={false}
-        side={THREE.FrontSide}
+        alphaTest={0.004}
+        toneMapped={false}
       />
-    </mesh>
+    </points>
   );
 }
 
