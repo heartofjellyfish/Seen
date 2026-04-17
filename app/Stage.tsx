@@ -186,10 +186,13 @@ export function Stage({
             style={{ opacity: 0.5 + eased * 0.3 }}
           />
 
-          {/* Red Room floor — black and cream zigzag chevron */}
+          {/* Red Room floor — black and cream zigzag chevron, receding
+              back into the tunnel. Venus + traffic light are NOT here
+              anymore; they live in the foreground apron so they can
+              stand taller and in front of the curtains. */}
           <RedRoomFloor />
 
-          {/* Narrow red carpet runner overlaid on the zigzag */}
+          {/* Narrow red carpet runner inside the stage opening */}
           <path
             d="M 320 500 L 380 500 L 470 900 L 230 900 Z"
             fill="url(#carpet)"
@@ -206,12 +209,6 @@ export function Stage({
             strokeWidth="1.2"
             fill="none"
           />
-
-          {/* Venus de Milo on stage left — Red Room corner sculpture */}
-          <VenusSculpture />
-
-          {/* Traffic light on stage right — mirrors Venus, dreamlike */}
-          <TrafficLight />
 
           {/* Stage floor edge hairline */}
           <line
@@ -306,6 +303,11 @@ export function Stage({
           </g>
 
         </svg>
+
+        {/* Foreground apron — full-width Twin Peaks floor in perspective,
+            holds the Venus (left) and traffic light (right) in front of
+            everything else. */}
+        <ForegroundApron />
 
         {/* Dream objects — HTML layer for real CSS 3D transforms */}
         <DreamObjects />
@@ -692,122 +694,163 @@ function RedRoomFloor() {
   );
 }
 
-// ————— Venus sculpture —————
+// ————— foreground apron —————
 //
-// A small simplified Venus de Milo silhouette in stone cream,
-// perched on a black pedestal. Stands at the left edge of the floor.
-// Headless, armless — the Louvre silhouette.
+// Full-width stage apron that sits in front of the curtains, holding
+// Venus and the traffic light close to the viewer. Its top edge
+// matches the bottom of the stage opening; its bottom edge spans the
+// whole viewport edge. Zigzag chevron floor in strong perspective
+// (few wide tiles, fewer rows) — reads as the floorboards you're
+// standing on, not the stage's own floor.
 
-function VenusSculpture() {
-  return (
-    <g transform="translate(115, 560)" className={styles.venus}>
-      {/* Pedestal */}
-      <rect x="-22" y="105" width="44" height="18" fill="#1a0e08" />
-      <rect x="-22" y="105" width="44" height="3" fill="#3a2a14" />
-      {/* Drapery base — narrow conic lower half */}
-      <path
-        d="M -18 105
-           C -22 85, -20 60, -15 40
-           L 15 40
-           C 20 60, 22 85, 18 105
-           Z"
-        fill="url(#venusStone)"
-      />
-      {/* Drapery folds on skirt */}
-      <path d="M -12 100 Q -8 80 -5 55" stroke="#8a7858" strokeWidth="0.6" fill="none" opacity="0.6" />
-      <path d="M 12 100 Q 8 80 5 55" stroke="#8a7858" strokeWidth="0.6" fill="none" opacity="0.6" />
-      <path d="M -4 100 Q -2 80 -1 55" stroke="#8a7858" strokeWidth="0.45" fill="none" opacity="0.5" />
-      <path d="M 4 100 Q 2 80 1 55" stroke="#8a7858" strokeWidth="0.45" fill="none" opacity="0.5" />
-      {/* Waist / upper body */}
-      <ellipse cx="0" cy="32" rx="11" ry="14" fill="url(#venusStone)" />
-      {/* Torso tapered */}
-      <path d="M -9 18 C -11 10, -10 2, -8 -6 L 8 -6 C 10 2, 11 10, 9 18 Z" fill="url(#venusStone)" />
-      {/* Chest curve shadow */}
-      <ellipse cx="-3" cy="5" rx="6" ry="7" fill="#a6906c" opacity="0.35" />
-      {/* Neck stump */}
-      <path d="M -3 -9 L 3 -9 L 3 -14 L -3 -14 Z" fill="url(#venusStone)" />
-      {/* Arm stump — left (broken off at shoulder) */}
-      <ellipse cx="-10" cy="-2" rx="4" ry="5" fill="url(#venusStone)" />
-      <ellipse cx="-10" cy="-2" rx="3" ry="2" fill="#7a6848" opacity="0.5" />
-      {/* Arm stump — right */}
-      <ellipse cx="10" cy="-2" rx="4" ry="5" fill="url(#venusStone)" />
-      <ellipse cx="10" cy="-2" rx="3" ry="2" fill="#7a6848" opacity="0.5" />
-      {/* A soft overall highlight from top-left */}
-      <ellipse cx="-4" cy="-2" rx="5" ry="18" fill="#fff" opacity="0.15" />
-    </g>
-  );
+const APRON_ROWS = [
+  { yTop: 0, yBot: 30 },
+  { yTop: 30, yBot: 75 },
+  { yTop: 75, yBot: 140 },
+  { yTop: 140, yBot: 220 },
+  { yTop: 220, yBot: 300 },
+];
+const APRON_SEGMENTS = 10; // even
+
+function apronX(y: number) {
+  // At y=0, width = 660 centred on 700 → x [370, 1030]
+  // At y=300, width = 1800 centred on 700 → x [-200, 1600]
+  const t = y / 300;
+  const width = 660 + t * 1140;
+  return { left: 700 - width / 2, right: 700 + width / 2 };
 }
 
-// ————— traffic light (right stage, mirroring Venus) —————
-//
-// A recognizably-a-traffic-light silhouette but dressed in SEEN's
-// warm palette — wine red / amber / bone cream instead of the usual
-// red / yellow / green. All three lamps stay lit but pulse at three
-// different slow rates (7s, 11s, 13s) so the whole fixture has a
-// heartbeat that never quite syncs. Dream logic.
+function ForegroundApron() {
+  const blackTriangles: React.ReactElement[] = [];
+  APRON_ROWS.forEach((row, r) => {
+    const { yTop, yBot } = row;
+    const top = apronX(yTop);
+    const bot = apronX(yBot);
+    const segTop = (top.right - top.left) / APRON_SEGMENTS;
+    const segBot = (bot.right - bot.left) / APRON_SEGMENTS;
+    const blackUpper = r % 2 === 0;
+    for (let j = 0; j < APRON_SEGMENTS / 2; j++) {
+      let points: string;
+      if (blackUpper) {
+        const x1 = top.left + 2 * j * segTop;
+        const x2 = top.left + (2 * j + 2) * segTop;
+        const xA = bot.left + (2 * j + 1) * segBot;
+        points = `${x1.toFixed(1)},${yTop} ${x2.toFixed(1)},${yTop} ${xA.toFixed(1)},${yBot}`;
+      } else {
+        const x1 = bot.left + 2 * j * segBot;
+        const x2 = bot.left + (2 * j + 2) * segBot;
+        const xA = top.left + (2 * j + 1) * segTop;
+        points = `${x1.toFixed(1)},${yBot} ${x2.toFixed(1)},${yBot} ${xA.toFixed(1)},${yTop}`;
+      }
+      blackTriangles.push(
+        <polygon key={`a-${r}-${j}`} points={points} fill="#0a0604" />,
+      );
+    }
+  });
 
-function TrafficLight() {
   return (
-    <g transform="translate(595, 540)" className={styles.trafficLight}>
-      {/* Hanging pole from above (thin black line going up) */}
-      <rect x="-1" y="-115" width="2" height="120" fill="#100804" />
-      {/* Casing — rounded rectangle black housing */}
-      <rect
-        x="-15"
-        y="-8"
-        width="30"
-        height="110"
-        rx="4"
-        ry="4"
-        fill="#0a0604"
-        stroke="#2a1a0c"
-        strokeWidth="1"
-      />
-      {/* Casing highlight — a thin streak on left for dimension */}
-      <rect x="-13" y="-6" width="1.5" height="106" fill="#2a1a0c" opacity="0.7" />
+    <div className={styles.apron} aria-hidden>
+      <svg
+        className={styles.apronSvg}
+        viewBox="0 0 1400 300"
+        preserveAspectRatio="xMidYMax slice"
+      >
+        <defs>
+          <linearGradient id="apronDepth" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor="#1a0e08" stopOpacity="0.65" />
+            <stop offset="60%" stopColor="#7a5a34" stopOpacity="0.1" />
+            <stop offset="100%" stopColor="#f0dcae" stopOpacity="0" />
+          </linearGradient>
+          <linearGradient id="apronVenusStone" x1="0.2" y1="0" x2="0.8" y2="1">
+            <stop offset="0%" stopColor="#f5e4b6" />
+            <stop offset="45%" stopColor="#d4be8a" />
+            <stop offset="85%" stopColor="#8a7858" />
+            <stop offset="100%" stopColor="#5a4a30" />
+          </linearGradient>
+          <linearGradient id="apronCarpet" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor="#2f0b10" />
+            <stop offset="55%" stopColor="#551820" />
+            <stop offset="100%" stopColor="#6b1f27" />
+          </linearGradient>
+        </defs>
 
-      {/* Three lamps — wine / amber / cream, breathing on offset cycles */}
-      {/* Top: wine red */}
-      <circle cx="0" cy="10" r="9" fill="#2a0606" />
-      <circle
-        cx="0"
-        cy="10"
-        r="7.5"
-        fill="#a42020"
-        className={styles.lampWine}
-      />
-      <circle cx="-1.5" cy="8" r="2.5" fill="#ffb8a0" opacity="0.7" />
+        {/* Cream base */}
+        <path
+          d="M 370 0 L 1030 0 L 1600 300 L -200 300 Z"
+          fill="#e4d1a4"
+        />
+        {/* Darkening toward back */}
+        <path
+          d="M 370 0 L 1030 0 L 1600 300 L -200 300 Z"
+          fill="url(#apronDepth)"
+          opacity="0.55"
+        />
+        {blackTriangles}
 
-      {/* Middle: amber */}
-      <circle cx="0" cy="38" r="9" fill="#2a1a04" />
-      <circle
-        cx="0"
-        cy="38"
-        r="7.5"
-        fill="#d4a363"
-        className={styles.lampAmber}
-      />
-      <circle cx="-1.5" cy="36" r="2.5" fill="#fff1c7" opacity="0.8" />
+        {/* Red carpet runner continuing from the stage */}
+        <path
+          d="M 635 0 L 765 0 L 980 300 L 420 300 Z"
+          fill="url(#apronCarpet)"
+        />
+        <path d="M 635 0 L 420 300" stroke="rgba(232,192,137,0.12)" strokeWidth="1.2" fill="none" />
+        <path d="M 765 0 L 980 300" stroke="rgba(232,192,137,0.12)" strokeWidth="1.2" fill="none" />
 
-      {/* Bottom: bone cream */}
-      <circle cx="0" cy="66" r="9" fill="#1a1810" />
-      <circle
-        cx="0"
-        cy="66"
-        r="7.5"
-        fill="#ece2cc"
-        className={styles.lampCream}
-      />
-      <circle cx="-1.5" cy="64" r="2.5" fill="#ffffff" opacity="0.85" />
+        {/* Venus — LEFT apron, tall, standing on the chevron */}
+        <g transform="translate(235, 85) scale(1.9)" className={styles.venus}>
+          {/* Pedestal */}
+          <rect x="-22" y="105" width="44" height="18" fill="#1a0e08" />
+          <rect x="-22" y="105" width="44" height="3" fill="#3a2a14" />
+          {/* Drapery */}
+          <path
+            d="M -18 105
+               C -22 85, -20 60, -15 40
+               L 15 40
+               C 20 60, 22 85, 18 105
+               Z"
+            fill="url(#apronVenusStone)"
+          />
+          <path d="M -12 100 Q -8 80 -5 55" stroke="#8a7858" strokeWidth="0.6" fill="none" opacity="0.6" />
+          <path d="M 12 100 Q 8 80 5 55" stroke="#8a7858" strokeWidth="0.6" fill="none" opacity="0.6" />
+          <path d="M -4 100 Q -2 80 -1 55" stroke="#8a7858" strokeWidth="0.45" fill="none" opacity="0.5" />
+          <path d="M 4 100 Q 2 80 1 55" stroke="#8a7858" strokeWidth="0.45" fill="none" opacity="0.5" />
+          {/* Waist */}
+          <ellipse cx="0" cy="32" rx="11" ry="14" fill="url(#apronVenusStone)" />
+          {/* Torso */}
+          <path d="M -9 18 C -11 10, -10 2, -8 -6 L 8 -6 C 10 2, 11 10, 9 18 Z" fill="url(#apronVenusStone)" />
+          {/* Chest shadow */}
+          <ellipse cx="-3" cy="5" rx="6" ry="7" fill="#a6906c" opacity="0.35" />
+          {/* Neck stump */}
+          <path d="M -3 -9 L 3 -9 L 3 -14 L -3 -14 Z" fill="url(#apronVenusStone)" />
+          {/* Arm stumps */}
+          <ellipse cx="-10" cy="-2" rx="4" ry="5" fill="url(#apronVenusStone)" />
+          <ellipse cx="-10" cy="-2" rx="3" ry="2" fill="#7a6848" opacity="0.5" />
+          <ellipse cx="10" cy="-2" rx="4" ry="5" fill="url(#apronVenusStone)" />
+          <ellipse cx="10" cy="-2" rx="3" ry="2" fill="#7a6848" opacity="0.5" />
+          {/* Highlight */}
+          <ellipse cx="-4" cy="-2" rx="5" ry="18" fill="#fff" opacity="0.15" />
+        </g>
 
-      {/* Base plate bottom */}
-      <rect x="-12" y="95" width="24" height="7" fill="#0a0604" />
-
-      {/* Soft ambient glow behind the lamps */}
-      <circle cx="0" cy="10" r="18" fill="#a42020" opacity="0.08" />
-      <circle cx="0" cy="38" r="18" fill="#d4a363" opacity="0.10" />
-      <circle cx="0" cy="66" r="18" fill="#ece2cc" opacity="0.06" />
-    </g>
+        {/* Traffic light — RIGHT apron */}
+        <g transform="translate(1165, 55) scale(1.5)" className={styles.trafficLight}>
+          <rect x="-1" y="-115" width="2" height="120" fill="#100804" />
+          <rect x="-15" y="-8" width="30" height="110" rx="4" ry="4" fill="#0a0604" stroke="#2a1a0c" strokeWidth="1" />
+          <rect x="-13" y="-6" width="1.5" height="106" fill="#2a1a0c" opacity="0.7" />
+          <circle cx="0" cy="10" r="9" fill="#2a0606" />
+          <circle cx="0" cy="10" r="7.5" fill="#a42020" className={styles.lampWine} />
+          <circle cx="-1.5" cy="8" r="2.5" fill="#ffb8a0" opacity="0.7" />
+          <circle cx="0" cy="38" r="9" fill="#2a1a04" />
+          <circle cx="0" cy="38" r="7.5" fill="#d4a363" className={styles.lampAmber} />
+          <circle cx="-1.5" cy="36" r="2.5" fill="#fff1c7" opacity="0.8" />
+          <circle cx="0" cy="66" r="9" fill="#1a1810" />
+          <circle cx="0" cy="66" r="7.5" fill="#ece2cc" className={styles.lampCream} />
+          <circle cx="-1.5" cy="64" r="2.5" fill="#ffffff" opacity="0.85" />
+          <rect x="-12" y="95" width="24" height="7" fill="#0a0604" />
+          <circle cx="0" cy="10" r="18" fill="#a42020" opacity="0.08" />
+          <circle cx="0" cy="38" r="18" fill="#d4a363" opacity="0.10" />
+          <circle cx="0" cy="66" r="18" fill="#ece2cc" opacity="0.06" />
+        </g>
+      </svg>
+    </div>
   );
 }
 

@@ -274,6 +274,24 @@
   filter: drop-shadow(0 6px 8px rgba(0, 0, 0, 0.55));
 }
 
+/* ————— foreground apron ————— */
+
+.apron {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: clamp(240px, 32vh, 420px);
+  z-index: 2;
+  pointer-events: none;
+}
+
+.apronSvg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
 /* ————— dream objects —————
    HTML layer with real CSS 3D transforms. Parent enables perspective,
    each item has its own path animation (translate + scale) plus a
