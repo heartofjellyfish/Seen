@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import styles from "./stage.module.css";
 import { Cosmos } from "./Cosmos";
 
@@ -42,12 +42,48 @@ export function Stage({
 
   const glow = 0.55 + eased * 0.35;
 
+  // Mouse-parallax: drive --mx/--my CSS custom props on the hall element
+  // so the stageScene (and anything else using them) drifts with the cursor.
+  const hallRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = hallRef.current;
+    if (!el) return;
+    const target = { x: 0, y: 0 };
+    const smooth = { x: 0, y: 0 };
+    const onMove = (e: MouseEvent) => {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      target.x = (e.clientX / w) * 2 - 1;
+      target.y = (e.clientY / h) * 2 - 1;
+    };
+    const onLeave = () => {
+      target.x = 0;
+      target.y = 0;
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseleave", onLeave);
+    let rafId = 0;
+    const tick = () => {
+      smooth.x += (target.x - smooth.x) * 0.06;
+      smooth.y += (target.y - smooth.y) * 0.06;
+      el.style.setProperty("--mx", smooth.x.toFixed(3));
+      el.style.setProperty("--my", smooth.y.toFixed(3));
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseleave", onLeave);
+      cancelAnimationFrame(rafId);
+    };
+  }, []);
+
   return (
-    <div className={styles.hall}>
+    <div className={styles.hall} ref={hallRef}>
       {/* ————— decorative layer ————— */}
       <div className={styles.bg}>
-        {/* Rotating cosmos behind the stage opening */}
-        <Cosmos />
+        {/* Rotating corridor behind the stage opening */}
+        <Cosmos progress={p} />
 
         {/* Side curtains (CSS velvet) */}
         <div className={`${styles.curtain} ${styles.curtainL}`} />

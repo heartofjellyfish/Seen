@@ -4,14 +4,20 @@ import { useEffect, useRef } from "react";
 import styles from "./stage.module.css";
 
 /**
- * A slow rotating cosmos, rendered in a fragment shader.
+ * An amber velvet corridor receding into depth.
  *
- * Three parallax layers of stars, inner ones rotating faster — the
- * outer stars almost drift, the inner ones visibly swirl. A gentle
- * inward pull in log-radius space so the eye is drawn toward center
- * without the stars ever actually reaching it. A warm amber core,
- * pulsing like a distant heart. All colors sit inside SEEN's palette
- * so it reads as an extension of the ghost light rather than sci-fi.
+ * Fragment shader draws a tunnel projection (depth = k/r), with
+ * 16 vertical pleats running into the distance and soft alternating
+ * rings that slide toward the viewer — as if we are walking slowly
+ * down a backstage corridor of curtains. A dim amber core burns
+ * where the corridor ends, pulsing like a heart. Every few seconds
+ * a single warm mote emerges from that depth and drifts outward,
+ * growing as it nears the edge of vision — the hint of someone
+ * walking toward us from far away.
+ *
+ * Mouse position shifts the corridor's vanishing point — turning
+ * the viewer's head in a still body. Progress (0..1) tightens and
+ * accelerates the advance as fame approaches.
  *
  * Respects prefers-reduced-motion: renders a single still frame.
  */
@@ -27,6 +33,8 @@ const FS = `
 precision highp float;
 uniform float u_time;
 uniform vec2 u_resolution;
+uniform vec2 u_mouse;
+uniform float u_progress;
 
 float hash(vec2 p) {
   return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
@@ -34,79 +42,129 @@ float hash(vec2 p) {
 
 void main() {
   vec2 uv = (gl_FragCoord.xy - u_resolution * 0.5) / min(u_resolution.x, u_resolution.y);
+
+  // Mouse parallax — vanishing point drifts opposite to head motion
+  uv += u_mouse * 0.14;
+
   float r = length(uv);
   float a = atan(uv.y, uv.x);
   float t = u_time;
 
+  // Tunnel depth from radial position (classic 1/r projection).
+  // Clamp to avoid singularity at the exact center.
+  float rSafe = max(r, 0.02);
+  float depth = 0.45 / rSafe;
+
+  // Forward motion — we are walking in. Progress accelerates slightly.
+  float speed = 0.42 + u_progress * u_progress * 0.45;
+  depth += t * speed;
+
+  // Angular rotation — slow spin down the corridor + a little mouse yaw
+  float phi = a + t * 0.11 + u_mouse.x * 0.28;
+
   vec3 col = vec3(0.0);
 
-  // Three depth layers.
-  // Outer layers rotate slower and drift less — more distant.
-  for (int i = 0; i < 3; i++) {
+  // ————— corridor walls —————
+
+  // 16 pleats around the tunnel. Cosine gives soft light/dark transition.
+  float pleatCount = 16.0;
+  float pleatCos = cos(phi * pleatCount);
+  float pleatLight = pow((pleatCos + 1.0) * 0.5, 1.6);
+
+  // Alternating depth rings, softened so boundaries aren't harsh
+  float ringPhase = fract(depth * 0.55);
+  float ring = smoothstep(0.0, 0.08, ringPhase)
+             * smoothstep(0.5, 0.42, ringPhase);
+
+  // Darker crease band repeating in depth (a thin shadow between rings)
+  float creasePhase = fract(depth * 0.55 + 0.5);
+  float crease = smoothstep(0.0, 0.03, creasePhase)
+               * smoothstep(0.06, 0.03, creasePhase);
+
+  // Wall palette — warm amber
+  vec3 wallShadow = vec3(0.07, 0.025, 0.015);
+  vec3 wallMid = vec3(0.34, 0.16, 0.08);
+  vec3 wallLit = vec3(0.72, 0.42, 0.20);
+
+  vec3 wallCol = mix(wallShadow, wallMid, pleatLight);
+  wallCol = mix(wallCol, wallLit, ring * pleatLight * 0.9);
+  wallCol -= vec3(0.06, 0.02, 0.01) * crease;
+
+  // Pleat highlight on the crests — thin bright line
+  float crest = smoothstep(0.88, 1.0, pleatCos);
+  wallCol += vec3(0.95, 0.68, 0.32) * crest * ring * 0.55;
+
+  // Depth falloff — far is darker
+  float depthFade = exp(-depth * 0.045);
+  wallCol *= depthFade;
+
+  // Ease the wall fades softly toward the bright core and the outer vignette
+  float tunnelMask = smoothstep(0.09, 0.22, r) * smoothstep(2.1, 0.7, r);
+  col += wallCol * tunnelMask;
+
+  // ————— core light at the end of the corridor —————
+
+  float pulse = 0.86 + 0.14 * sin(t * 0.32);
+  col += vec3(0.95, 0.55, 0.22) * exp(-r * 5.2) * 0.42 * pulse;
+  col += vec3(1.0, 0.92, 0.72) * exp(-r * 13.5) * 0.5 * pulse;
+
+  // ————— particles emerging from the depth —————
+
+  for (int i = 0; i < 6; i++) {
     float fi = float(i);
+    float seed = fi * 0.413 + 0.127;
+    // Each particle cycles on its own phase (~10s period)
+    float phase = fract(t * 0.095 + seed);
 
-    // Angular speed: inner layers rotate faster (Keplerian-ish feel).
-    float rot = t * (0.025 + 0.05 / (0.35 + r * (0.8 + fi * 0.6)));
-    rot *= (1.0 - fi * 0.18);
+    // Radial growth: starts near center, accelerates outward (ease-in)
+    float pr = phase * phase * 1.35 + 0.06;
+    // Angular position: stable with tiny wobble
+    float pa = seed * 6.2832 + t * 0.04 + sin(t * 0.6 + seed * 11.0) * 0.18;
 
-    // Gentle inward pull in log-radius space — the "drain".
-    float logR = log(r + 0.012);
-    float logShift = logR + t * 0.007 * (1.0 + fi * 0.35);
+    vec2 ppos = vec2(cos(pa), sin(pa)) * pr;
+    float d = distance(uv, ppos);
 
-    // Polar grid for star placement.
-    vec2 grid = vec2(a + rot, logShift) * vec2(9.0, 13.0);
-    vec2 ig = floor(grid);
-    vec2 fg = fract(grid);
+    float size = 0.008 + phase * 0.024;
+    float b = smoothstep(size, 0.0, d);
+    // Fade in from center, fade out before hitting the edge
+    b *= smoothstep(0.0, 0.12, phase) * smoothstep(1.0, 0.72, phase);
+    b *= 0.9 - phase * 0.25;
 
-    float h = hash(ig + fi * 37.0);
-    if (h > 0.962) {
-      vec2 cen = vec2(0.3 + fract(h * 7.3) * 0.4,
-                      0.3 + fract(h * 13.7) * 0.4);
-      float d = length(fg - cen);
-      float b = smoothstep(0.13, 0.0, d) * (h - 0.962) * 32.0;
-
-      // Distant layers dimmer
-      b *= (1.0 - fi * 0.24);
-      // Fade near very center (so stars don't pop into the core)
-      b *= smoothstep(0.03, 0.14, r);
-      // Fade at outer edge
-      b *= smoothstep(1.85, 0.9, r);
-      // Subtle twinkle
-      b *= 0.68 + 0.32 * sin(t * 2.3 + h * 29.0);
-
-      col += vec3(0.95, 0.78, 0.52) * b;
-    }
+    col += vec3(0.95, 0.78, 0.48) * b;
+    // Tiny bright kernel
+    float bKernel = smoothstep(size * 0.35, 0.0, d);
+    col += vec3(1.0, 0.95, 0.75) * bKernel * 0.55;
   }
 
-  // Galactic core — warm amber, pulses like a heart
-  float pulse = 0.86 + 0.14 * sin(t * 0.27);
-  col += vec3(0.95, 0.55, 0.22) * exp(-r * 3.1) * 0.36 * pulse;
-  // Bright inner kernel
-  col += vec3(1.0, 0.9, 0.7) * exp(-r * 8.5) * 0.26 * pulse;
+  // ————— fine grain on walls (star-dust texture) —————
 
-  // Three spiral arms of faint dust, rotating slowly
-  float spiralA = a + t * 0.032 + log(r + 0.012) * 1.9;
-  float arm = pow(cos(spiralA * 3.0) * 0.5 + 0.5, 6.0);
-  float armFade = smoothstep(1.7, 0.14, r) * smoothstep(0.02, 0.22, r);
-  col += vec3(0.6, 0.28, 0.14) * arm * armFade * 0.075;
+  vec2 grid = vec2(phi * 32.0, depth * 9.0);
+  vec2 ig = floor(grid);
+  vec2 fg = fract(grid);
+  float h = hash(ig);
+  if (h > 0.93 && tunnelMask > 0.3) {
+    float d = length(fg - 0.5);
+    float g = smoothstep(0.18, 0.0, d) * (h - 0.93) * 10.0;
+    col += vec3(0.55, 0.33, 0.16) * g * depthFade * 0.45;
+  }
 
-  // Faint crimson haze at the outer reaches (blends with curtain color)
-  col += vec3(0.22, 0.05, 0.06)
-    * smoothstep(0.35, 1.55, r)
-    * smoothstep(2.4, 1.0, r) * 0.11;
+  // ————— outer vignette —————
 
-  // Edge fade so the cosmos dissolves into the curtain shadows
   col *= smoothstep(2.3, 0.2, r);
-
-  // Overall dim — stars should pop against deep black, not glare
-  col *= 0.92;
+  col *= 0.95;
 
   gl_FragColor = vec4(col, 1.0);
 }
 `;
 
-export function Cosmos() {
+export function Cosmos({ progress = 0 }: { progress?: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const progressRef = useRef(progress);
+
+  // Keep progress ref fresh for the animation loop
+  useEffect(() => {
+    progressRef.current = progress;
+  }, [progress]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -120,7 +178,6 @@ export function Cosmos() {
     });
     if (!gl) return;
 
-    // ————— compile & link —————
     const compile = (type: number, src: string) => {
       const s = gl.createShader(type);
       if (!s) return null;
@@ -149,7 +206,6 @@ export function Cosmos() {
     }
     gl.useProgram(prog);
 
-    // ————— fullscreen quad —————
     const buf = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buf);
     gl.bufferData(
@@ -163,8 +219,28 @@ export function Cosmos() {
 
     const uTime = gl.getUniformLocation(prog, "u_time");
     const uRes = gl.getUniformLocation(prog, "u_resolution");
+    const uMouse = gl.getUniformLocation(prog, "u_mouse");
+    const uProgress = gl.getUniformLocation(prog, "u_progress");
+
+    // ————— mouse tracking (window-level, damped) —————
+
+    const mouseTarget = { x: 0, y: 0 };
+    const mouseSmooth = { x: 0, y: 0 };
+    const onMove = (e: MouseEvent) => {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      mouseTarget.x = (e.clientX / w) * 2 - 1;
+      mouseTarget.y = -((e.clientY / h) * 2 - 1);
+    };
+    const onLeave = () => {
+      mouseTarget.x = 0;
+      mouseTarget.y = 0;
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseleave", onLeave);
 
     // ————— resize —————
+
     const resize = () => {
       const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
       const w = Math.max(1, Math.round(canvas.clientWidth * dpr));
@@ -179,7 +255,8 @@ export function Cosmos() {
     const ro = new ResizeObserver(resize);
     ro.observe(canvas);
 
-    // ————— reduced-motion: render one frame, stop —————
+    // ————— animation loop —————
+
     const reducedMotion = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
     ).matches;
@@ -187,15 +264,21 @@ export function Cosmos() {
     let rafId = 0;
     const t0 = performance.now();
     const frame = () => {
+      // Damp the mouse toward target
+      const damp = 0.06;
+      mouseSmooth.x += (mouseTarget.x - mouseSmooth.x) * damp;
+      mouseSmooth.y += (mouseTarget.y - mouseSmooth.y) * damp;
+
       const t = (performance.now() - t0) / 1000;
       gl.uniform1f(uTime, t);
       gl.uniform2f(uRes, canvas.width, canvas.height);
+      gl.uniform2f(uMouse, mouseSmooth.x, mouseSmooth.y);
+      gl.uniform1f(uProgress, progressRef.current);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
       if (!reducedMotion) rafId = requestAnimationFrame(frame);
     };
     rafId = requestAnimationFrame(frame);
 
-    // Pause when tab is hidden — no cycles burned off-screen
     const onVis = () => {
       if (document.hidden) {
         if (rafId) cancelAnimationFrame(rafId);
@@ -209,6 +292,8 @@ export function Cosmos() {
     return () => {
       if (rafId) cancelAnimationFrame(rafId);
       ro.disconnect();
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseleave", onLeave);
       document.removeEventListener("visibilitychange", onVis);
       gl.deleteProgram(prog);
       gl.deleteShader(vs);

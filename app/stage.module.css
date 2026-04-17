@@ -13,6 +13,9 @@
   flex-direction: column;
   overflow: hidden;
   animation: stageIn 2600ms ease both;
+  /* perspective lets child transforms tilt in 3D */
+  perspective: 1400px;
+  perspective-origin: 50% 50%;
 }
 
 @keyframes stageIn {
@@ -172,6 +175,12 @@
   height: auto;
   display: block;
   z-index: 1;
+  transform-origin: 50% 60%;
+  transform:
+    translate3d(calc(var(--mx, 0) * -10px), calc(var(--my, 0) * -6px), 0)
+    rotateY(calc(var(--mx, 0) * 2.4deg))
+    rotateX(calc(var(--my, 0) * -1.4deg));
+  will-change: transform;
 }
 
 .ghost {
