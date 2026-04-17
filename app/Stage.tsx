@@ -701,58 +701,31 @@ function apronX(y: number) {
 }
 
 function ForegroundApron() {
-  const blackTriangles: React.ReactElement[] = [];
-  APRON_ROWS.forEach((row, r) => {
-    const { yTop, yBot } = row;
-    const top = apronX(yTop);
-    const bot = apronX(yBot);
-    const segTop = (top.right - top.left) / APRON_SEGMENTS;
-    const segBot = (bot.right - bot.left) / APRON_SEGMENTS;
-    const blackUpper = r % 2 === 0;
-    for (let j = 0; j < APRON_SEGMENTS / 2; j++) {
-      let points: string;
-      if (blackUpper) {
-        const x1 = top.left + 2 * j * segTop;
-        const x2 = top.left + (2 * j + 2) * segTop;
-        const xA = bot.left + (2 * j + 1) * segBot;
-        points = `${x1.toFixed(1)},${yTop} ${x2.toFixed(1)},${yTop} ${xA.toFixed(1)},${yBot}`;
-      } else {
-        const x1 = bot.left + 2 * j * segBot;
-        const x2 = bot.left + (2 * j + 2) * segBot;
-        const xA = top.left + (2 * j + 1) * segTop;
-        points = `${x1.toFixed(1)},${yBot} ${x2.toFixed(1)},${yBot} ${xA.toFixed(1)},${yTop}`;
-      }
-      blackTriangles.push(
-        <polygon key={`a-${r}-${j}`} points={points} fill="#0a0604" />,
-      );
-    }
-  });
-
   return (
     <div className={styles.apron} aria-hidden>
+      {/* The floor: a flat tiled chevron PNG, CSS-3D tilted into
+          perspective. perspective + rotateX do the receding math —
+          far-end chevrons compress, near-end spread out, all for free. */}
+      <div className={styles.apronFloorLayer}>
+        <div className={styles.apronFloor} />
+        {/* A soft warm pool of light near where the ghost light
+            "would reach" the floor — overlaid on the tilted floor so
+            it shrinks correctly with the perspective. */}
+        <div className={styles.apronFloorLight} />
+        {/* The vignette — edges of the apron fade to black */}
+        <div className={styles.apronFloorVignette} />
+      </div>
+
+      {/* Upright figures on top of the floor — not tilted. They stand
+          on the apron like real props. */}
       <svg
-        className={styles.apronSvg}
+        className={styles.apronFigures}
         viewBox="0 0 1400 300"
         preserveAspectRatio="xMidYMax slice"
       >
         <defs>
-          <linearGradient id="apronDepth" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor="#1a0e08" stopOpacity="0.65" />
-            <stop offset="60%" stopColor="#7a5a34" stopOpacity="0.1" />
-            <stop offset="100%" stopColor="#f0dcae" stopOpacity="0" />
-          </linearGradient>
-          <linearGradient id="apronCarpet" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor="#2f0b10" />
-            <stop offset="55%" stopColor="#551820" />
-            <stop offset="100%" stopColor="#6b1f27" />
-          </linearGradient>
-
-          {/* Key out the pure-black background behind the Venus PNG.
-              Alpha gets computed as (R + G + B) - 0.05, so any pixel
-              with all three channels near zero drops to 0 and becomes
-              transparent. Marble pixels stay fully opaque with their
-              original RGB intact. Then componentTransfer snaps alpha
-              to hard {0, 1} so the matte is crisp, not fringe-y. */}
+          {/* Same luminance-to-alpha keyer we used before, now shared
+              with anyone who wants to drop a black-bg PNG onto the scene. */}
           <filter id="venusKey" x="0" y="0" width="100%" height="100%">
             <feColorMatrix
               type="matrix"
@@ -765,33 +738,17 @@ function ForegroundApron() {
               <feFuncA type="discrete" tableValues="0 1" />
             </feComponentTransfer>
           </filter>
+          {/* Soft contact shadow ellipse — drops below each figure */}
+          <radialGradient id="contactShadow" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor="#000" stopOpacity="0.7" />
+            <stop offset="100%" stopColor="#000" stopOpacity="0" />
+          </radialGradient>
         </defs>
 
-        {/* Cream base */}
-        <path
-          d="M 370 0 L 1030 0 L 1600 300 L -200 300 Z"
-          fill="#e4d1a4"
-        />
-        {/* Darkening toward back */}
-        <path
-          d="M 370 0 L 1030 0 L 1600 300 L -200 300 Z"
-          fill="url(#apronDepth)"
-          opacity="0.55"
-        />
-        {blackTriangles}
+        {/* Venus contact shadow */}
+        <ellipse cx="225" cy="288" rx="80" ry="10" fill="url(#contactShadow)" />
 
-        {/* Red carpet runner continuing from the stage */}
-        <path
-          d="M 635 0 L 765 0 L 980 300 L 420 300 Z"
-          fill="url(#apronCarpet)"
-        />
-        <path d="M 635 0 L 420 300" stroke="rgba(232,192,137,0.12)" strokeWidth="1.2" fill="none" />
-        <path d="M 765 0 L 980 300" stroke="rgba(232,192,137,0.12)" strokeWidth="1.2" fill="none" />
-
-        {/* Venus de Milo — Louvre PNG, black-keyed to transparent.
-            CSS filter chains the black-keyer (#venusKey) with a
-            sepia/contrast pass so the marble reads warm, not cold-
-            white, against the crimson curtains. */}
+        {/* Venus de Milo PNG */}
         <g className={styles.venus}>
           <image
             href="/venus.png"
@@ -807,7 +764,10 @@ function ForegroundApron() {
           />
         </g>
 
-        {/* Traffic light — RIGHT apron */}
+        {/* Traffic light contact shadow */}
+        <ellipse cx="1165" cy="288" rx="40" ry="6" fill="url(#contactShadow)" />
+
+        {/* Traffic light */}
         <g transform="translate(1165, 55) scale(1.5)" className={styles.trafficLight}>
           <rect x="-1" y="-115" width="2" height="120" fill="#100804" />
           <rect x="-15" y="-8" width="30" height="110" rx="4" ry="4" fill="#0a0604" stroke="#2a1a0c" strokeWidth="1" />
