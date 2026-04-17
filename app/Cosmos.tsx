@@ -73,9 +73,9 @@ void main() {
   // ghost light will sit.
 
   const float PI = 3.14159265;
-  const float TEETH = 12.0;        // zigzag teeth around the tunnel
-  const float RING_FREQ = 0.85;    // ring density along depth
-  const float ZIGZAG_AMP = 0.32;   // how far teeth bite into the next ring
+  const float TEETH = 22.0;        // more, smaller teeth — no mandala lock
+  const float RING_FREQ = 1.5;     // denser rings so perspective compresses properly
+  const float ZIGZAG_AMP = 0.14;   // teeth bite subtly; rings stay recognisable as rings
 
   float rSafe = max(r, 0.02);
   float baseDepth = 0.5 / rSafe;
