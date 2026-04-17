@@ -413,49 +413,109 @@ function CameraRig() {
   );
 }
 
-// ————— ceremonial spotlight on the stage, with subtle candle flicker —————
+// ————— distributed altar lighting: altar spot + torchieres + sconces —————
 
-function CeremonialSpot() {
+function AltarSpot() {
+  // Broader, softer spotlight on the stage — more "altar highlight"
+  // than "interrogation lamp". Gentle flicker baked in.
   const ref = useRef<THREE.SpotLight>(null);
   useFrame(({ clock }) => {
     if (ref.current) {
       const t = clock.elapsedTime;
-      // Three uncorrelated sines — gives an irregular flame-like
-      // wobble instead of a metronome pulse. Amplitude ±15 of 65.
       const flicker =
-        Math.sin(t * 2.3) * 0.09 +
-        Math.sin(t * 3.7 + 1.2) * 0.06 +
-        Math.sin(t * 7.1 + 0.3) * 0.035;
-      ref.current.intensity = 65 + flicker * 18;
+        Math.sin(t * 1.9) * 0.05 +
+        Math.sin(t * 3.3 + 0.8) * 0.03 +
+        Math.sin(t * 5.7 + 0.2) * 0.02;
+      ref.current.intensity = 32 + flicker * 8;
     }
   });
   return (
     <spotLight
       ref={ref}
-      position={[0, 13, -6]}
-      angle={Math.PI / 4.5}
-      penumbra={0.55}
-      intensity={65}
-      distance={30}
-      decay={1.35}
-      color="#f0c880"
+      position={[0, 11, -4]}
+      angle={Math.PI / 3}
+      penumbra={0.85}
+      intensity={32}
+      distance={26}
+      decay={1.4}
+      color="#f2cc86"
       castShadow
       shadow-mapSize={[1024, 1024]}
     >
-      <object3D position={[0, 0, -13]} attach="target" />
+      <object3D position={[0, 1.5, -13]} attach="target" />
     </spotLight>
+  );
+}
+
+// A Twin-Peaks / La Tour style torchiere: a visible thin brass pole
+// with a small bowl at the top, and a warm pointLight sitting in the
+// bowl. The LIGHT HAS A VISIBLE SOURCE — that's what makes it
+// devotional rather than arbitrary.
+function Torchiere({ position }: { position: [number, number, number] }) {
+  const lightRef = useRef<THREE.PointLight>(null);
+  const bulbRef = useRef<THREE.Mesh>(null);
+  const seed = useMemo(() => Math.random() * 10, []);
+  useFrame(({ clock }) => {
+    const t = clock.elapsedTime + seed;
+    const f = 1 + Math.sin(t * 2.4) * 0.05 + Math.sin(t * 5.1) * 0.03;
+    if (lightRef.current) lightRef.current.intensity = 11 * f;
+    if (bulbRef.current) {
+      (bulbRef.current.material as THREE.MeshBasicMaterial).opacity = 0.85 * f;
+    }
+  });
+  return (
+    <group position={position}>
+      {/* Base disc */}
+      <mesh position={[0, 0.04, 0]} castShadow>
+        <cylinderGeometry args={[0.22, 0.26, 0.08, 24]} />
+        <meshStandardMaterial color="#3a2a14" metalness={0.7} roughness={0.55} />
+      </mesh>
+      {/* Thin brass pole */}
+      <mesh position={[0, 1.5, 0]} castShadow>
+        <cylinderGeometry args={[0.03, 0.03, 3, 12]} />
+        <meshStandardMaterial color="#8b6a34" metalness={0.8} roughness={0.4} />
+      </mesh>
+      {/* Bowl at top — shallow cone, open upward */}
+      <mesh position={[0, 3.08, 0]} castShadow>
+        <coneGeometry args={[0.35, 0.18, 24, 1, true]} />
+        <meshStandardMaterial
+          color="#4a3518"
+          metalness={0.65}
+          roughness={0.5}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+      {/* Inner bowl glow disc — warm emissive, visible as the 'flame' */}
+      <mesh position={[0, 3.13, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <circleGeometry args={[0.25, 24]} />
+        <meshBasicMaterial
+          color="#ffc880"
+          toneMapped={false}
+          transparent
+          opacity={0.85}
+        />
+      </mesh>
+      {/* The actual light emitted upward & outward */}
+      <pointLight
+        ref={lightRef}
+        position={[0, 3.2, 0]}
+        color="#f0b070"
+        intensity={11}
+        distance={14}
+        decay={1.4}
+      />
+    </group>
   );
 }
 
 function SideSconce({ position }: { position: [number, number, number] }) {
   const ref = useRef<THREE.PointLight>(null);
-  // Subtle candle-flame flicker per sconce
   const seed = useMemo(() => Math.random() * 10, []);
   useFrame(({ clock }) => {
     if (ref.current) {
       const t = clock.elapsedTime + seed;
-      const f = Math.sin(t * 4.1) * 0.15 + Math.sin(t * 6.7) * 0.08;
-      ref.current.intensity = 5.5 + f;
+      const f = Math.sin(t * 4.1) * 0.18 + Math.sin(t * 6.7) * 0.09;
+      ref.current.intensity = 4.2 + f;
     }
   });
   return (
@@ -463,9 +523,9 @@ function SideSconce({ position }: { position: [number, number, number] }) {
       ref={ref}
       position={position}
       color="#e0a050"
-      intensity={5.5}
-      distance={7}
-      decay={1.6}
+      intensity={4.2}
+      distance={6}
+      decay={1.7}
     />
   );
 }
@@ -485,31 +545,35 @@ export function RedRoom() {
       dpr={[1, 2]}
       style={{ position: "absolute", inset: 0 }}
     >
-      <color attach="background" args={["#1a0606"]} />
-      <fog attach="fog" args={["#1a0606", 16, 50]} />
+      <color attach="background" args={["#220808"]} />
+      <fog attach="fog" args={["#220808", 20, 60]} />
 
       <Suspense fallback={null}>
         <CameraRig />
 
-        {/* Reduced red ambient wash — the room exists, but it's dim.
-            The spotlight on stage is the focus now. */}
-        <hemisphereLight args={["#5a1818", "#1a0505", 0.4]} />
-        <ambientLight intensity={0.14} color="#5a1818" />
+        {/* Byzantine layer — a warm red environmental wash, the room
+            'glows' from all directions. Not too bright, but enough
+            that no surface falls completely into black. */}
+        <hemisphereLight args={["#7a2828", "#2a0808", 0.75]} />
+        <ambientLight intensity={0.22} color="#6a2020" />
 
-        {/* Ceremonial spotlight — high overhead, narrow cone, aimed
-            at the stage. Flickers subtly like a flame. This is the
-            beam of "being seen". */}
-        <CeremonialSpot />
+        {/* Altar layer — a gentle broad spot on the stage curtain.
+            Reads as 'altar highlight' more than a harsh beam. */}
+        <AltarSpot />
 
-        {/* Two side sconces — small warm point-lights on the side
-            walls, like candelabras burning alone in the shadows */}
-        <SideSconce position={[-9, 5, -7]} />
-        <SideSconce position={[9, 5, -7]} />
+        {/* La Tour layer — distributed warm sources across the room.
+            Each one is a visible fixture with its own flicker. */}
+        <Torchiere position={[-6.5, 0, -10]} />
+        <Torchiere position={[6.5, 0, -10]} />
+        <SideSconce position={[-10, 5.5, -4]} />
+        <SideSconce position={[10, 5.5, -4]} />
+        <SideSconce position={[-10, 3, -11]} />
+        <SideSconce position={[10, 3, -11]} />
 
-        {/* A weak back rim so the audience floor isn't pure black */}
+        {/* Warm back rim so the foreground floor isn't pitch black */}
         <directionalLight
           position={[0, 4, 12]}
-          intensity={0.12}
+          intensity={0.2}
           color="#8a4818"
         />
 
