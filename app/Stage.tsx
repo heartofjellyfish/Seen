@@ -161,39 +161,6 @@ export function Stage({
               <stop offset="100%" stopColor="#4a1419" />
             </linearGradient>
 
-            {/* Dream-object gradients — multi-stop for 3D render feel */}
-            <linearGradient id="pillBody" x1="0.3" y1="0" x2="0.7" y2="1">
-              <stop offset="0%" stopColor="#fff6e2" />
-              <stop offset="30%" stopColor="#f0d8a6" />
-              <stop offset="55%" stopColor="#c89848" />
-              <stop offset="85%" stopColor="#6a4518" />
-              <stop offset="100%" stopColor="#2a1a08" />
-            </linearGradient>
-            <linearGradient id="pillAmber" x1="0.3" y1="0" x2="0.7" y2="1">
-              <stop offset="0%" stopColor="#f8ca7a" />
-              <stop offset="40%" stopColor="#c88a3a" />
-              <stop offset="80%" stopColor="#6a4518" />
-              <stop offset="100%" stopColor="#20100a" />
-            </linearGradient>
-            <radialGradient id="coinFace" cx="30%" cy="20%" r="90%">
-              <stop offset="0%" stopColor="#fff6d8" />
-              <stop offset="25%" stopColor="#ecc580" />
-              <stop offset="55%" stopColor="#b8863a" />
-              <stop offset="85%" stopColor="#5a3e18" />
-              <stop offset="100%" stopColor="#2a1a08" />
-            </radialGradient>
-            <linearGradient id="brass" x1="0.2" y1="0" x2="0.8" y2="1">
-              <stop offset="0%" stopColor="#fff4c8" />
-              <stop offset="25%" stopColor="#ecc580" />
-              <stop offset="50%" stopColor="#b8862e" />
-              <stop offset="80%" stopColor="#6a4818" />
-              <stop offset="100%" stopColor="#30200a" />
-            </linearGradient>
-            <linearGradient id="paper" x1="0" y1="0" x2="0.2" y2="1">
-              <stop offset="0%" stopColor="#fff5db" />
-              <stop offset="50%" stopColor="#ddc898" />
-              <stop offset="100%" stopColor="#8a6e3c" />
-            </linearGradient>
           </defs>
 
           {/* Large soft halo behind ghost light */}
@@ -315,9 +282,10 @@ export function Stage({
             />
           </g>
 
-          {/* Dream objects drifting out of the vanishing point */}
-          <DreamObjects />
         </svg>
+
+        {/* Dream objects — HTML layer for real CSS 3D transforms */}
+        <DreamObjects />
 
         {/* Vignette on top of everything */}
         <div className={styles.vignette} />
@@ -339,72 +307,112 @@ export function Stage({
 
 // ————— dream objects —————
 //
-// Small personal items drift out of the vanishing point, tumble in
-// apparent 3D (scaleY modulation fakes a rotation axis), and float
-// past the viewer along their own trajectories. Five instances, each
-// hardcoded to a distinct path + tumble pair so no two feel the same.
+// HTML layer overlaid on the stage opening. Each item is a div with
+// real CSS 3D transforms (perspective-enabled parent, rotateY/X/Z
+// tumble) — no scaleY fakery, so when an object flips 90 degrees
+// you actually see the edge. Six items with coprime durations so
+// their spawn pattern never visibly repeats.
+
+type DreamKind = "pill" | "coin" | "key" | "note" | "ring" | "feather";
 
 const DREAM_ITEMS: Array<{
-  kind: "pill" | "coin" | "key" | "note";
+  kind: DreamKind;
   pathClass: string;
   tumbleClass: string;
 }> = [
-  { kind: "pill", pathClass: "dreamPath1", tumbleClass: "tumbleY" },
-  { kind: "coin", pathClass: "dreamPath2", tumbleClass: "tumbleX" },
-  { kind: "key",  pathClass: "dreamPath3", tumbleClass: "tumbleSpin" },
-  { kind: "note", pathClass: "dreamPath4", tumbleClass: "tumbleY" },
-  { kind: "pill", pathClass: "dreamPath5", tumbleClass: "tumbleX" },
+  { kind: "pill",    pathClass: "path1", tumbleClass: "tumbleY" },
+  { kind: "coin",    pathClass: "path2", tumbleClass: "tumbleX" },
+  { kind: "key",     pathClass: "path3", tumbleClass: "tumbleSpin" },
+  { kind: "note",    pathClass: "path4", tumbleClass: "tumbleY" },
+  { kind: "ring",    pathClass: "path5", tumbleClass: "tumbleBoth" },
+  { kind: "feather", pathClass: "path6", tumbleClass: "tumbleSpin" },
 ];
 
 function DreamObjects() {
   return (
-    <g className={styles.dreams}>
+    <div className={styles.dreamLayer} aria-hidden>
+      {/* Shared gradient defs — referenced by each dream object's SVG */}
+      <svg className={styles.dreamDefs}>
+        <defs>
+          <linearGradient id="dr-pill-body" x1="0.3" y1="0" x2="0.7" y2="1">
+            <stop offset="0%" stopColor="#fff6e2" />
+            <stop offset="30%" stopColor="#f0d8a6" />
+            <stop offset="55%" stopColor="#c89848" />
+            <stop offset="85%" stopColor="#6a4518" />
+            <stop offset="100%" stopColor="#2a1a08" />
+          </linearGradient>
+          <linearGradient id="dr-pill-amber" x1="0.3" y1="0" x2="0.7" y2="1">
+            <stop offset="0%" stopColor="#f8ca7a" />
+            <stop offset="40%" stopColor="#c88a3a" />
+            <stop offset="80%" stopColor="#6a4518" />
+            <stop offset="100%" stopColor="#20100a" />
+          </linearGradient>
+          <radialGradient id="dr-coin-face" cx="30%" cy="20%" r="90%">
+            <stop offset="0%" stopColor="#fff6d8" />
+            <stop offset="25%" stopColor="#ecc580" />
+            <stop offset="55%" stopColor="#b8863a" />
+            <stop offset="85%" stopColor="#5a3e18" />
+            <stop offset="100%" stopColor="#2a1a08" />
+          </radialGradient>
+          <linearGradient id="dr-brass" x1="0.2" y1="0" x2="0.8" y2="1">
+            <stop offset="0%" stopColor="#fff4c8" />
+            <stop offset="25%" stopColor="#ecc580" />
+            <stop offset="50%" stopColor="#b8862e" />
+            <stop offset="80%" stopColor="#6a4818" />
+            <stop offset="100%" stopColor="#30200a" />
+          </linearGradient>
+          <linearGradient id="dr-paper" x1="0" y1="0" x2="0.2" y2="1">
+            <stop offset="0%" stopColor="#fff5db" />
+            <stop offset="50%" stopColor="#ddc898" />
+            <stop offset="100%" stopColor="#8a6e3c" />
+          </linearGradient>
+        </defs>
+      </svg>
+
       {DREAM_ITEMS.map((item, i) => (
-        <g key={i} className={styles[item.pathClass]}>
-          <g className={styles[item.tumbleClass]}>
+        <div key={i} className={`${styles.dream} ${styles[item.pathClass]}`}>
+          <div className={`${styles.tumble} ${styles[item.tumbleClass]}`}>
             <DreamObject kind={item.kind} />
-          </g>
-        </g>
+          </div>
+        </div>
       ))}
-    </g>
+    </div>
   );
 }
 
-function DreamObject({ kind }: { kind: "pill" | "coin" | "key" | "note" }) {
+function DreamObject({ kind }: { kind: DreamKind }) {
   if (kind === "pill") {
     return (
-      <g>
-        {/* Soft ground shadow */}
-        <ellipse cx="1" cy="17" rx="22" ry="3" fill="#000" opacity="0.55" />
-        {/* Body — two halves of a capsule, each with deep multi-stop gradients */}
-        <rect x="-20" y="-9" width="20" height="18" fill="url(#pillBody)" rx="0.6" />
-        <ellipse cx="-20" cy="0" rx="9" ry="9" fill="url(#pillBody)" />
-        <rect x="0" y="-9" width="20" height="18" fill="url(#pillAmber)" rx="0.6" />
-        <ellipse cx="20" cy="0" rx="9" ry="9" fill="url(#pillAmber)" />
-        {/* Equatorial seam */}
+      <svg
+        width="82"
+        height="40"
+        viewBox="-41 -20 82 40"
+        xmlns="http://www.w3.org/2000/svg"
+        style={{ display: "block", overflow: "visible" }}
+      >
+        <rect x="-20" y="-9" width="20" height="18" fill="url(#dr-pill-body)" rx="0.6" />
+        <ellipse cx="-20" cy="0" rx="9" ry="9" fill="url(#dr-pill-body)" />
+        <rect x="0" y="-9" width="20" height="18" fill="url(#dr-pill-amber)" rx="0.6" />
+        <ellipse cx="20" cy="0" rx="9" ry="9" fill="url(#dr-pill-amber)" />
         <line x1="0" y1="-8.5" x2="0" y2="8.5" stroke="#3a2810" strokeWidth="0.6" />
-        {/* Specular band — a crisp white streak near the top */}
         <rect x="-14" y="-7" width="28" height="1.6" fill="#fff" opacity="0.9" rx="0.8" />
-        {/* Soft secondary highlight below the specular */}
         <ellipse cx="-4" cy="-4" rx="18" ry="1.6" fill="#fff" opacity="0.35" />
-        {/* Bottom dark rim for depth */}
-        <ellipse cx="0" cy="7.6" rx="22" ry="1.1" fill="#000" opacity="0.45" />
-      </g>
+      </svg>
     );
   }
   if (kind === "coin") {
     return (
-      <g>
-        {/* Ground shadow */}
-        <ellipse cx="1" cy="17" rx="15" ry="2.5" fill="#000" opacity="0.55" />
-        {/* Outer dark rim (coin edge, visible underneath) */}
+      <svg
+        width="34"
+        height="34"
+        viewBox="-17 -17 34 34"
+        xmlns="http://www.w3.org/2000/svg"
+        style={{ display: "block", overflow: "visible" }}
+      >
         <circle cx="0" cy="1" r="14" fill="#1a1008" />
-        {/* Coin face with directional radial gradient */}
-        <circle cx="0" cy="0" r="13" fill="url(#coinFace)" />
-        {/* Double engraved rings */}
+        <circle cx="0" cy="0" r="13" fill="url(#dr-coin-face)" />
         <circle cx="0" cy="0" r="13" fill="none" stroke="#3a2810" strokeWidth="0.7" />
         <circle cx="0" cy="0" r="11" fill="none" stroke="#7a5018" strokeWidth="0.45" opacity="0.7" />
-        {/* Stamped "s" */}
         <text
           x="0"
           y="5"
@@ -417,29 +425,26 @@ function DreamObject({ kind }: { kind: "pill" | "coin" | "key" | "note" }) {
         >
           s
         </text>
-        {/* Primary specular */}
         <ellipse cx="-4" cy="-5" rx="6" ry="3" fill="#fff" opacity="0.6" />
-        {/* Pin-point secondary specular */}
         <ellipse cx="-6.5" cy="-7.5" rx="2.5" ry="1.2" fill="#fff" opacity="0.55" />
-      </g>
+      </svg>
     );
   }
   if (kind === "key") {
     return (
-      <g>
-        {/* Shadow */}
-        <ellipse cx="0" cy="14" rx="17" ry="2" fill="#000" opacity="0.5" />
-        {/* Bow: thick brass ring */}
-        <circle cx="-14" cy="0" r="8" fill="none" stroke="url(#brass)" strokeWidth="3.2" />
+      <svg
+        width="44"
+        height="22"
+        viewBox="-24 -11 44 22"
+        xmlns="http://www.w3.org/2000/svg"
+        style={{ display: "block", overflow: "visible" }}
+      >
+        <circle cx="-14" cy="0" r="8" fill="none" stroke="url(#dr-brass)" strokeWidth="3.2" />
         <circle cx="-14" cy="0" r="2.8" fill="#0a0805" />
-        {/* Shaft */}
-        <rect x="-6.5" y="-2.2" width="19" height="4.4" fill="url(#brass)" rx="0.8" />
-        {/* Teeth */}
-        <rect x="4" y="2.2" width="3" height="3.8" fill="url(#brass)" />
-        <rect x="8.5" y="2.2" width="2.5" height="5" fill="url(#brass)" />
-        {/* Bright specular band along the shaft's top edge */}
+        <rect x="-6.5" y="-2.2" width="19" height="4.4" fill="url(#dr-brass)" rx="0.8" />
+        <rect x="4" y="2.2" width="3" height="3.8" fill="url(#dr-brass)" />
+        <rect x="8.5" y="2.2" width="2.5" height="5" fill="url(#dr-brass)" />
         <rect x="-6.5" y="-2.2" width="19" height="1.3" fill="#fff" opacity="0.75" rx="0.8" />
-        {/* A glint on the ring's upper arc */}
         <path
           d="M -20 -3 A 8 8 0 0 1 -12 -7"
           fill="none"
@@ -447,33 +452,118 @@ function DreamObject({ kind }: { kind: "pill" | "coin" | "key" | "note" }) {
           strokeWidth="0.8"
           opacity="0.7"
         />
-        {/* Bottom shadow line under shaft */}
-        <rect x="-6.5" y="1.7" width="19" height="0.6" fill="#000" opacity="0.35" rx="0.3" />
-      </g>
+      </svg>
+    );
+  }
+  if (kind === "ring") {
+    return (
+      <svg
+        width="36"
+        height="32"
+        viewBox="-18 -16 36 32"
+        xmlns="http://www.w3.org/2000/svg"
+        style={{ display: "block", overflow: "visible" }}
+      >
+        {/* Outer brass band */}
+        <ellipse cx="0" cy="0" rx="15" ry="13" fill="url(#dr-brass)" />
+        {/* Inner hole (darker, suggests depth through the ring) */}
+        <ellipse cx="0" cy="0.5" rx="10" ry="8" fill="#0a0604" />
+        {/* Inner rim — a thin darker line around the hole */}
+        <ellipse
+          cx="0"
+          cy="0.5"
+          rx="10"
+          ry="8"
+          fill="none"
+          stroke="#3a2810"
+          strokeWidth="0.5"
+        />
+        {/* Top arc specular — the glint across the band */}
+        <path
+          d="M -10 -9 A 15 13 0 0 1 8 -11"
+          fill="none"
+          stroke="#fff"
+          strokeWidth="1.1"
+          opacity="0.8"
+        />
+        {/* Inner highlight on the hole's upper edge */}
+        <path
+          d="M -6 -6 A 10 8 0 0 1 4 -7"
+          fill="none"
+          stroke="#fff"
+          strokeWidth="0.4"
+          opacity="0.4"
+        />
+        {/* Tiny set stone */}
+        <circle cx="0" cy="-10.5" r="2.2" fill="#fff5c6" />
+        <circle cx="0" cy="-10.5" r="2.2" fill="none" stroke="#3a2810" strokeWidth="0.3" />
+        <circle cx="-0.6" cy="-11" r="0.7" fill="#fff" opacity="0.9" />
+      </svg>
+    );
+  }
+  if (kind === "feather") {
+    return (
+      <svg
+        width="18"
+        height="46"
+        viewBox="-9 -23 18 46"
+        xmlns="http://www.w3.org/2000/svg"
+        style={{ display: "block", overflow: "visible" }}
+      >
+        {/* Vane silhouette — a pointed leaf shape */}
+        <path
+          d="M 0 -22 C -6 -15, -7 -2, -5 14 C -3 20, 3 20, 5 14 C 7 -2, 6 -15, 0 -22 Z"
+          fill="url(#dr-paper)"
+          opacity="0.88"
+        />
+        {/* Quill (central spine) */}
+        <line
+          x1="0"
+          y1="22"
+          x2="0"
+          y2="-22"
+          stroke="#3a2810"
+          strokeWidth="0.55"
+        />
+        {/* Barbs on the left side */}
+        <line x1="0" y1="-18" x2="-4" y2="-13" stroke="#6a4818" strokeWidth="0.3" opacity="0.7" />
+        <line x1="0" y1="-13" x2="-5.2" y2="-7" stroke="#6a4818" strokeWidth="0.3" opacity="0.7" />
+        <line x1="0" y1="-7" x2="-5.5" y2="-0.5" stroke="#6a4818" strokeWidth="0.3" opacity="0.7" />
+        <line x1="0" y1="-1" x2="-5.5" y2="6" stroke="#6a4818" strokeWidth="0.3" opacity="0.7" />
+        <line x1="0" y1="5" x2="-4.8" y2="12" stroke="#6a4818" strokeWidth="0.3" opacity="0.7" />
+        <line x1="0" y1="11" x2="-3.5" y2="17" stroke="#6a4818" strokeWidth="0.3" opacity="0.7" />
+        {/* Barbs on the right side */}
+        <line x1="0" y1="-18" x2="4" y2="-13" stroke="#6a4818" strokeWidth="0.3" opacity="0.7" />
+        <line x1="0" y1="-13" x2="5.2" y2="-7" stroke="#6a4818" strokeWidth="0.3" opacity="0.7" />
+        <line x1="0" y1="-7" x2="5.5" y2="-0.5" stroke="#6a4818" strokeWidth="0.3" opacity="0.7" />
+        <line x1="0" y1="-1" x2="5.5" y2="6" stroke="#6a4818" strokeWidth="0.3" opacity="0.7" />
+        <line x1="0" y1="5" x2="4.8" y2="12" stroke="#6a4818" strokeWidth="0.3" opacity="0.7" />
+        <line x1="0" y1="11" x2="3.5" y2="17" stroke="#6a4818" strokeWidth="0.3" opacity="0.7" />
+      </svg>
     );
   }
   // note
   return (
-    <g>
-      {/* Shadow, offset slightly for dog-ear drop */}
-      <ellipse cx="2" cy="18" rx="14" ry="2.4" fill="#000" opacity="0.5" />
-      {/* Paper with a dog-ear corner on the bottom-left */}
+    <svg
+      width="24"
+      height="32"
+      viewBox="-12 -16 24 32"
+      xmlns="http://www.w3.org/2000/svg"
+      style={{ display: "block", overflow: "visible" }}
+    >
       <path
         d="M -10 -14 L 10 -14 L 10 14 L -7 14 L -10 11 Z"
-        fill="url(#paper)"
+        fill="url(#dr-paper)"
       />
-      {/* Dog-ear triangle (darker — the folded underside) */}
       <path d="M -10 11 L -7 14 L -7 11 Z" fill="#8a6e3c" opacity="0.85" />
-      {/* Handwritten scribbles */}
       <line x1="-6" y1="-9" x2="7" y2="-9" stroke="#3a2a10" strokeWidth="0.5" opacity="0.82" />
       <line x1="-6" y1="-6" x2="5" y2="-6" stroke="#3a2a10" strokeWidth="0.5" opacity="0.82" />
       <line x1="-6" y1="-3" x2="7" y2="-3" stroke="#3a2a10" strokeWidth="0.5" opacity="0.82" />
       <line x1="-6" y1="1" x2="6" y2="1" stroke="#3a2a10" strokeWidth="0.5" opacity="0.82" />
       <line x1="-6" y1="4" x2="7" y2="4" stroke="#3a2a10" strokeWidth="0.5" opacity="0.82" />
       <line x1="-6" y1="7" x2="3" y2="7" stroke="#3a2a10" strokeWidth="0.5" opacity="0.82" />
-      {/* Top sheen — paper catches light */}
       <rect x="-10" y="-14" width="20" height="3.2" fill="#fff" opacity="0.4" rx="0.5" />
-    </g>
+    </svg>
   );
 }
 

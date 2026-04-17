@@ -45,18 +45,20 @@
   bottom: 0;
   width: clamp(140px, 26vw, 440px);
   background-image:
+    /* static fractal-noise grain — same family as the tunnel's riso texture */
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 240 240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' seed='5'/></filter><rect width='240' height='240' filter='url(%23n)'/></svg>"),
     /* pleats: dark creases + soft highlights */
     repeating-linear-gradient(
       to right,
-      rgba(0, 0, 0, 0.58) 0px,
-      rgba(0, 0, 0, 0.28) 3px,
+      rgba(0, 0, 0, 0.62) 0px,
+      rgba(0, 0, 0, 0.3) 3px,
       transparent 8px,
       rgba(255, 200, 160, 0.12) 18px,
       rgba(255, 200, 160, 0.22) 22px,
       rgba(255, 200, 160, 0.12) 26px,
       transparent 34px,
-      rgba(0, 0, 0, 0.28) 40px,
-      rgba(0, 0, 0, 0.58) 44px
+      rgba(0, 0, 0, 0.3) 40px,
+      rgba(0, 0, 0, 0.62) 44px
     ),
     /* base velvet color sweep */
     linear-gradient(
@@ -66,7 +68,9 @@
       #6c2430 68%,
       #4a1318 100%
     );
-  background-size: 44px 100%, 100% 100%;
+  background-size: 240px 240px, 44px 100%, 100% 100%;
+  background-repeat: repeat, repeat, no-repeat;
+  background-blend-mode: overlay, normal, normal;
   box-shadow: inset -20px 0 40px -10px rgba(0, 0, 0, 0.7);
   will-change: transform;
 }
@@ -231,133 +235,124 @@
 }
 
 /* ————— dream objects —————
-   Outer .dreamPathN group drives the path (translate + scale),
-   inner .tumble* group drives an apparent 3D tumble via scaleY/scaleX.
-   Five distinct paths, three tumble variants, cubic-bezier eases the
-   approach so scale grows fast near the end. */
+   HTML layer with real CSS 3D transforms. Parent enables perspective,
+   each item has its own path animation (translate + scale) plus a
+   tumble that actually rotates in 3D (rotateY/X/Z). When rotation
+   hits 90deg the object genuinely goes edge-on, not just squashed. */
 
-.dreams {
-  filter: drop-shadow(0 3px 7px rgba(0, 0, 0, 0.55));
+.dreamLayer {
+  position: absolute;
+  top: clamp(48px, 7vh, 84px);
+  left: clamp(140px, 26vw, 440px);
+  right: clamp(140px, 26vw, 440px);
+  bottom: 0;
+  perspective: 900px;
+  perspective-origin: 50% 38%;
+  transform-style: preserve-3d;
+  pointer-events: none;
+  z-index: 2;
 }
 
-.dreamPath1,
-.dreamPath2,
-.dreamPath3,
-.dreamPath4,
-.dreamPath5 {
-  transform-origin: 0 0;
-  transform-box: view-box;
-  animation-timing-function: cubic-bezier(0.5, 0, 0.95, 0.45);
+/* Defs-only hidden SVG used to host gradients for every dream object */
+.dreamDefs {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+.dream {
+  position: absolute;
+  left: 50%;
+  top: 38%;
+  width: 0;
+  height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform-style: preserve-3d;
   animation-iteration-count: infinite;
+  animation-timing-function: cubic-bezier(0.45, 0, 0.95, 0.5);
   will-change: transform, opacity;
 }
 
-.dreamPath1 {
-  animation-name: dreamPath1;
-  animation-duration: 13s;
-  animation-delay: 0s;
+/* Each path has its own unique keyframe + duration. Durations are
+   chosen to be mutually-coprime-ish so spawns never synchronise. */
+
+.path1 { animation-name: dp1; animation-duration: 11s;   animation-delay: 0s; }
+.path2 { animation-name: dp2; animation-duration: 13.5s; animation-delay: -2.3s; }
+.path3 { animation-name: dp3; animation-duration: 17s;   animation-delay: -5.8s; }
+.path4 { animation-name: dp4; animation-duration: 14s;   animation-delay: -10.1s; }
+.path5 { animation-name: dp5; animation-duration: 19s;   animation-delay: -13.7s; }
+.path6 { animation-name: dp6; animation-duration: 21s;   animation-delay: -16.4s; }
+
+@keyframes dp1 {
+  0%   { transform: translate(0, 0) scale(0.03); opacity: 0; }
+  9%   { opacity: 1; }
+  82%  { opacity: 1; }
+  100% { transform: translate(-360px, 430px) scale(3.2); opacity: 0; }
 }
-.dreamPath2 {
-  animation-name: dreamPath2;
-  animation-duration: 15s;
-  animation-delay: -3.2s;
+@keyframes dp2 {
+  0%   { transform: translate(0, 0) scale(0.03); opacity: 0; }
+  9%   { opacity: 1; }
+  82%  { opacity: 1; }
+  100% { transform: translate(380px, 380px) scale(3.3); opacity: 0; }
 }
-.dreamPath3 {
-  animation-name: dreamPath3;
-  animation-duration: 12s;
-  animation-delay: -6.4s;
+@keyframes dp3 {
+  0%   { transform: translate(0, 0) scale(0.03); opacity: 0; }
+  9%   { opacity: 1; }
+  82%  { opacity: 1; }
+  100% { transform: translate(480px, 100px) scale(3.0); opacity: 0; }
 }
-.dreamPath4 {
-  animation-name: dreamPath4;
-  animation-duration: 14s;
-  animation-delay: -9s;
+@keyframes dp4 {
+  0%   { transform: translate(0, 0) scale(0.03); opacity: 0; }
+  9%   { opacity: 1; }
+  82%  { opacity: 1; }
+  100% { transform: translate(-440px, 130px) scale(3.1); opacity: 0; }
 }
-.dreamPath5 {
-  animation-name: dreamPath5;
-  animation-duration: 16s;
-  animation-delay: -11.5s;
+@keyframes dp5 {
+  0%   { transform: translate(0, 0) scale(0.03); opacity: 0; }
+  9%   { opacity: 1; }
+  82%  { opacity: 1; }
+  100% { transform: translate(80px, 520px) scale(3.5); opacity: 0; }
+}
+@keyframes dp6 {
+  0%   { transform: translate(0, 0) scale(0.03); opacity: 0; }
+  9%   { opacity: 1; }
+  82%  { opacity: 1; }
+  100% { transform: translate(-260px, -40px) scale(2.9); opacity: 0; }
 }
 
-/* Paths start at the vanishing point (behind the ghost light) and
-   float outward to a point near the frame edge. */
+/* Tumble — REAL 3D rotation. When the object is edge-on (90deg) it
+   genuinely disappears for a moment; that's perspective foreshortening,
+   not a faked squash. */
 
-@keyframes dreamPath1 {
-  0%   { transform: translate(350px, 320px) scale(0.04); opacity: 0; }
-  10%  { opacity: 0.9; }
-  82%  { opacity: 1; }
-  100% { transform: translate(60px, 880px) scale(3.2);  opacity: 0; }
-}
-@keyframes dreamPath2 {
-  0%   { transform: translate(350px, 320px) scale(0.04); opacity: 0; }
-  10%  { opacity: 0.9; }
-  82%  { opacity: 1; }
-  100% { transform: translate(670px, 810px) scale(3.3);  opacity: 0; }
-}
-@keyframes dreamPath3 {
-  0%   { transform: translate(350px, 320px) scale(0.04); opacity: 0; }
-  10%  { opacity: 0.9; }
-  82%  { opacity: 1; }
-  100% { transform: translate(760px, 470px) scale(3.0);  opacity: 0; }
-}
-@keyframes dreamPath4 {
-  0%   { transform: translate(350px, 320px) scale(0.04); opacity: 0; }
-  10%  { opacity: 0.9; }
-  82%  { opacity: 1; }
-  100% { transform: translate(-60px, 540px) scale(3.1);  opacity: 0; }
-}
-@keyframes dreamPath5 {
-  0%   { transform: translate(350px, 320px) scale(0.04); opacity: 0; }
-  10%  { opacity: 0.9; }
-  82%  { opacity: 1; }
-  100% { transform: translate(350px, 980px) scale(3.5);  opacity: 0; }
-}
-
-/* Tumble variants — scaleY / scaleX squash fakes rotation around one
-   axis; dipping to ~0.08 makes the object look edge-on at the halfway
-   beat, which sells the 3D illusion far better than a shallow squash. */
-
-.tumbleY,
-.tumbleX,
-.tumbleSpin {
-  transform-origin: 0 0;
-  transform-box: view-box;
-  animation-timing-function: ease-in-out;
+.tumble {
+  transform-style: preserve-3d;
   animation-iteration-count: infinite;
-}
-
-.tumbleY {
-  animation-name: tumbleY;
-  animation-duration: 5.2s;
-}
-.tumbleX {
-  animation-name: tumbleX;
-  animation-duration: 4.4s;
-}
-.tumbleSpin {
-  animation-name: tumbleSpin;
-  animation-duration: 6.5s;
   animation-timing-function: linear;
 }
 
-@keyframes tumbleY {
-  0%   { transform: rotate(-14deg) scaleY(1); }
-  25%  { transform: rotate(4deg)   scaleY(0.08); }
-  50%  { transform: rotate(18deg)  scaleY(1); }
-  75%  { transform: rotate(4deg)   scaleY(0.08); }
-  100% { transform: rotate(-14deg) scaleY(1); }
-}
+.tumbleY     { animation-name: tY;    animation-duration: 4.5s; }
+.tumbleX     { animation-name: tX;    animation-duration: 5.8s; }
+.tumbleSpin  { animation-name: tZ;    animation-duration: 7s;   }
+.tumbleBoth  { animation-name: tYX;   animation-duration: 6.3s; }
 
-@keyframes tumbleX {
-  0%   { transform: rotate(10deg)  scaleX(1); }
-  25%  { transform: rotate(-3deg)  scaleX(0.1); }
-  50%  { transform: rotate(-16deg) scaleX(1); }
-  75%  { transform: rotate(-3deg)  scaleX(0.1); }
-  100% { transform: rotate(10deg)  scaleX(1); }
+@keyframes tY {
+  0%   { transform: rotateY(0deg); }
+  100% { transform: rotateY(360deg); }
 }
-
-@keyframes tumbleSpin {
-  0%   { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+@keyframes tX {
+  0%   { transform: rotateX(0deg); }
+  100% { transform: rotateX(-360deg); }
+}
+@keyframes tZ {
+  0%   { transform: rotateZ(0deg); }
+  100% { transform: rotateZ(360deg); }
+}
+@keyframes tYX {
+  0%   { transform: rotateY(0deg)   rotateX(0deg); }
+  100% { transform: rotateY(360deg) rotateX(360deg); }
 }
 
 /* ————— vignette overlay ————— */
