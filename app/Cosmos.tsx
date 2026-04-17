@@ -53,11 +53,13 @@ void main() {
   // Tunnel depth from radial position (classic 1/r projection).
   // Clamp to avoid singularity at the exact center.
   float rSafe = max(r, 0.02);
-  float depth = 0.45 / rSafe;
+  // Base depth = actual distance from viewer (stable, only a function of r).
+  // Used for lighting falloff so brightness doesn't drift over time.
+  float baseDepth = 0.45 / rSafe;
 
-  // Forward motion — we are walking in. Progress accelerates slightly.
+  // Flowing depth = base + time. Only used to advance the ring pattern.
   float speed = 0.42 + u_progress * u_progress * 0.45;
-  depth += t * speed;
+  float depth = baseDepth + t * speed;
 
   // Angular rotation — slow spin down the corridor + a little mouse yaw
   float phi = a + t * 0.11 + u_mouse.x * 0.28;
@@ -105,8 +107,8 @@ void main() {
   float rotTilt = cos(phi - t * 0.28) * 0.14;
   wallCol *= 1.0 + rotTilt;
 
-  // Depth fade
-  float depthFade = exp(-depth * 0.06);
+  // Depth fade — driven by baseDepth so brightness is stable over time.
+  float depthFade = exp(-baseDepth * 0.06);
   wallCol *= depthFade;
 
   // ————— paper grain (risograph / screen-print texture) —————
