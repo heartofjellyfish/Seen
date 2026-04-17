@@ -247,10 +247,26 @@
   right: clamp(140px, 26vw, 440px);
   bottom: 0;
   perspective: 900px;
-  perspective-origin: 50% 38%;
+  perspective-origin: 50% 58%;
   transform-style: preserve-3d;
   pointer-events: none;
   z-index: 2;
+}
+
+/* Thick 3D wrapper — stacks 5 SVG slices at different Z offsets so
+   each dream object has real depth. When it tumbles, you see the
+   stack from the side instead of a single paper plane. */
+
+.thick {
+  display: grid;
+  place-items: center;
+  transform-style: preserve-3d;
+}
+
+.slice {
+  grid-area: 1 / 1;
+  transform-style: preserve-3d;
+  backface-visibility: visible;
 }
 
 /* Defs-only hidden SVG used to host gradients for every dream object */
@@ -264,7 +280,7 @@
 .dream {
   position: absolute;
   left: 50%;
-  top: 38%;
+  top: 58%;
   width: 0;
   height: 0;
   display: flex;
@@ -286,41 +302,46 @@
 .path5 { animation-name: dp5; animation-duration: 19s;   animation-delay: -13.7s; }
 .path6 { animation-name: dp6; animation-duration: 21s;   animation-delay: -16.4s; }
 
+/* All paths emerge from (50%, 58%) — below the ghost light — and
+   travel outward to keep the bulb out of the flight path. End Y
+   offsets never go further up than -80px (still well below bulb at
+   ~35%). */
+
 @keyframes dp1 {
   0%   { transform: translate(0, 0) scale(0.03); opacity: 0; }
   9%   { opacity: 1; }
   82%  { opacity: 1; }
-  100% { transform: translate(-360px, 430px) scale(3.2); opacity: 0; }
+  100% { transform: translate(-380px, 260px) scale(3.2); opacity: 0; }
 }
 @keyframes dp2 {
   0%   { transform: translate(0, 0) scale(0.03); opacity: 0; }
   9%   { opacity: 1; }
   82%  { opacity: 1; }
-  100% { transform: translate(380px, 380px) scale(3.3); opacity: 0; }
+  100% { transform: translate(400px, 300px) scale(3.3); opacity: 0; }
 }
 @keyframes dp3 {
   0%   { transform: translate(0, 0) scale(0.03); opacity: 0; }
   9%   { opacity: 1; }
   82%  { opacity: 1; }
-  100% { transform: translate(480px, 100px) scale(3.0); opacity: 0; }
+  100% { transform: translate(500px, 40px) scale(3.0); opacity: 0; }
 }
 @keyframes dp4 {
   0%   { transform: translate(0, 0) scale(0.03); opacity: 0; }
   9%   { opacity: 1; }
   82%  { opacity: 1; }
-  100% { transform: translate(-440px, 130px) scale(3.1); opacity: 0; }
+  100% { transform: translate(-500px, 40px) scale(3.1); opacity: 0; }
 }
 @keyframes dp5 {
   0%   { transform: translate(0, 0) scale(0.03); opacity: 0; }
   9%   { opacity: 1; }
   82%  { opacity: 1; }
-  100% { transform: translate(80px, 520px) scale(3.5); opacity: 0; }
+  100% { transform: translate(70px, 420px) scale(3.5); opacity: 0; }
 }
 @keyframes dp6 {
   0%   { transform: translate(0, 0) scale(0.03); opacity: 0; }
   9%   { opacity: 1; }
   82%  { opacity: 1; }
-  100% { transform: translate(-260px, -40px) scale(2.9); opacity: 0; }
+  100% { transform: translate(-220px, -70px) scale(2.9); opacity: 0; }
 }
 
 /* Tumble — REAL 3D rotation. When the object is edge-on (90deg) it

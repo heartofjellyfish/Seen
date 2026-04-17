@@ -313,20 +313,46 @@ export function Stage({
 // you actually see the edge. Six items with coprime durations so
 // their spawn pattern never visibly repeats.
 
-type DreamKind = "pill" | "coin" | "key" | "note" | "ring" | "feather";
+type DreamKind = "pill" | "coin" | "key" | "note" | "ring" | "spoon";
 
 const DREAM_ITEMS: Array<{
   kind: DreamKind;
   pathClass: string;
   tumbleClass: string;
 }> = [
-  { kind: "pill",    pathClass: "path1", tumbleClass: "tumbleY" },
-  { kind: "coin",    pathClass: "path2", tumbleClass: "tumbleX" },
-  { kind: "key",     pathClass: "path3", tumbleClass: "tumbleSpin" },
-  { kind: "note",    pathClass: "path4", tumbleClass: "tumbleY" },
-  { kind: "ring",    pathClass: "path5", tumbleClass: "tumbleBoth" },
-  { kind: "feather", pathClass: "path6", tumbleClass: "tumbleSpin" },
+  { kind: "pill",  pathClass: "path1", tumbleClass: "tumbleY" },
+  { kind: "coin",  pathClass: "path2", tumbleClass: "tumbleX" },
+  { kind: "key",   pathClass: "path3", tumbleClass: "tumbleSpin" },
+  { kind: "note",  pathClass: "path4", tumbleClass: "tumbleY" },
+  { kind: "ring",  pathClass: "path5", tumbleClass: "tumbleBoth" },
+  { kind: "spoon", pathClass: "path6", tumbleClass: "tumbleX" },
 ];
+
+// Each dream object is rendered as a stack of 5 SVG slices at
+// different Z offsets. When the object tumbles, you see real
+// thickness — 5 layers of depth instead of a single paper plane.
+const THICK_SLICES = 5;
+const THICK_DEPTH = 5; // pixels of total Z extent
+
+function ThickDreamObject({ kind }: { kind: DreamKind }) {
+  return (
+    <div className={styles.thick}>
+      {Array.from({ length: THICK_SLICES }, (_, i) => {
+        const z =
+          (i / (THICK_SLICES - 1) - 0.5) * THICK_DEPTH;
+        return (
+          <div
+            key={i}
+            className={styles.slice}
+            style={{ transform: `translateZ(${z.toFixed(2)}px)` }}
+          >
+            <DreamObject kind={kind} />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 function DreamObjects() {
   return (
@@ -372,7 +398,7 @@ function DreamObjects() {
       {DREAM_ITEMS.map((item, i) => (
         <div key={i} className={`${styles.dream} ${styles[item.pathClass]}`}>
           <div className={`${styles.tumble} ${styles[item.tumbleClass]}`}>
-            <DreamObject kind={item.kind} />
+            <ThickDreamObject kind={item.kind} />
           </div>
         </div>
       ))}
@@ -501,44 +527,40 @@ function DreamObject({ kind }: { kind: DreamKind }) {
       </svg>
     );
   }
-  if (kind === "feather") {
+  if (kind === "spoon") {
     return (
       <svg
         width="18"
-        height="46"
-        viewBox="-9 -23 18 46"
+        height="52"
+        viewBox="-9 -26 18 52"
         xmlns="http://www.w3.org/2000/svg"
         style={{ display: "block", overflow: "visible" }}
       >
-        {/* Vane silhouette — a pointed leaf shape */}
+        {/* Handle (stem) */}
+        <rect
+          x="-1.6"
+          y="-6"
+          width="3.2"
+          height="30"
+          fill="url(#dr-brass)"
+          rx="0.6"
+        />
+        {/* Bowl */}
+        <ellipse cx="0" cy="-15" rx="6" ry="10" fill="url(#dr-brass)" />
+        {/* Inner bowl depression (darker) */}
+        <ellipse cx="0" cy="-15" rx="4.2" ry="7.2" fill="#6a4818" opacity="0.75" />
+        {/* Inner rim highlight */}
         <path
-          d="M 0 -22 C -6 -15, -7 -2, -5 14 C -3 20, 3 20, 5 14 C 7 -2, 6 -15, 0 -22 Z"
-          fill="url(#dr-paper)"
-          opacity="0.88"
+          d="M -4 -20 A 6 10 0 0 1 2 -24"
+          fill="none"
+          stroke="#fff"
+          strokeWidth="0.6"
+          opacity="0.75"
         />
-        {/* Quill (central spine) */}
-        <line
-          x1="0"
-          y1="22"
-          x2="0"
-          y2="-22"
-          stroke="#3a2810"
-          strokeWidth="0.55"
-        />
-        {/* Barbs on the left side */}
-        <line x1="0" y1="-18" x2="-4" y2="-13" stroke="#6a4818" strokeWidth="0.3" opacity="0.7" />
-        <line x1="0" y1="-13" x2="-5.2" y2="-7" stroke="#6a4818" strokeWidth="0.3" opacity="0.7" />
-        <line x1="0" y1="-7" x2="-5.5" y2="-0.5" stroke="#6a4818" strokeWidth="0.3" opacity="0.7" />
-        <line x1="0" y1="-1" x2="-5.5" y2="6" stroke="#6a4818" strokeWidth="0.3" opacity="0.7" />
-        <line x1="0" y1="5" x2="-4.8" y2="12" stroke="#6a4818" strokeWidth="0.3" opacity="0.7" />
-        <line x1="0" y1="11" x2="-3.5" y2="17" stroke="#6a4818" strokeWidth="0.3" opacity="0.7" />
-        {/* Barbs on the right side */}
-        <line x1="0" y1="-18" x2="4" y2="-13" stroke="#6a4818" strokeWidth="0.3" opacity="0.7" />
-        <line x1="0" y1="-13" x2="5.2" y2="-7" stroke="#6a4818" strokeWidth="0.3" opacity="0.7" />
-        <line x1="0" y1="-7" x2="5.5" y2="-0.5" stroke="#6a4818" strokeWidth="0.3" opacity="0.7" />
-        <line x1="0" y1="-1" x2="5.5" y2="6" stroke="#6a4818" strokeWidth="0.3" opacity="0.7" />
-        <line x1="0" y1="5" x2="4.8" y2="12" stroke="#6a4818" strokeWidth="0.3" opacity="0.7" />
-        <line x1="0" y1="11" x2="3.5" y2="17" stroke="#6a4818" strokeWidth="0.3" opacity="0.7" />
+        {/* Handle top specular */}
+        <rect x="-1.6" y="-6" width="1.1" height="30" fill="#fff" opacity="0.55" />
+        {/* Handle tip cap */}
+        <ellipse cx="0" cy="24" rx="1.8" ry="1.2" fill="url(#dr-brass)" />
       </svg>
     );
   }
