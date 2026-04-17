@@ -288,7 +288,7 @@
   height: clamp(280px, 36vh, 460px);
   z-index: 2;
   pointer-events: none;
-  perspective: 620px;
+  perspective: 900px;
   perspective-origin: center top;
   overflow: hidden;
 }
@@ -299,20 +299,25 @@
   transform-style: preserve-3d;
 }
 
-/* The chevron floor — flat tiled PNG, rotated into the ground plane */
+/* The chevron floor — flat tiled PNG, rotated into the ground plane.
+   Geometry must keep the bottom edge's z-depth UNDER perspective
+   (900), or that portion falls behind the camera and stops drawing.
+   height 140% + rotateX 58deg → bottom z ≈ 140%*300*sin(58°) ≈ 356
+   on a 300px apron — well clear of 900. */
 .apronFloor {
   position: absolute;
-  /* Floor extends past the visible apron so perspective doesn't cut */
   left: -60%;
   right: -60%;
   top: 0;
-  height: 320%;
+  height: 140%;
   background-image: url("/floor.png");
   background-repeat: repeat;
-  background-size: 220px 220px;
-  transform: rotateX(64deg);
+  background-size: 260px 260px;
+  background-color: #2a0a0a;
+  transform: rotateX(58deg);
   transform-origin: center top;
-  filter: brightness(0.78) saturate(0.9);
+  filter: brightness(0.8) saturate(0.92);
+  will-change: transform;
 }
 
 /* Warm pool of ghost-light spilling forward onto the floor */
@@ -321,14 +326,14 @@
   left: -60%;
   right: -60%;
   top: 0;
-  height: 320%;
+  height: 140%;
   background: radial-gradient(
-    ellipse at 50% 8%,
-    rgba(212, 163, 99, 0.42) 0%,
-    rgba(212, 163, 99, 0.14) 22%,
+    ellipse at 50% 10%,
+    rgba(212, 163, 99, 0.45) 0%,
+    rgba(212, 163, 99, 0.15) 22%,
     transparent 55%
   );
-  transform: rotateX(64deg);
+  transform: rotateX(58deg);
   transform-origin: center top;
   mix-blend-mode: screen;
   pointer-events: none;
