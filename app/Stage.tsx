@@ -703,45 +703,22 @@ function apronX(y: number) {
 function ForegroundApron() {
   return (
     <div className={styles.apron} aria-hidden>
+      {/* CSS-3D tilted floor — the chevron PNG gets REAL perspective
+          scaling (near chevrons big, far chevrons small) because the
+          whole div is rotated around its bottom edge and projected
+          through `perspective`. This is what the SVG trapezoid
+          couldn't do — SVG <pattern> tiles are flat-sized. */}
+      <div className={styles.apronFloor} />
+      <div className={styles.apronFloorLight} />
+      <div className={styles.apronFloorBackFade} />
+
+      {/* Upright figures in a flat SVG overlay on top of the 3D floor */}
       <svg
-        className={styles.apronSvg}
+        className={styles.apronFigures}
         viewBox="0 0 1400 500"
         preserveAspectRatio="xMidYMax slice"
       >
         <defs>
-          {/* Tile the floor PNG at 400x400 — an even fraction of the
-              1024x1024 asset so seams line up cleanly. */}
-          <pattern
-            id="floorTile"
-            patternUnits="userSpaceOnUse"
-            width="400"
-            height="400"
-          >
-            <image
-              href="/floor.png"
-              x="0"
-              y="0"
-              width="400"
-              height="400"
-            />
-          </pattern>
-
-          {/* Warm pool of ghost-light spilling forward onto the floor */}
-          <radialGradient id="floorLight" cx="50%" cy="-5%" r="85%">
-            <stop offset="0%" stopColor="#d4a363" stopOpacity="0.55" />
-            <stop offset="30%" stopColor="#d4a363" stopOpacity="0.2" />
-            <stop offset="100%" stopColor="#d4a363" stopOpacity="0" />
-          </radialGradient>
-
-          {/* Edge-darkening vignette baked into the floor shape */}
-          <linearGradient id="floorVignette" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#0e0b07" stopOpacity="0.7" />
-            <stop offset="20%" stopColor="#0e0b07" stopOpacity="0" />
-            <stop offset="100%" stopColor="#0e0b07" stopOpacity="0.25" />
-          </linearGradient>
-
-          {/* Luminance-to-alpha keyer so the black-bg Venus PNG drops
-              onto the floor cleanly. */}
           <filter id="venusKey" x="0" y="0" width="100%" height="100%">
             <feColorMatrix
               type="matrix"
@@ -754,34 +731,12 @@ function ForegroundApron() {
               <feFuncA type="discrete" tableValues="0 1" />
             </feComponentTransfer>
           </filter>
-
-          {/* Soft contact shadow under Venus's feet */}
           <radialGradient id="contactShadow" cx="50%" cy="50%" r="50%">
             <stop offset="0%" stopColor="#000" stopOpacity="0.65" />
             <stop offset="100%" stopColor="#000" stopOpacity="0" />
           </radialGradient>
         </defs>
 
-        {/* Trapezoid floor — narrow top (far) → wide bottom (near).
-            Reads as receding perspective via shape, even though the
-            chevron pattern inside is flat-tiled. */}
-        <polygon
-          points="420,0 980,0 1500,500 -100,500"
-          fill="url(#floorTile)"
-        />
-        {/* Warm ghost-light pool on the floor */}
-        <polygon
-          points="420,0 980,0 1500,500 -100,500"
-          fill="url(#floorLight)"
-          style={{ mixBlendMode: "screen" }}
-        />
-        {/* Far-back darkening + subtle front fade */}
-        <polygon
-          points="420,0 980,0 1500,500 -100,500"
-          fill="url(#floorVignette)"
-        />
-
-        {/* Venus contact shadow — under her feet at the trapezoid bottom */}
         <ellipse
           cx="260"
           cy="482"
@@ -790,7 +745,6 @@ function ForegroundApron() {
           fill="url(#contactShadow)"
         />
 
-        {/* Venus de Milo, feet on the near edge of the floor (y=485) */}
         <image
           href="/venus.png"
           x="140"

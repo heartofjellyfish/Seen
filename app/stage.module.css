@@ -289,12 +289,80 @@
   z-index: 2;
   pointer-events: none;
   overflow: hidden;
+  perspective: 800px;
+  perspective-origin: 50% 0%;
 }
 
-.apronSvg {
+/* The 3D-tilted floor.
+   transform-origin: center bottom — rotation axis is the NEAR edge
+   (the one touching the viewer's feet). Far edge rotates AWAY into
+   -z, giving a real receding floor. rotateX(42°) is shallow enough
+   that perspective-compression doesn't squash the floor into a
+   single line — at perspective 800 the max visual rise of a floor
+   at this angle is ~800/tan(42°) ≈ 889px, comfortably taller than
+   the apron. height 380% gives enough geometry for the far edge to
+   actually reach the top of the apron after compression. */
+.apronFloor {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: 360%;
+  margin-left: -180%;
+  height: 380%;
+  background-image: url("/floor.png");
+  background-repeat: repeat;
+  background-size: 420px 420px;
+  transform: rotateX(42deg);
+  transform-origin: center bottom;
+  will-change: transform;
+  filter: brightness(0.82) saturate(0.95);
+  backface-visibility: hidden;
+}
+
+/* Warm ghost-light pool. Same 3D geometry so it receeds with the
+   floor — bright where it would "hit" the stage, fading outward. */
+.apronFloorLight {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: 360%;
+  margin-left: -180%;
+  height: 380%;
+  background: radial-gradient(
+    ellipse at 50% 3%,
+    rgba(212, 163, 99, 0.55) 0%,
+    rgba(212, 163, 99, 0.18) 28%,
+    transparent 55%
+  );
+  transform: rotateX(42deg);
+  transform-origin: center bottom;
+  mix-blend-mode: screen;
+  pointer-events: none;
+}
+
+/* Non-tilted overlay: darken the far (top) portion of the apron so
+   the horizon dissolves into shadow, and the sides of the apron
+   fade to black to disguise tile edges off-screen. */
+.apronFloorBackFade {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(to bottom, rgba(14, 11, 7, 0.55) 0%, transparent 25%),
+    radial-gradient(
+      ellipse at 50% 100%,
+      transparent 40%,
+      rgba(14, 11, 7, 0.4) 100%
+    );
+}
+
+.apronFigures {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   display: block;
+  pointer-events: none;
 }
 
 /* ————— dream objects —————
