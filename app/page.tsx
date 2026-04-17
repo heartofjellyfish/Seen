@@ -296,61 +296,58 @@ export default function Page() {
   // (c) You are waiting.
   else if (view.you === "waiting") {
     body = (
-      <main className={styles.stage}>
-        <div className={styles.pane} key="waiting">
-          <Stage
-            progress={view.cycleProgress ?? 0}
-            epigraph="你的一束光，正在准备。"
-            epigraphEn="Your light is being prepared."
-          />
+      <main key="waiting">
+        <Stage
+          progress={view.cycleProgress ?? 0}
+          epigraph="你的一束光，正在准备。"
+          epigraphEn="Your light is being prepared."
+        >
           {savedToken && (
             <a className={styles.subtle} href={`/mine/${savedToken}`}>
               your thread
             </a>
           )}
-        </div>
+        </Stage>
       </main>
     );
   }
   // (d) Quiet hours.
   else if (view.phase === "quiet") {
     body = (
-      <main className={styles.stage}>
-        <div className={styles.pane} key="quiet">
-          <Stage
-            progress={view.nextProgress ?? 0}
-            epigraph="剧院还没醒。"
-            epigraphEn="The theater is still asleep."
-          />
+      <main key="quiet">
+        <Stage
+          progress={view.nextProgress ?? 0}
+          epigraph="剧院还没醒。"
+          epigraphEn="The theater is still asleep."
+        >
           <button className={styles.subtle} onClick={onBeSeen}>
             be seen
           </button>
-        </div>
+        </Stage>
       </main>
     );
   }
   // (e) Idle (fame window, pool empty or between transitions).
   else {
     body = (
-      <main className={styles.stage}>
-        <div className={styles.pane} key="idle">
-          <Stage
-            progress={view.phase === "preparing" ? 0.95 : 0.5}
-            epigraph={
-              view.phase === "preparing"
-                ? "有一个人，正在走出来。"
-                : "有一个座位，留着。"
-            }
-            epigraphEn={
-              view.phase === "preparing"
-                ? "Someone is stepping out."
-                : "A seat is kept."
-            }
-          />
+      <main key="idle">
+        <Stage
+          progress={view.phase === "preparing" ? 0.95 : 0.5}
+          epigraph={
+            view.phase === "preparing"
+              ? "有一个人，正在走出来。"
+              : "有一个座位，留着。"
+          }
+          epigraphEn={
+            view.phase === "preparing"
+              ? "Someone is stepping out."
+              : "A seat is kept."
+          }
+        >
           <button className={styles.subtle} onClick={onBeSeen}>
             be seen
           </button>
-        </div>
+        </Stage>
       </main>
     );
   }
