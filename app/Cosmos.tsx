@@ -64,49 +64,30 @@ void main() {
 
   vec3 col = vec3(0.0);
 
-  // ————— corridor walls —————
+  // ————— corridor walls: vertical pleats receding into depth —————
 
-  // 16 pleats around the tunnel. Cosine gives soft light/dark transition.
-  float pleatCount = 16.0;
-  float pleatCos = cos(phi * pleatCount);
-  float pleatLight = pow((pleatCos + 1.0) * 0.5, 1.6);
+  // 22 pleats. A sin wobble tied to depth keeps the ribbing from feeling
+  // purely mathematical — the walls "breathe" slightly as they recede.
+  float pleatCount = 22.0;
+  float wobble = sin(depth * 0.22 + phi * 1.4) * 0.04;
+  float pleatCos = cos(phi * pleatCount + wobble);
+  float pleatLight = pow((pleatCos + 1.0) * 0.5, 2.1);
 
-  // Alternating depth rings, softened so boundaries aren't harsh
-  float ringPhase = fract(depth * 0.55);
-  float ring = smoothstep(0.0, 0.08, ringPhase)
-             * smoothstep(0.5, 0.42, ringPhase);
-
-  // Darker crease band repeating in depth (a thin shadow between rings)
-  float creasePhase = fract(depth * 0.55 + 0.5);
-  float crease = smoothstep(0.0, 0.03, creasePhase)
-               * smoothstep(0.06, 0.03, creasePhase);
-
-  // Wall palette — warm amber
-  vec3 wallShadow = vec3(0.07, 0.025, 0.015);
-  vec3 wallMid = vec3(0.34, 0.16, 0.08);
-  vec3 wallLit = vec3(0.72, 0.42, 0.20);
+  vec3 wallShadow = vec3(0.04, 0.015, 0.008);
+  vec3 wallMid = vec3(0.36, 0.18, 0.08);
+  vec3 wallLit = vec3(0.70, 0.42, 0.20);
 
   vec3 wallCol = mix(wallShadow, wallMid, pleatLight);
-  wallCol = mix(wallCol, wallLit, ring * pleatLight * 0.9);
-  wallCol -= vec3(0.06, 0.02, 0.01) * crease;
+  wallCol = mix(wallCol, wallLit, smoothstep(0.78, 1.0, pleatLight) * 0.55);
 
-  // Pleat highlight on the crests — thin bright line
-  float crest = smoothstep(0.88, 1.0, pleatCos);
-  wallCol += vec3(0.95, 0.68, 0.32) * crest * ring * 0.55;
-
-  // Depth falloff — far is darker
-  float depthFade = exp(-depth * 0.045);
+  // Depth falloff — tunnel darkens as it recedes
+  float depthFade = exp(-depth * 0.055);
   wallCol *= depthFade;
 
-  // Ease the wall fades softly toward the bright core and the outer vignette
-  float tunnelMask = smoothstep(0.09, 0.22, r) * smoothstep(2.1, 0.7, r);
+  // Walls fade in smoothly from the black center; no competing core glow.
+  // The ghost light in the stage SVG is the only bright spot at vanishing.
+  float tunnelMask = smoothstep(0.10, 0.26, r) * smoothstep(2.2, 0.6, r);
   col += wallCol * tunnelMask;
-
-  // ————— core light at the end of the corridor —————
-
-  float pulse = 0.86 + 0.14 * sin(t * 0.32);
-  col += vec3(0.95, 0.55, 0.22) * exp(-r * 5.2) * 0.42 * pulse;
-  col += vec3(1.0, 0.92, 0.72) * exp(-r * 13.5) * 0.5 * pulse;
 
   // ————— particles emerging from the depth —————
 
@@ -136,16 +117,16 @@ void main() {
     col += vec3(1.0, 0.95, 0.75) * bKernel * 0.55;
   }
 
-  // ————— fine grain on walls (star-dust texture) —————
+  // ————— fine dust grain on walls —————
 
-  vec2 grid = vec2(phi * 32.0, depth * 9.0);
+  vec2 grid = vec2(phi * 36.0, depth * 11.0);
   vec2 ig = floor(grid);
   vec2 fg = fract(grid);
   float h = hash(ig);
-  if (h > 0.93 && tunnelMask > 0.3) {
+  if (h > 0.94 && tunnelMask > 0.3) {
     float d = length(fg - 0.5);
-    float g = smoothstep(0.18, 0.0, d) * (h - 0.93) * 10.0;
-    col += vec3(0.55, 0.33, 0.16) * g * depthFade * 0.45;
+    float g = smoothstep(0.16, 0.0, d) * (h - 0.94) * 11.0;
+    col += vec3(0.55, 0.33, 0.16) * g * depthFade * 0.4;
   }
 
   // ————— outer vignette —————

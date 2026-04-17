@@ -74,12 +74,23 @@
 .curtainL {
   left: 0;
   animation: curtainBreathL 32s ease-in-out infinite;
+  filter: url(#cloth-ripple);
 }
 
 .curtainR {
   right: 0;
   transform: scaleX(-1);
   animation: curtainBreathR 36s ease-in-out infinite;
+  filter: url(#cloth-ripple);
+}
+
+/* Hidden container just to hold the filter defs */
+.filterDefs {
+  position: absolute;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  opacity: 0;
 }
 
 @keyframes curtainBreathL {
@@ -228,6 +239,46 @@
 
 .stanchions {
   filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.75));
+}
+
+/* ————— the endless train ————— */
+
+.train {
+  filter: drop-shadow(0 3px 8px rgba(0, 0, 0, 0.7));
+}
+
+.trainCar {
+  transform-origin: 0 0;
+  transform-box: view-box;
+  animation-name: trainRun;
+  animation-duration: 14s;
+  animation-timing-function: cubic-bezier(0.55, 0, 1, 0.45);
+  animation-iteration-count: infinite;
+  will-change: transform, opacity;
+}
+
+@keyframes trainRun {
+  0% {
+    transform: translate(350px, 495px) scale(0.045);
+    opacity: 0;
+  }
+  3% {
+    opacity: 0;
+  }
+  10% {
+    opacity: 0.85;
+  }
+  55% {
+    opacity: 1;
+  }
+  85% {
+    transform: translate(350px, 930px) scale(1.7);
+    opacity: 0.85;
+  }
+  100% {
+    transform: translate(350px, 1120px) scale(3.1);
+    opacity: 0;
+  }
 }
 
 /* ————— vignette overlay ————— */

@@ -82,10 +82,39 @@ export function Stage({
     <div className={styles.hall} ref={hallRef}>
       {/* ————— decorative layer ————— */}
       <div className={styles.bg}>
+        {/* Shared SVG filter defs — cloth ripple applied to curtains */}
+        <svg className={styles.filterDefs} aria-hidden>
+          <defs>
+            <filter
+              id="cloth-ripple"
+              x="-4%"
+              y="-2%"
+              width="108%"
+              height="104%"
+            >
+              <feTurbulence
+                type="fractalNoise"
+                baseFrequency="0.006 0.018"
+                numOctaves="2"
+                seed="3"
+                stitchTiles="stitch"
+              >
+                <animate
+                  attributeName="seed"
+                  values="0;90"
+                  dur="75s"
+                  repeatCount="indefinite"
+                />
+              </feTurbulence>
+              <feDisplacementMap in="SourceGraphic" scale="6" />
+            </filter>
+          </defs>
+        </svg>
+
         {/* Rotating corridor behind the stage opening */}
         <Cosmos progress={p} />
 
-        {/* Side curtains (CSS velvet) */}
+        {/* Side curtains (CSS velvet, warped by cloth-ripple filter) */}
         <div className={`${styles.curtain} ${styles.curtainL}`} />
         <div className={`${styles.curtain} ${styles.curtainR}`} />
 
@@ -280,6 +309,9 @@ export function Stage({
               style={{ opacity: ropeOpacity * 0.5, transition: "opacity 2s ease" }}
             />
           </g>
+
+          {/* The endless train emerging from the vanishing point */}
+          <Train />
         </svg>
 
         {/* Vignette on top of everything */}
@@ -297,6 +329,54 @@ export function Stage({
         {children ? <div className={styles.actions}>{children}</div> : null}
       </div>
     </div>
+  );
+}
+
+// ————— the endless train —————
+//
+// 14 cars staggered across a 14-second loop — at any moment there's a
+// new car emerging from the vanishing point and another sliding toward
+// the bottom of the frame. The timing function accelerates so cars grow
+// and move faster as they approach, faking perspective without JS.
+
+const TRAIN_CAR_COUNT = 14;
+const TRAIN_DURATION_SEC = 14;
+
+function Train() {
+  return (
+    <g className={styles.train}>
+      {Array.from({ length: TRAIN_CAR_COUNT }, (_, i) => (
+        <g
+          key={i}
+          className={styles.trainCar}
+          style={{
+            animationDelay: `${-((i * TRAIN_DURATION_SEC) / TRAIN_CAR_COUNT).toFixed(3)}s`,
+          }}
+        >
+          <TrainCar />
+        </g>
+      ))}
+    </g>
+  );
+}
+
+function TrainCar() {
+  return (
+    <g>
+      {/* Body */}
+      <rect x="-28" y="-10" width="56" height="20" fill="#140903" rx="1.6" />
+      {/* Roof trim */}
+      <rect x="-28" y="-10" width="56" height="2.6" fill="#28170a" rx="1.6" />
+      {/* Warm windows */}
+      <rect x="-23" y="-5.5" width="8" height="11" fill="#e8c089" opacity="0.93" rx="0.4" />
+      <rect x="-12" y="-5.5" width="8" height="11" fill="#e8c089" opacity="0.93" rx="0.4" />
+      <rect x="-1" y="-5.5" width="8" height="11" fill="#e8c089" opacity="0.93" rx="0.4" />
+      <rect x="10" y="-5.5" width="8" height="11" fill="#e8c089" opacity="0.93" rx="0.4" />
+      {/* Undercarriage + wheels */}
+      <rect x="-26" y="10" width="52" height="2" fill="#050201" />
+      <ellipse cx="-17" cy="12.5" rx="3.4" ry="1.7" fill="#050201" />
+      <ellipse cx="17" cy="12.5" rx="3.4" ry="1.7" fill="#050201" />
+    </g>
   );
 }
 
