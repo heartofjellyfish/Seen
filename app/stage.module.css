@@ -285,87 +285,16 @@
   left: 0;
   right: 0;
   bottom: 0;
-  height: clamp(320px, 42vh, 540px);
+  height: clamp(380px, 55vh, 680px);
   z-index: 2;
   pointer-events: none;
-  perspective: 500px;
-  perspective-origin: center top;
   overflow: hidden;
 }
 
-.apronFloorLayer {
-  position: absolute;
-  inset: 0;
-  transform-style: preserve-3d;
-}
-
-/* The chevron floor — flat tiled PNG, rotated into the ground plane.
-   Explicit width + centering (instead of relying on negative left/right
-   which some browsers compute into a negative width). perspective 500
-   with rotateX 68° gives a near/far scale ratio of ~3.6, dramatic
-   Twin-Peaks-style foreshortening. Bottom z ≈ 130% * 320 * sin(68°)
-   ≈ 386 on a 320px apron — still below perspective 500, safe. */
-.apronFloor {
-  position: absolute;
-  left: 50%;
-  top: 0;
-  width: 220%;
-  height: 130%;
-  margin-left: -110%;
-  background-image: url("/floor.png");
-  background-repeat: repeat;
-  background-size: 280px 280px;
-  background-color: #2a0a0a;
-  transform: rotateX(68deg);
-  transform-origin: center top;
-  filter: brightness(0.82) saturate(0.95);
-  will-change: transform;
-  backface-visibility: hidden;
-}
-
-/* Warm pool of ghost-light spilling forward onto the floor */
-.apronFloorLight {
-  position: absolute;
-  left: 50%;
-  top: 0;
-  width: 220%;
-  height: 130%;
-  margin-left: -110%;
-  background: radial-gradient(
-    ellipse at 50% 8%,
-    rgba(212, 163, 99, 0.55) 0%,
-    rgba(212, 163, 99, 0.2) 22%,
-    transparent 55%
-  );
-  transform: rotateX(68deg);
-  transform-origin: center top;
-  mix-blend-mode: screen;
-  pointer-events: none;
-}
-
-/* Fade the apron's edges into darkness so the tiled floor doesn't
-   hit the viewport hard at the sides and back. */
-.apronFloorVignette {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background:
-    linear-gradient(to bottom, rgba(14, 11, 7, 0.65) 0%, transparent 18%),
-    radial-gradient(
-      ellipse at 50% 100%,
-      transparent 25%,
-      rgba(14, 11, 7, 0.55) 70%,
-      rgba(14, 11, 7, 0.92) 100%
-    );
-}
-
-.apronFigures {
-  position: absolute;
-  inset: 0;
+.apronSvg {
   width: 100%;
   height: 100%;
   display: block;
-  pointer-events: none;
 }
 
 /* ————— dream objects —————

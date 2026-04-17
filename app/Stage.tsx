@@ -703,29 +703,45 @@ function apronX(y: number) {
 function ForegroundApron() {
   return (
     <div className={styles.apron} aria-hidden>
-      {/* The floor: a flat tiled chevron PNG, CSS-3D tilted into
-          perspective. perspective + rotateX do the receding math —
-          far-end chevrons compress, near-end spread out, all for free. */}
-      <div className={styles.apronFloorLayer}>
-        <div className={styles.apronFloor} />
-        {/* A soft warm pool of light near where the ghost light
-            "would reach" the floor — overlaid on the tilted floor so
-            it shrinks correctly with the perspective. */}
-        <div className={styles.apronFloorLight} />
-        {/* The vignette — edges of the apron fade to black */}
-        <div className={styles.apronFloorVignette} />
-      </div>
-
-      {/* Upright figures on top of the floor — not tilted. They stand
-          on the apron like real props. */}
       <svg
-        className={styles.apronFigures}
-        viewBox="0 0 1400 300"
+        className={styles.apronSvg}
+        viewBox="0 0 1400 500"
         preserveAspectRatio="xMidYMax slice"
       >
         <defs>
-          {/* Same luminance-to-alpha keyer we used before, now shared
-              with anyone who wants to drop a black-bg PNG onto the scene. */}
+          {/* Tile the floor PNG at 400x400 — an even fraction of the
+              1024x1024 asset so seams line up cleanly. */}
+          <pattern
+            id="floorTile"
+            patternUnits="userSpaceOnUse"
+            width="400"
+            height="400"
+          >
+            <image
+              href="/floor.png"
+              x="0"
+              y="0"
+              width="400"
+              height="400"
+            />
+          </pattern>
+
+          {/* Warm pool of ghost-light spilling forward onto the floor */}
+          <radialGradient id="floorLight" cx="50%" cy="-5%" r="85%">
+            <stop offset="0%" stopColor="#d4a363" stopOpacity="0.55" />
+            <stop offset="30%" stopColor="#d4a363" stopOpacity="0.2" />
+            <stop offset="100%" stopColor="#d4a363" stopOpacity="0" />
+          </radialGradient>
+
+          {/* Edge-darkening vignette baked into the floor shape */}
+          <linearGradient id="floorVignette" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#0e0b07" stopOpacity="0.7" />
+            <stop offset="20%" stopColor="#0e0b07" stopOpacity="0" />
+            <stop offset="100%" stopColor="#0e0b07" stopOpacity="0.25" />
+          </linearGradient>
+
+          {/* Luminance-to-alpha keyer so the black-bg Venus PNG drops
+              onto the floor cleanly. */}
           <filter id="venusKey" x="0" y="0" width="100%" height="100%">
             <feColorMatrix
               type="matrix"
@@ -738,54 +754,55 @@ function ForegroundApron() {
               <feFuncA type="discrete" tableValues="0 1" />
             </feComponentTransfer>
           </filter>
-          {/* Soft contact shadow ellipse — drops below each figure */}
+
+          {/* Soft contact shadow under Venus's feet */}
           <radialGradient id="contactShadow" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="#000" stopOpacity="0.7" />
+            <stop offset="0%" stopColor="#000" stopOpacity="0.65" />
             <stop offset="100%" stopColor="#000" stopOpacity="0" />
           </radialGradient>
         </defs>
 
-        {/* Venus contact shadow */}
-        <ellipse cx="225" cy="288" rx="80" ry="10" fill="url(#contactShadow)" />
+        {/* Trapezoid floor — narrow top (far) → wide bottom (near).
+            Reads as receding perspective via shape, even though the
+            chevron pattern inside is flat-tiled. */}
+        <polygon
+          points="420,0 980,0 1500,500 -100,500"
+          fill="url(#floorTile)"
+        />
+        {/* Warm ghost-light pool on the floor */}
+        <polygon
+          points="420,0 980,0 1500,500 -100,500"
+          fill="url(#floorLight)"
+          style={{ mixBlendMode: "screen" }}
+        />
+        {/* Far-back darkening + subtle front fade */}
+        <polygon
+          points="420,0 980,0 1500,500 -100,500"
+          fill="url(#floorVignette)"
+        />
 
-        {/* Venus de Milo PNG */}
-        <g className={styles.venus}>
-          <image
-            href="/venus.png"
-            x="135"
-            y="30"
-            width="180"
-            height="260"
-            preserveAspectRatio="xMidYMax meet"
-            style={{
-              filter:
-                "url(#venusKey) sepia(0.28) saturate(0.85) brightness(0.94) contrast(1.05)",
-            }}
-          />
-        </g>
+        {/* Venus contact shadow — under her feet at the trapezoid bottom */}
+        <ellipse
+          cx="260"
+          cy="482"
+          rx="95"
+          ry="11"
+          fill="url(#contactShadow)"
+        />
 
-        {/* Traffic light contact shadow */}
-        <ellipse cx="1165" cy="288" rx="40" ry="6" fill="url(#contactShadow)" />
-
-        {/* Traffic light */}
-        <g transform="translate(1165, 55) scale(1.5)" className={styles.trafficLight}>
-          <rect x="-1" y="-115" width="2" height="120" fill="#100804" />
-          <rect x="-15" y="-8" width="30" height="110" rx="4" ry="4" fill="#0a0604" stroke="#2a1a0c" strokeWidth="1" />
-          <rect x="-13" y="-6" width="1.5" height="106" fill="#2a1a0c" opacity="0.7" />
-          <circle cx="0" cy="10" r="9" fill="#2a0606" />
-          <circle cx="0" cy="10" r="7.5" fill="#a42020" className={styles.lampWine} />
-          <circle cx="-1.5" cy="8" r="2.5" fill="#ffb8a0" opacity="0.7" />
-          <circle cx="0" cy="38" r="9" fill="#2a1a04" />
-          <circle cx="0" cy="38" r="7.5" fill="#d4a363" className={styles.lampAmber} />
-          <circle cx="-1.5" cy="36" r="2.5" fill="#fff1c7" opacity="0.8" />
-          <circle cx="0" cy="66" r="9" fill="#1a1810" />
-          <circle cx="0" cy="66" r="7.5" fill="#ece2cc" className={styles.lampCream} />
-          <circle cx="-1.5" cy="64" r="2.5" fill="#ffffff" opacity="0.85" />
-          <rect x="-12" y="95" width="24" height="7" fill="#0a0604" />
-          <circle cx="0" cy="10" r="18" fill="#a42020" opacity="0.08" />
-          <circle cx="0" cy="38" r="18" fill="#d4a363" opacity="0.10" />
-          <circle cx="0" cy="66" r="18" fill="#ece2cc" opacity="0.06" />
-        </g>
+        {/* Venus de Milo, feet on the near edge of the floor (y=485) */}
+        <image
+          href="/venus.png"
+          x="140"
+          y="155"
+          width="230"
+          height="330"
+          preserveAspectRatio="xMidYMax meet"
+          style={{
+            filter:
+              "url(#venusKey) sepia(0.28) saturate(0.85) brightness(0.95) contrast(1.05)",
+          }}
+        />
       </svg>
     </div>
   );
