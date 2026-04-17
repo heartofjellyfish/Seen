@@ -58,62 +58,94 @@ void main() {
   uv += u_mouse * 0.08;
 
   float r = length(uv);
-  float theta = atan(uv.y, uv.x);
   float t = u_time;
 
-  // ————— slow rotating galaxy —————
+  // ————— rotating galaxy —————
   //
-  // Top-down view of a two-armed spiral galaxy. Arms follow a
-  // logarithmic spiral (tighter near the core). Center is kept pure
-  // black so the ghost light sits unopposed. Stars scatter across the
-  // disk with a bias toward the arms; dust lanes darken the regions
-  // between arms. One full revolution per ~4.5 minutes.
+  // Top-down view of a two-armed spiral galaxy. We rotate uv into the
+  // galaxy-frame coordinate system — then stars and arms all live at
+  // stable positions in that frame, and it's the viewer who appears
+  // to rotate around the galactic axis. Both arms and stars rotate
+  // together. Center is kept pure black so the ghost light sits
+  // unopposed.
 
   const float PI = 3.14159265;
   const float N_ARMS = 2.0;
   const float TWIST = 2.8;
 
-  float rotSpeed = 0.023 + u_progress * u_progress * 0.012;
-  float phi = theta + t * rotSpeed + u_mouse.x * 0.14;
+  // Visible rotation — one revolution per ~1.7 minutes, with a touch
+  // more urgency as fame approaches.
+  float rotSpeed = 0.06 + u_progress * u_progress * 0.03;
+  float gAngle = t * rotSpeed;
 
-  float armPhase = N_ARMS * phi + TWIST * log(r + 0.08);
+  // Rotate uv into galaxy frame (stars + arms are stable there)
+  float cA = cos(gAngle);
+  float sA = sin(gAngle);
+  vec2 gUv = vec2(uv.x * cA + uv.y * sA, -uv.x * sA + uv.y * cA);
+  float gTheta = atan(gUv.y, gUv.x);
 
-  // Sharp arm ridges
+  float armPhase = N_ARMS * (gTheta + u_mouse.x * 0.14)
+                 + TWIST * log(r + 0.08);
+
   float arm = cos(armPhase) * 0.5 + 0.5;
   arm = pow(arm, 3.5);
 
-  // Dark hole at center (ghost light's throne), arms in a ring
   float innerFade = smoothstep(0.05, 0.28, r);
   float outerFade = smoothstep(1.9, 0.45, r);
   float armMask = innerFade * outerFade;
   float armIntensity = arm * armMask;
 
   // ————— stars —————
+  //
+  // For each pixel we check a 3x3 neighbourhood of cells so star
+  // rendering doesn't cut off at cell edges. Each star has a
+  // gaussian pinpoint + a softer halo — gives crisp bright dots
+  // with a glow, not pixelated dabs.
 
-  // Bright sparse stars, preferentially on arms
-  vec2 sCell = floor(uv * 70.0);
-  float sHash = hash(sCell);
   float stars = 0.0;
-  if (sHash > 0.97) {
-    vec2 sFrac = fract(uv * 70.0);
-    vec2 sPos = vec2(
-      0.35 + hash(sCell + vec2(11.0, 3.0)) * 0.3,
-      0.35 + hash(sCell + vec2(23.0, 7.0)) * 0.3
-    );
-    float sd = distance(sFrac, sPos);
-    float s = smoothstep(0.14, 0.0, sd) * (sHash - 0.97) * 42.0;
-    s *= 0.3 + 0.7 * arm;
-    s *= armMask * 1.3;
-    stars += s;
+
+  // Bright stars layer (coarser grid = larger stars)
+  vec2 bP = gUv * 55.0;
+  vec2 bCell = floor(bP);
+  for (int dy = -1; dy <= 1; dy++) {
+    for (int dx = -1; dx <= 1; dx++) {
+      vec2 nCell = bCell + vec2(float(dx), float(dy));
+      float h = hash(nCell);
+      if (h > 0.955) {
+        vec2 sPos = nCell + vec2(
+          0.25 + hash(nCell + vec2(17.0, 3.1)) * 0.5,
+          0.25 + hash(nCell + vec2(31.0, 5.7)) * 0.5
+        );
+        float d2 = distance(bP, sPos);
+        // Pin + halo
+        float pin = exp(-d2 * d2 * 95.0);
+        float halo = exp(-d2 * d2 * 14.0);
+        float br = (pin * 2.2 + halo * 0.55) * (h - 0.955) * 24.0;
+        br *= 0.28 + 0.72 * arm;
+        stars += br * armMask;
+      }
+    }
   }
 
-  // Fine star dust — everywhere in the disk
-  vec2 dCell = floor(uv * 180.0);
-  float dHash = hash(dCell + vec2(7.0, 41.0));
-  if (dHash > 0.958) {
-    float s = (dHash - 0.958) * 12.0;
-    s *= armMask;
-    stars += s * 0.45;
+  // Fine star dust (finer grid = smaller, denser stars)
+  vec2 fP = gUv * 160.0;
+  vec2 fCell = floor(fP);
+  for (int dy = -1; dy <= 1; dy++) {
+    for (int dx = -1; dx <= 1; dx++) {
+      vec2 nCell = fCell + vec2(float(dx), float(dy));
+      float h = hash(nCell + vec2(7.0, 41.0));
+      if (h > 0.935) {
+        vec2 sPos = nCell + vec2(
+          0.3 + hash(nCell + vec2(51.0, 23.0)) * 0.4,
+          0.3 + hash(nCell + vec2(71.0, 19.0)) * 0.4
+        );
+        float d2 = distance(fP, sPos);
+        float pin = exp(-d2 * d2 * 85.0);
+        float br = pin * (h - 0.935) * 14.0;
+        br *= armMask;
+        stars += br * 0.5;
+      }
+    }
   }
 
   // ————— dust lanes between arms —————
