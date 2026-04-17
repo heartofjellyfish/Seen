@@ -74,23 +74,12 @@
 .curtainL {
   left: 0;
   animation: curtainBreathL 32s ease-in-out infinite;
-  filter: url(#cloth-ripple);
 }
 
 .curtainR {
   right: 0;
   transform: scaleX(-1);
   animation: curtainBreathR 36s ease-in-out infinite;
-  filter: url(#cloth-ripple);
-}
-
-/* Hidden container just to hold the filter defs */
-.filterDefs {
-  position: absolute;
-  width: 0;
-  height: 0;
-  pointer-events: none;
-  opacity: 0;
 }
 
 @keyframes curtainBreathL {
@@ -241,44 +230,132 @@
   filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.75));
 }
 
-/* ————— the endless train ————— */
+/* ————— dream objects —————
+   Outer .dreamPathN group drives the path (translate + scale),
+   inner .tumble* group drives an apparent 3D tumble via scaleY/scaleX.
+   Five distinct paths, three tumble variants, cubic-bezier eases the
+   approach so scale grows fast near the end. */
 
-.train {
-  filter: drop-shadow(0 3px 8px rgba(0, 0, 0, 0.7));
+.dreams {
+  filter: drop-shadow(0 3px 7px rgba(0, 0, 0, 0.55));
 }
 
-.trainCar {
+.dreamPath1,
+.dreamPath2,
+.dreamPath3,
+.dreamPath4,
+.dreamPath5 {
   transform-origin: 0 0;
   transform-box: view-box;
-  animation-name: trainRun;
-  animation-duration: 14s;
-  animation-timing-function: cubic-bezier(0.55, 0, 1, 0.45);
+  animation-timing-function: cubic-bezier(0.5, 0, 0.95, 0.45);
   animation-iteration-count: infinite;
   will-change: transform, opacity;
 }
 
-@keyframes trainRun {
-  0% {
-    transform: translate(350px, 495px) scale(0.045);
-    opacity: 0;
-  }
-  3% {
-    opacity: 0;
-  }
-  10% {
-    opacity: 0.85;
-  }
-  55% {
-    opacity: 1;
-  }
-  85% {
-    transform: translate(350px, 930px) scale(1.7);
-    opacity: 0.85;
-  }
-  100% {
-    transform: translate(350px, 1120px) scale(3.1);
-    opacity: 0;
-  }
+.dreamPath1 {
+  animation-name: dreamPath1;
+  animation-duration: 13s;
+  animation-delay: 0s;
+}
+.dreamPath2 {
+  animation-name: dreamPath2;
+  animation-duration: 15s;
+  animation-delay: -3.2s;
+}
+.dreamPath3 {
+  animation-name: dreamPath3;
+  animation-duration: 12s;
+  animation-delay: -6.4s;
+}
+.dreamPath4 {
+  animation-name: dreamPath4;
+  animation-duration: 14s;
+  animation-delay: -9s;
+}
+.dreamPath5 {
+  animation-name: dreamPath5;
+  animation-duration: 16s;
+  animation-delay: -11.5s;
+}
+
+/* Paths start at the vanishing point (behind the ghost light) and
+   float outward to a point near the frame edge. */
+
+@keyframes dreamPath1 {
+  0%   { transform: translate(350px, 320px) scale(0.04); opacity: 0; }
+  10%  { opacity: 0.9; }
+  78%  { opacity: 1; }
+  100% { transform: translate(90px, 850px)  scale(2.1);  opacity: 0; }
+}
+@keyframes dreamPath2 {
+  0%   { transform: translate(350px, 320px) scale(0.04); opacity: 0; }
+  10%  { opacity: 0.9; }
+  78%  { opacity: 1; }
+  100% { transform: translate(640px, 780px) scale(2.2);  opacity: 0; }
+}
+@keyframes dreamPath3 {
+  0%   { transform: translate(350px, 320px) scale(0.04); opacity: 0; }
+  10%  { opacity: 0.9; }
+  78%  { opacity: 1; }
+  100% { transform: translate(720px, 490px) scale(2.0);  opacity: 0; }
+}
+@keyframes dreamPath4 {
+  0%   { transform: translate(350px, 320px) scale(0.04); opacity: 0; }
+  10%  { opacity: 0.9; }
+  78%  { opacity: 1; }
+  100% { transform: translate(-20px, 540px) scale(2.1);  opacity: 0; }
+}
+@keyframes dreamPath5 {
+  0%   { transform: translate(350px, 320px) scale(0.04); opacity: 0; }
+  10%  { opacity: 0.9; }
+  78%  { opacity: 1; }
+  100% { transform: translate(350px, 920px) scale(2.4);  opacity: 0; }
+}
+
+/* Tumble variants — scaleY / scaleX modulation fakes a 3D rotation
+   axis without any real 3D math. */
+
+.tumbleY,
+.tumbleX,
+.tumbleSpin {
+  transform-origin: 0 0;
+  transform-box: view-box;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+.tumbleY {
+  animation-name: tumbleY;
+  animation-duration: 5.5s;
+}
+.tumbleX {
+  animation-name: tumbleX;
+  animation-duration: 4.2s;
+}
+.tumbleSpin {
+  animation-name: tumbleSpin;
+  animation-duration: 7s;
+}
+
+@keyframes tumbleY {
+  0%   { transform: rotate(-8deg) scaleY(1); }
+  25%  { transform: rotate(4deg)  scaleY(0.3); }
+  50%  { transform: rotate(12deg) scaleY(1); }
+  75%  { transform: rotate(4deg)  scaleY(0.3); }
+  100% { transform: rotate(-8deg) scaleY(1); }
+}
+
+@keyframes tumbleX {
+  0%   { transform: rotate(5deg)  scaleX(1); }
+  25%  { transform: rotate(-3deg) scaleX(0.25); }
+  50%  { transform: rotate(-10deg) scaleX(1); }
+  75%  { transform: rotate(-3deg) scaleX(0.25); }
+  100% { transform: rotate(5deg)  scaleX(1); }
+}
+
+@keyframes tumbleSpin {
+  0%   { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
 
 /* ————— vignette overlay ————— */

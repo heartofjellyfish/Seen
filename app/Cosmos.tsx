@@ -64,58 +64,43 @@ void main() {
 
   vec3 col = vec3(0.0);
 
-  // ————— corridor walls: vertical pleats receding into depth —————
+  // ————— zigzag concentric bands, spiraling into depth —————
+  //
+  // Rings of alternating light/dark, each ring's inner/outer edge
+  // wobbled by a cosine of angle. The wobble shifts angularly with
+  // depth, which creates the spiral-twist illusion between adjacent
+  // rings (teeth appear to interlock).
 
-  // 22 pleats. A sin wobble tied to depth keeps the ribbing from feeling
-  // purely mathematical — the walls "breathe" slightly as they recede.
-  float pleatCount = 22.0;
-  float wobble = sin(depth * 0.22 + phi * 1.4) * 0.04;
-  float pleatCos = cos(phi * pleatCount + wobble);
-  float pleatLight = pow((pleatCos + 1.0) * 0.5, 2.1);
+  const float TEETH = 20.0;      // number of zigzag points per ring
+  const float RING_FREQ = 0.46;  // how densely rings pack in depth
+  const float TWIST = 1.6;       // how much teeth shift per depth unit
 
-  vec3 wallShadow = vec3(0.04, 0.015, 0.008);
-  vec3 wallMid = vec3(0.36, 0.18, 0.08);
-  vec3 wallLit = vec3(0.70, 0.42, 0.20);
+  float edgeWave = cos(phi * TEETH + depth * TWIST) * 0.18;
+  float depthMod = depth + edgeWave;
 
-  vec3 wallCol = mix(wallShadow, wallMid, pleatLight);
-  wallCol = mix(wallCol, wallLit, smoothstep(0.78, 1.0, pleatLight) * 0.55);
+  float bandIdx = floor(depthMod * RING_FREQ);
+  float bandPos = fract(depthMod * RING_FREQ);
 
-  // Depth falloff — tunnel darkens as it recedes
-  float depthFade = exp(-depth * 0.055);
+  float parity = mod(bandIdx, 2.0);
+  vec3 lightBand = vec3(0.70, 0.42, 0.18);
+  vec3 darkBand = vec3(0.045, 0.018, 0.010);
+  vec3 wallCol = (parity > 0.5) ? lightBand : darkBand;
+
+  // Rib shading — darken the edges of each band so bands look 3D
+  float edgeSoft = smoothstep(0.0, 0.12, bandPos) * smoothstep(1.0, 0.88, bandPos);
+  wallCol *= 0.55 + 0.45 * edgeSoft;
+
+  // Thin amber highlight running along the inner edge of light bands
+  float innerEdge = smoothstep(0.02, 0.0, abs(bandPos - 0.1)) * parity;
+  wallCol += vec3(0.95, 0.66, 0.3) * innerEdge * 0.25;
+
+  // Depth fade
+  float depthFade = exp(-depth * 0.058);
   wallCol *= depthFade;
 
-  // Walls fade in smoothly from the black center; no competing core glow.
-  // The ghost light in the stage SVG is the only bright spot at vanishing.
-  float tunnelMask = smoothstep(0.10, 0.26, r) * smoothstep(2.2, 0.6, r);
+  // Smooth mask at center and outer edge
+  float tunnelMask = smoothstep(0.08, 0.2, r) * smoothstep(2.2, 0.6, r);
   col += wallCol * tunnelMask;
-
-  // ————— particles emerging from the depth —————
-
-  for (int i = 0; i < 6; i++) {
-    float fi = float(i);
-    float seed = fi * 0.413 + 0.127;
-    // Each particle cycles on its own phase (~10s period)
-    float phase = fract(t * 0.095 + seed);
-
-    // Radial growth: starts near center, accelerates outward (ease-in)
-    float pr = phase * phase * 1.35 + 0.06;
-    // Angular position: stable with tiny wobble
-    float pa = seed * 6.2832 + t * 0.04 + sin(t * 0.6 + seed * 11.0) * 0.18;
-
-    vec2 ppos = vec2(cos(pa), sin(pa)) * pr;
-    float d = distance(uv, ppos);
-
-    float size = 0.008 + phase * 0.024;
-    float b = smoothstep(size, 0.0, d);
-    // Fade in from center, fade out before hitting the edge
-    b *= smoothstep(0.0, 0.12, phase) * smoothstep(1.0, 0.72, phase);
-    b *= 0.9 - phase * 0.25;
-
-    col += vec3(0.95, 0.78, 0.48) * b;
-    // Tiny bright kernel
-    float bKernel = smoothstep(size * 0.35, 0.0, d);
-    col += vec3(1.0, 0.95, 0.75) * bKernel * 0.55;
-  }
 
   // ————— fine dust grain on walls —————
 

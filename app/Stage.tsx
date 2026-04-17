@@ -82,39 +82,10 @@ export function Stage({
     <div className={styles.hall} ref={hallRef}>
       {/* ————— decorative layer ————— */}
       <div className={styles.bg}>
-        {/* Shared SVG filter defs — cloth ripple applied to curtains */}
-        <svg className={styles.filterDefs} aria-hidden>
-          <defs>
-            <filter
-              id="cloth-ripple"
-              x="-4%"
-              y="-2%"
-              width="108%"
-              height="104%"
-            >
-              <feTurbulence
-                type="fractalNoise"
-                baseFrequency="0.006 0.018"
-                numOctaves="2"
-                seed="3"
-                stitchTiles="stitch"
-              >
-                <animate
-                  attributeName="seed"
-                  values="0;90"
-                  dur="75s"
-                  repeatCount="indefinite"
-                />
-              </feTurbulence>
-              <feDisplacementMap in="SourceGraphic" scale="6" />
-            </filter>
-          </defs>
-        </svg>
-
         {/* Rotating corridor behind the stage opening */}
         <Cosmos progress={p} />
 
-        {/* Side curtains (CSS velvet, warped by cloth-ripple filter) */}
+        {/* Side curtains (CSS velvet) */}
         <div className={`${styles.curtain} ${styles.curtainL}`} />
         <div className={`${styles.curtain} ${styles.curtainR}`} />
 
@@ -188,6 +159,33 @@ export function Stage({
               <stop offset="0%" stopColor="#6b1f27" />
               <stop offset="50%" stopColor="#8f2a34" />
               <stop offset="100%" stopColor="#4a1419" />
+            </linearGradient>
+
+            {/* Dream-object gradients — cheap "3D" via highlight + shadow */}
+            <linearGradient id="pillBody" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stopColor="#fff5dc" />
+              <stop offset="45%" stopColor="#ebd49c" />
+              <stop offset="100%" stopColor="#9c7840" />
+            </linearGradient>
+            <linearGradient id="pillAmber" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stopColor="#f8c877" />
+              <stop offset="45%" stopColor="#d4a363" />
+              <stop offset="100%" stopColor="#6b4314" />
+            </linearGradient>
+            <radialGradient id="coinFace" cx="35%" cy="30%" r="75%">
+              <stop offset="0%" stopColor="#fde4a6" />
+              <stop offset="45%" stopColor="#d4a363" />
+              <stop offset="100%" stopColor="#4a2d0e" />
+            </radialGradient>
+            <linearGradient id="brass" x1="0" x2="1" y1="0" y2="0">
+              <stop offset="0%" stopColor="#7a5a2a" />
+              <stop offset="35%" stopColor="#d4a363" />
+              <stop offset="65%" stopColor="#e8c089" />
+              <stop offset="100%" stopColor="#6a4818" />
+            </linearGradient>
+            <linearGradient id="paper" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stopColor="#f0e4cc" />
+              <stop offset="100%" stopColor="#a68c60" />
             </linearGradient>
           </defs>
 
@@ -310,8 +308,8 @@ export function Stage({
             />
           </g>
 
-          {/* The endless train emerging from the vanishing point */}
-          <Train />
+          {/* Dream objects drifting out of the vanishing point */}
+          <DreamObjects />
         </svg>
 
         {/* Vignette on top of everything */}
@@ -332,50 +330,115 @@ export function Stage({
   );
 }
 
-// ————— the endless train —————
+// ————— dream objects —————
 //
-// 14 cars staggered across a 14-second loop — at any moment there's a
-// new car emerging from the vanishing point and another sliding toward
-// the bottom of the frame. The timing function accelerates so cars grow
-// and move faster as they approach, faking perspective without JS.
+// Small personal items drift out of the vanishing point, tumble in
+// apparent 3D (scaleY modulation fakes a rotation axis), and float
+// past the viewer along their own trajectories. Five instances, each
+// hardcoded to a distinct path + tumble pair so no two feel the same.
 
-const TRAIN_CAR_COUNT = 14;
-const TRAIN_DURATION_SEC = 14;
+const DREAM_ITEMS: Array<{
+  kind: "pill" | "coin" | "key" | "note";
+  pathClass: string;
+  tumbleClass: string;
+}> = [
+  { kind: "pill", pathClass: "dreamPath1", tumbleClass: "tumbleY" },
+  { kind: "coin", pathClass: "dreamPath2", tumbleClass: "tumbleX" },
+  { kind: "key",  pathClass: "dreamPath3", tumbleClass: "tumbleSpin" },
+  { kind: "note", pathClass: "dreamPath4", tumbleClass: "tumbleY" },
+  { kind: "pill", pathClass: "dreamPath5", tumbleClass: "tumbleX" },
+];
 
-function Train() {
+function DreamObjects() {
   return (
-    <g className={styles.train}>
-      {Array.from({ length: TRAIN_CAR_COUNT }, (_, i) => (
-        <g
-          key={i}
-          className={styles.trainCar}
-          style={{
-            animationDelay: `${-((i * TRAIN_DURATION_SEC) / TRAIN_CAR_COUNT).toFixed(3)}s`,
-          }}
-        >
-          <TrainCar />
+    <g className={styles.dreams}>
+      {DREAM_ITEMS.map((item, i) => (
+        <g key={i} className={styles[item.pathClass]}>
+          <g className={styles[item.tumbleClass]}>
+            <DreamObject kind={item.kind} />
+          </g>
         </g>
       ))}
     </g>
   );
 }
 
-function TrainCar() {
+function DreamObject({ kind }: { kind: "pill" | "coin" | "key" | "note" }) {
+  if (kind === "pill") {
+    return (
+      <g>
+        {/* Shadow below */}
+        <ellipse cx="0" cy="15" rx="18" ry="2.2" fill="#000" opacity="0.35" />
+        {/* Capsule — two halves */}
+        <rect x="-17" y="-7" width="17" height="14" fill="url(#pillBody)" rx="0.5" />
+        <rect x="0" y="-7" width="17" height="14" fill="url(#pillAmber)" rx="0.5" />
+        <ellipse cx="-17" cy="0" rx="7" ry="7" fill="url(#pillBody)" />
+        <ellipse cx="17" cy="0" rx="7" ry="7" fill="url(#pillAmber)" />
+        {/* Seam line */}
+        <line x1="0" y1="-6.5" x2="0" y2="6.5" stroke="#6a4818" strokeWidth="0.4" opacity="0.5" />
+        {/* Top highlight — the "3D" cheat */}
+        <ellipse cx="-4" cy="-4" rx="14" ry="1.4" fill="#fff" opacity="0.55" />
+      </g>
+    );
+  }
+  if (kind === "coin") {
+    return (
+      <g>
+        <ellipse cx="0" cy="14" rx="13" ry="2" fill="#000" opacity="0.35" />
+        <circle cx="0" cy="0" r="13" fill="url(#coinFace)" />
+        <circle cx="0" cy="0" r="13" fill="none" stroke="#6a4818" strokeWidth="0.6" />
+        <circle cx="0" cy="0" r="9" fill="none" stroke="#8e6a3d" strokeWidth="0.3" />
+        {/* Engraved mark */}
+        <text
+          x="0"
+          y="4"
+          fontSize="11"
+          textAnchor="middle"
+          fill="#6a4818"
+          fontFamily="serif"
+          fontStyle="italic"
+          opacity="0.65"
+        >
+          s
+        </text>
+        {/* Specular highlight */}
+        <ellipse cx="-4" cy="-4" rx="4.5" ry="2.2" fill="#fff" opacity="0.45" />
+      </g>
+    );
+  }
+  if (kind === "key") {
+    return (
+      <g>
+        <ellipse cx="0" cy="13" rx="15" ry="1.8" fill="#000" opacity="0.3" />
+        {/* Bow */}
+        <circle cx="-13" cy="0" r="7" fill="none" stroke="url(#brass)" strokeWidth="2.4" />
+        <circle cx="-13" cy="0" r="2.5" fill="#1a1008" />
+        {/* Shaft */}
+        <rect x="-6" y="-1.6" width="17" height="3.2" fill="url(#brass)" rx="0.5" />
+        {/* Teeth */}
+        <rect x="4" y="1.6" width="3" height="3" fill="url(#brass)" />
+        <rect x="8.5" y="1.6" width="2" height="4" fill="url(#brass)" />
+        {/* Highlight on shaft */}
+        <rect x="-6" y="-1.6" width="17" height="0.8" fill="#fff" opacity="0.4" />
+      </g>
+    );
+  }
+  // note
   return (
     <g>
-      {/* Body */}
-      <rect x="-28" y="-10" width="56" height="20" fill="#140903" rx="1.6" />
-      {/* Roof trim */}
-      <rect x="-28" y="-10" width="56" height="2.6" fill="#28170a" rx="1.6" />
-      {/* Warm windows */}
-      <rect x="-23" y="-5.5" width="8" height="11" fill="#e8c089" opacity="0.93" rx="0.4" />
-      <rect x="-12" y="-5.5" width="8" height="11" fill="#e8c089" opacity="0.93" rx="0.4" />
-      <rect x="-1" y="-5.5" width="8" height="11" fill="#e8c089" opacity="0.93" rx="0.4" />
-      <rect x="10" y="-5.5" width="8" height="11" fill="#e8c089" opacity="0.93" rx="0.4" />
-      {/* Undercarriage + wheels */}
-      <rect x="-26" y="10" width="52" height="2" fill="#050201" />
-      <ellipse cx="-17" cy="12.5" rx="3.4" ry="1.7" fill="#050201" />
-      <ellipse cx="17" cy="12.5" rx="3.4" ry="1.7" fill="#050201" />
+      <ellipse cx="0" cy="18" rx="12" ry="1.6" fill="#000" opacity="0.3" />
+      <rect x="-10" y="-14" width="20" height="28" fill="url(#paper)" rx="0.8" />
+      {/* Slight fold line */}
+      <line x1="-10" y1="-4" x2="10" y2="-4" stroke="#6a4e25" strokeWidth="0.3" opacity="0.4" />
+      {/* Handwritten scribbles */}
+      <line x1="-7" y1="-9" x2="6" y2="-9" stroke="#4a3418" strokeWidth="0.4" opacity="0.7" />
+      <line x1="-7" y1="-6.5" x2="4" y2="-6.5" stroke="#4a3418" strokeWidth="0.4" opacity="0.7" />
+      <line x1="-7" y1="0" x2="7" y2="0" stroke="#4a3418" strokeWidth="0.4" opacity="0.7" />
+      <line x1="-7" y1="2.5" x2="5" y2="2.5" stroke="#4a3418" strokeWidth="0.4" opacity="0.7" />
+      <line x1="-7" y1="5" x2="6" y2="5" stroke="#4a3418" strokeWidth="0.4" opacity="0.7" />
+      <line x1="-7" y1="7.5" x2="3" y2="7.5" stroke="#4a3418" strokeWidth="0.4" opacity="0.7" />
+      {/* Slight paper sheen */}
+      <rect x="-10" y="-14" width="20" height="4" fill="#fff" opacity="0.25" rx="0.8" />
     </g>
   );
 }
