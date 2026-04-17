@@ -64,27 +64,21 @@ void main() {
 
   vec3 col = vec3(0.0);
 
-  // ————— braided rope: cylindrical strands, twisting with depth —————
+  // ————— pure concentric rings, each a 3D tube in cross-section —————
   //
-  // Each concentric band is rendered with a cylindrical cross-section:
-  // sin(PI * bandPos) gives a round-pipe profile, bright in the middle
-  // and dark at the edges. Alternating bands interleave cream and deep
-  // amber. The waves twist angularly with depth so adjacent bands look
-  // braided.
+  // No angular wave modulation: the band boundaries are perfect circles.
+  // The sense of motion comes from (a) depth shifting the rings toward
+  // the viewer and (b) a very slow rotating directional tilt that
+  // favours one side of each ring in brightness — like a light source
+  // orbiting the tunnel axis.
 
-  const float TEETH = 14.0;
-  const float RING_FREQ = 0.46;
-  const float TWIST = 2.2;
-  const float WAVE_AMP = 0.26;
+  const float RING_FREQ = 0.48;
   const float PI = 3.14159265;
 
-  float edgeWave = sin(phi * TEETH + depth * TWIST) * WAVE_AMP;
-  float bandFlow = depth + edgeWave;
+  float bandIdx = floor(depth * RING_FREQ);
+  float bandPos = fract(depth * RING_FREQ);
 
-  float bandIdx = floor(bandFlow * RING_FREQ);
-  float bandPos = fract(bandFlow * RING_FREQ);
-
-  // Cylindrical cross-section: 0 at the band's edges, 1 at its apex
+  // Cylindrical cross-section per ring: 0 at edges, 1 at apex
   float cross_ = sin(bandPos * PI);
   float cyl = pow(cross_, 1.3);
 
@@ -95,15 +89,16 @@ void main() {
   vec3 dark = vec3(0.06, 0.02, 0.012);
   vec3 darkMid = vec3(0.22, 0.1, 0.05);
 
-  // Bright strand: dark at edges, warm cream at the rounded top
   vec3 lightStrand = mix(creamEdge, cream, cyl);
-  // Add a hot specular near the top of the strand (glossy rope feel)
   lightStrand += vec3(0.18, 0.09, 0.03) * pow(cyl, 3.5);
-
-  // Dark strand: mostly deep, but shaded so it still reads as a tube
   vec3 darkStrand = mix(dark, darkMid, cyl * 0.75);
 
   vec3 wallCol = mix(darkStrand, lightStrand, parity);
+
+  // A soft directional tilt that orbits the tunnel axis — adds the
+  // sense of rotation without breaking the perfect circles.
+  float rotTilt = cos(phi - t * 0.28) * 0.11;
+  wallCol *= 1.0 + rotTilt;
 
   // Depth falloff
   float depthFade = exp(-depth * 0.058);
