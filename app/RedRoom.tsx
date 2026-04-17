@@ -334,11 +334,16 @@ function Stage() {
         decay={2}
       />
 
-      {/* Ring of candles around the deck perimeter (on top of deck).
-          Front row sits on the apron (visible); back + side rows sit
-          on the main deck behind closed curtains, providing only an
-          implicit energy inside the stage. */}
+      {/* Invisible flicker rim — the candle ring has been replaced
+          by a bank of mist, but the warm point lights still flicker
+          at their former positions so the illusion of 'something
+          burning just behind the fog' survives. */}
       <StageCandleRing stageW={stageW} stageD={stageD} stageH={stageH} />
+
+      {/* Dry-ice mist rolling across the apron — hides where the
+          candles would have been, and the flicker from the ring
+          lights crawls through it as warm breath. */}
+      <StageMist stageW={stageW} stageD={stageD} stageH={stageH} />
 
       {/* Bleed-through glow on the front of the curtain — fakes the
           side/back candle firelight passing through the velvet. */}
@@ -414,9 +419,6 @@ function StageCandleRing({
     return out;
   }, [stageW, stageD]);
 
-  const flameRefs = useRef<Array<THREE.Mesh | null>>(
-    Array(candles.length).fill(null),
-  );
   const lightRefs = useRef<Array<THREE.PointLight | null>>(
     Array(candles.length).fill(null),
   );
@@ -424,61 +426,155 @@ function StageCandleRing({
   useFrame(({ clock }) => {
     for (let i = 0; i < candles.length; i++) {
       const c = candles[i];
+      if (!c.lit) continue;
       const t = clock.elapsedTime + c.seed;
       const flick =
         1 + Math.sin(t * 3.3) * 0.22 + Math.sin(t * 7.5 + 0.4) * 0.13;
-      const f = flameRefs.current[i];
-      if (f) f.scale.setScalar(0.85 + 0.3 * (flick - 1) * 2);
-      if (c.lit) {
-        const l = lightRefs.current[i];
-        if (l) l.intensity = 1.3 * flick;
-      }
+      const l = lightRefs.current[i];
+      if (l) l.intensity = 1.5 * flick;
+    }
+  });
+
+  // Visible candle geometry was removed on purpose — a layer of
+  // stage mist now sits in this area and hides where the candles
+  // would have been. What remains is a rim of invisible flickering
+  // point lights, so the flicker still crawls across the curtain,
+  // apron, and fog. Unlit (back/side) entries are skipped entirely.
+  return (
+    <group>
+      {candles.map((c, i) =>
+        c.lit ? (
+          <pointLight
+            key={i}
+            ref={(el) => {
+              lightRefs.current[i] = el;
+            }}
+            position={[c.x, stageH + c.h + 0.1, c.z]}
+            color="#f0b070"
+            intensity={1.5}
+            distance={5.5}
+            decay={1.6}
+          />
+        ) : null,
+      )}
+    </group>
+  );
+}
+
+// ————— stage mist — dry-ice fog on the apron —————
+// A low bank of slowly drifting warm-grey mist that sits on the
+// stage apron where the candles used to be. It hides the (now
+// removed) candle geometry, so what we read is: mysterious fog,
+// lit from within by warm flickering light whose source we can't
+// quite see.
+
+function makeMistTexture(): THREE.CanvasTexture {
+  const SIZE = 256;
+  const c = document.createElement("canvas");
+  c.width = c.height = SIZE;
+  const ctx = c.getContext("2d")!;
+  ctx.clearRect(0, 0, SIZE, SIZE);
+  // Layered soft radial blobs — gives an organic puff without a
+  // visible edge. Centered blobs biased toward the middle.
+  for (let i = 0; i < 48; i++) {
+    const cx = SIZE / 2 + (Math.random() - 0.5) * SIZE * 0.8;
+    const cy = SIZE / 2 + (Math.random() - 0.5) * SIZE * 0.7;
+    const r = 30 + Math.random() * 80;
+    const a = 0.035 + Math.random() * 0.07;
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+    g.addColorStop(0, `rgba(230, 220, 200, ${a})`);
+    g.addColorStop(0.5, `rgba(230, 220, 200, ${a * 0.3})`);
+    g.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, SIZE, SIZE);
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.needsUpdate = true;
+  return tex;
+}
+
+function StageMist({
+  stageW,
+  stageD,
+  stageH,
+}: {
+  stageW: number;
+  stageD: number;
+  stageH: number;
+}) {
+  const tex = useMemo(() => makeMistTexture(), []);
+  const puffs = useMemo(() => {
+    const N = 7;
+    const out: Array<{
+      baseX: number;
+      baseY: number;
+      baseZ: number;
+      w: number;
+      h: number;
+      seed: number;
+      drift: number;
+    }> = [];
+    for (let i = 0; i < N; i++) {
+      const f = i / (N - 1);
+      out.push({
+        baseX:
+          THREE.MathUtils.lerp(-stageW / 2 + 1, stageW / 2 - 1, f) +
+          (Math.random() - 0.5) * 0.7,
+        baseY: stageH + 0.35 + Math.random() * 0.55,
+        baseZ: stageD / 2 + 0.3 + (Math.random() - 0.5) * 0.4,
+        w: 2.2 + Math.random() * 1.4,
+        h: 1.5 + Math.random() * 0.6,
+        seed: Math.random() * 10,
+        drift: 0.13 + Math.random() * 0.09,
+      });
+    }
+    return out;
+  }, [stageW, stageD, stageH]);
+
+  const meshRefs = useRef<Array<THREE.Mesh | null>>(
+    Array(puffs.length).fill(null),
+  );
+
+  useFrame(({ clock, camera }) => {
+    const t = clock.elapsedTime;
+    for (let i = 0; i < puffs.length; i++) {
+      const m = meshRefs.current[i];
+      if (!m) continue;
+      const p = puffs[i];
+      m.position.x = p.baseX + Math.sin(t * p.drift + p.seed) * 0.45;
+      m.position.y = p.baseY + Math.sin(t * 0.17 + p.seed * 1.4) * 0.12;
+      m.position.z = p.baseZ + Math.sin(t * 0.11 + p.seed * 0.8) * 0.08;
+      // Billboard toward the camera so puffs stay visible from any
+      // angle. Three.js lookAt works in world space and accounts for
+      // parent transforms, so stage-group position is handled.
+      m.lookAt(camera.position);
     }
   });
 
   return (
     <group>
-      {candles.map((c, i) => (
-        <group key={i} position={[c.x, stageH, c.z]}>
-          {/* Thicker candle wax — visible at stage distance */}
-          <mesh position={[0, c.h / 2, 0]} castShadow>
-            <cylinderGeometry args={[0.05, 0.06, c.h, 12]} />
-            <meshStandardMaterial color="#f2e6ca" roughness={0.75} />
-          </mesh>
-          {/* Flame: bright core + a softer outer halo sprite */}
-          <mesh
-            ref={(el) => {
-              flameRefs.current[i] = el;
-            }}
-            position={[0, c.h + 0.09, 0]}
-          >
-            <sphereGeometry args={[0.09, 12, 12]} />
-            <meshBasicMaterial color="#ffd890" toneMapped={false} />
-          </mesh>
-          <mesh position={[0, c.h + 0.09, 0]}>
-            <sphereGeometry args={[0.16, 12, 12]} />
-            <meshBasicMaterial
-              color="#ffa040"
-              toneMapped={false}
-              transparent
-              opacity={0.35}
-              depthWrite={false}
-              blending={THREE.AdditiveBlending}
-            />
-          </mesh>
-          {c.lit && (
-            <pointLight
-              ref={(el) => {
-                lightRefs.current[i] = el;
-              }}
-              position={[0, c.h + 0.1, 0]}
-              color="#f0b070"
-              intensity={1.5}
-              distance={5.5}
-              decay={1.6}
-            />
-          )}
-        </group>
+      {puffs.map((p, i) => (
+        <mesh
+          key={i}
+          ref={(el) => {
+            meshRefs.current[i] = el;
+          }}
+          position={[p.baseX, p.baseY, p.baseZ]}
+        >
+          <planeGeometry args={[p.w, p.h]} />
+          <meshStandardMaterial
+            map={tex}
+            transparent
+            opacity={0.95}
+            depthWrite={false}
+            color="#c8b8a4"
+            emissive="#604028"
+            emissiveIntensity={0.55}
+            roughness={1}
+            metalness={0}
+            side={THREE.DoubleSide}
+          />
+        </mesh>
       ))}
     </group>
   );
@@ -626,11 +722,10 @@ function Venus() {
   //   y=0 to 0.31       → darker wooden pedestal (de-emphasised)
   //   y=0.31 to 2.71    → Venus body plane (feet at bottom, head at top)
   //
-  // Position: pulled forward to the left near-mid ground so she
-  // actually reads as a figure, not a speck in the corner. Rotated
-  // ~26° toward the room's centre so her gaze sweeps the carpet.
+  // Position: very close to the camera on the left, so she reads
+  // as a clear near-ground figure. Rotated a touch toward centre.
   return (
-    <group position={[-4.5, 0, -1]} rotation={[0, Math.PI / 7, 0]}>
+    <group position={[-3.7, 0, 0.4]} rotation={[0, Math.PI / 7, 0]}>
       {/* Ground shadow — tighter now that the uplight is focused */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.012, 0]}>
         <planeGeometry args={[2.8, 1.6]} />
@@ -658,33 +753,16 @@ function Venus() {
         <meshStandardMaterial color="#1a0f06" roughness={0.95} />
       </mesh>
 
-      {/* Directional uplight — narrow SpotLight from the front edge
-          of the pedestal, aimed up at Venus's chest/face. Now that
-          she's closer, tuned a touch wider and stronger so the
-          statue actually reads as marble. */}
-      <spotLight
-        position={[0, 0.08, 0.35]}
-        angle={0.42}
-        penumbra={0.55}
-        intensity={28}
-        distance={6}
-        decay={1.5}
-        color="#ffd2a0"
-      >
-        <object3D position={[0, 1.9, -0.15]} attach="target" />
-      </spotLight>
-      {/* Tiny brass shroud suggesting a louvered lamp in the floor —
-          smaller and dimmer than before, not a focal point. */}
-      <mesh position={[0, 0.04, 0.35]} castShadow>
-        <cylinderGeometry args={[0.05, 0.06, 0.04, 16]} />
-        <meshStandardMaterial
-          color="#4a3010"
-          metalness={0.7}
-          roughness={0.55}
-          emissive="#805020"
-          emissiveIntensity={0.35}
-        />
-      </mesh>
+      {/* Invisible warm fill — no visible fixture, just soft light
+          on her from slightly above and in front, falling off fast
+          so it doesn't pollute the floor or pedestal. */}
+      <pointLight
+        position={[0.35, 2.4, 0.55]}
+        color="#d4a878"
+        intensity={2.6}
+        distance={3.2}
+        decay={2.2}
+      />
 
       {/* Venus body. MeshStandardMaterial gives her full PBR
           lighting — every torchiere, sconce, altar spot, the new
@@ -1397,10 +1475,10 @@ export function RedRoom() {
         <CameraRig />
 
         {/* Byzantine layer — a warm red environmental wash, the room
-            'glows' from all directions. Not too bright, but enough
-            that no surface falls completely into black. */}
-        <hemisphereLight args={["#7a2828", "#2a0808", 0.75]} />
-        <ambientLight intensity={0.22} color="#6a2020" />
+            'glows' from all directions. Lifted a step so the scene
+            no longer reads as a tomb: still dim, but breathing. */}
+        <hemisphereLight args={["#8a3030", "#2a0808", 1.05]} />
+        <ambientLight intensity={0.38} color="#7a2828" />
 
         {/* Altar layer — a gentle broad spot on the stage curtain.
             Reads as 'altar highlight' more than a harsh beam. */}
@@ -1444,7 +1522,6 @@ export function RedRoom() {
 
         {/* Atmospheric dynamics */}
         <DustMotes />
-        <Walker />
       </Suspense>
     </Canvas>
   );
