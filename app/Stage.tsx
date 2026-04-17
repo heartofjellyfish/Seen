@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import styles from "./stage.module.css";
-import { Cosmos } from "./Cosmos";
+import { RedRoom } from "./RedRoom";
 
 /**
  * A full-viewport theater before the show.
@@ -80,216 +80,20 @@ export function Stage({
 
   return (
     <div className={styles.hall} ref={hallRef}>
-      {/* ————— decorative layer ————— */}
+      {/* ————— 3D scene (Three.js): floor, curtains, ghost light, Venus ————— */}
       <div className={styles.bg}>
-        {/* Rotating corridor behind the stage opening */}
-        <Cosmos progress={p} />
+        <RedRoom />
 
-        {/* Side curtains (CSS velvet) */}
-        <div className={`${styles.curtain} ${styles.curtainL}`} />
-        <div className={`${styles.curtain} ${styles.curtainR}`} />
+        {/* Legacy SVG elements removed — all replaced by the 3D scene:
+            - Cosmos shader tunnel → 3D room walls + ghost light
+            - CSS curtains L/R → 3D velvet planes
+            - Pelmet SVG → absorbed into the top of the 3D back wall
+            - Apron + Venus → 3D floor + Venus plane with shader keyer */}
 
-        {/* Scalloped pelmet */}
-        <svg
-          className={styles.pelmet}
-          viewBox="0 0 1200 100"
-          preserveAspectRatio="none"
-          aria-hidden
-        >
-          <defs>
-            <linearGradient id="pelmetGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#2e0b10" />
-              <stop offset="45%" stopColor="#4a1419" />
-              <stop offset="100%" stopColor="#280a0f" />
-            </linearGradient>
-            <pattern
-              id="pelmetPleats"
-              patternUnits="userSpaceOnUse"
-              width="30"
-              height="100"
-            >
-              <rect width="30" height="100" fill="url(#pelmetGrad)" />
-              <rect x="0" width="1" height="100" fill="#150405" opacity="0.85" />
-              <rect x="14" width="2" height="100" fill="#5f1f29" opacity="0.55" />
-            </pattern>
-          </defs>
-          <path
-            d="M 0 0 L 1200 0 L 1200 72
-               Q 1180 100 1160 72 Q 1140 100 1120 72 Q 1100 100 1080 72 Q 1060 100 1040 72
-               Q 1020 100 1000 72 Q 980 100 960 72 Q 940 100 920 72 Q 900 100 880 72
-               Q 860 100 840 72 Q 820 100 800 72 Q 780 100 760 72 Q 740 100 720 72
-               Q 700 100 680 72 Q 660 100 640 72 Q 620 100 600 72 Q 580 100 560 72
-               Q 540 100 520 72 Q 500 100 480 72 Q 460 100 440 72 Q 420 100 400 72
-               Q 380 100 360 72 Q 340 100 320 72 Q 300 100 280 72 Q 260 100 240 72
-               Q 220 100 200 72 Q 180 100 160 72 Q 140 100 120 72 Q 100 100 80 72
-               Q 60 100 40 72 Q 20 100 0 72 Z"
-            fill="url(#pelmetPleats)"
-          />
-        </svg>
-
-        {/* Central stage scene */}
-        <svg
-          className={styles.stageScene}
-          viewBox="0 0 700 900"
-          preserveAspectRatio="xMidYMax meet"
-          aria-hidden
-        >
-          <defs>
-            <radialGradient id="pool" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor="#d4a363" stopOpacity="0.55" />
-              <stop offset="45%" stopColor="#b9853f" stopOpacity="0.22" />
-              <stop offset="100%" stopColor="#6b3a14" stopOpacity="0" />
-            </radialGradient>
-            <radialGradient id="bulb" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor="#ffe8b9" stopOpacity="1" />
-              <stop offset="35%" stopColor="#f0c47c" stopOpacity="0.95" />
-              <stop offset="70%" stopColor="#c88c3a" stopOpacity="0.5" />
-              <stop offset="100%" stopColor="#6b3a14" stopOpacity="0" />
-            </radialGradient>
-            <radialGradient id="halo" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor="#d4a363" stopOpacity="0.35" />
-              <stop offset="100%" stopColor="#d4a363" stopOpacity="0" />
-            </radialGradient>
-            <linearGradient id="carpet" x1="0" x2="0" y1="0" y2="1">
-              <stop offset="0%" stopColor="#2f0b10" />
-              <stop offset="55%" stopColor="#551820" />
-              <stop offset="100%" stopColor="#6b1f27" />
-            </linearGradient>
-            <linearGradient id="rope" x1="0" x2="0" y1="0" y2="1">
-              <stop offset="0%" stopColor="#6b1f27" />
-              <stop offset="50%" stopColor="#8f2a34" />
-              <stop offset="100%" stopColor="#4a1419" />
-            </linearGradient>
-
-            {/* Floor depth fade — slightly darker/warmer toward the back */}
-            <linearGradient id="floorDepth" x1="0" x2="0" y1="0" y2="1">
-              <stop offset="0%" stopColor="#1a0e08" stopOpacity="0.7" />
-              <stop offset="50%" stopColor="#7a5a34" stopOpacity="0.15" />
-              <stop offset="100%" stopColor="#f0dcae" stopOpacity="0" />
-            </linearGradient>
-
-            {/* Marble for the Venus — warm cream with soft shading */}
-            <linearGradient id="venusStone" x1="0.2" y1="0" x2="0.8" y2="1">
-              <stop offset="0%" stopColor="#f5e4b6" />
-              <stop offset="45%" stopColor="#d4be8a" />
-              <stop offset="85%" stopColor="#8a7858" />
-              <stop offset="100%" stopColor="#5a4a30" />
-            </linearGradient>
-          </defs>
-
-          {/* Large soft halo behind ghost light */}
-          <circle
-            cx="350"
-            cy="400"
-            r="260"
-            fill="url(#halo)"
-            style={{ opacity: 0.5 + eased * 0.3 }}
-          />
-
-          {/* No floor inside the stage-scene — the foreground apron IS
-              the floor, extending back through the opening. Keeps the
-              stage uncluttered: just depth, ghost light, stanchions. */}
-
-          {/* Stage floor edge hairline */}
-          <line
-            x1="0"
-            y1="500"
-            x2="700"
-            y2="500"
-            stroke="rgba(212,163,99,0.22)"
-            strokeWidth="0.6"
-          />
-
-          {/* Ghost light pool on carpet */}
-          <ellipse
-            cx="350"
-            cy="512"
-            rx="160"
-            ry="30"
-            fill="url(#pool)"
-            style={{ opacity: glow }}
-          />
-
-          {/* Ghost light: brass pole + cage + bulb */}
-          <g className={styles.ghost}>
-            <ellipse cx="350" cy="494" rx="14" ry="3" fill="#1a1108" />
-            <rect x="342" y="478" width="16" height="16" fill="#6a4e25" />
-            <rect x="347" y="340" width="6" height="140" fill="#8b6a34" />
-            <rect x="347" y="340" width="1.8" height="140" fill="#d4a363" opacity="0.45" />
-            <rect x="337" y="286" width="1" height="62" fill="#7a5a2a" />
-            <rect x="362" y="286" width="1" height="62" fill="#7a5a2a" />
-            <ellipse cx="350" cy="286" rx="13" ry="2.2" fill="none" stroke="#7a5a2a" strokeWidth="0.9" />
-            <ellipse cx="350" cy="348" rx="13" ry="2.2" fill="none" stroke="#7a5a2a" strokeWidth="0.9" />
-            <circle
-              cx="350"
-              cy="316"
-              r="52"
-              fill="url(#bulb)"
-              style={{ opacity: 0.6 + eased * 0.3 }}
-            />
-            <circle cx="350" cy="316" r="10" fill="#fff1c7" />
-            <circle cx="350" cy="316" r="5" fill="#fffbe8" />
-          </g>
-
-          {/* Dust motes in the beam */}
-          <g className={styles.motes}>
-            {MOTE_POSITIONS.map((m, i) => (
-              <circle
-                key={i}
-                cx={m.x}
-                cy={m.y}
-                r={m.r}
-                fill="#e8c089"
-                className={styles.mote}
-                style={{
-                  animationDelay: `${m.delay}s`,
-                  animationDuration: `${m.dur}s`,
-                }}
-              />
-            ))}
-          </g>
-
-          {/* Stanchions + velvet rope (countdown device) */}
-          <g className={styles.stanchions}>
-            <rect x={LX - 2.5} y={TOP_Y} width="5" height="150" fill="#7a5a2a" />
-            <rect x={LX - 2.5} y={TOP_Y} width="1.6" height="150" fill="#d4a363" opacity="0.5" />
-            <ellipse cx={LX} cy={TOP_Y - 7} rx="10" ry="10" fill="#b8892e" />
-            <ellipse cx={LX} cy={TOP_Y - 7} rx="5.5" ry="5.5" fill="#e8c089" />
-            <ellipse cx={LX} cy={TOP_Y + 150} rx="20" ry="5" fill="#1a1108" />
-
-            <rect x={RX - 2.5} y={TOP_Y} width="5" height="150" fill="#7a5a2a" />
-            <rect x={RX - 2.5} y={TOP_Y} width="1.6" height="150" fill="#d4a363" opacity="0.5" />
-            <ellipse cx={RX} cy={TOP_Y - 7} rx="10" ry="10" fill="#b8892e" />
-            <ellipse cx={RX} cy={TOP_Y - 7} rx="5.5" ry="5.5" fill="#e8c089" />
-            <ellipse cx={RX} cy={TOP_Y + 150} rx="20" ry="5" fill="#1a1108" />
-
-            <path
-              d={`M ${LX} ${TOP_Y - 7} Q ${CX} ${ctrlY} ${RX} ${rightAnchorY - 7}`}
-              stroke="url(#rope)"
-              strokeWidth="6"
-              strokeLinecap="round"
-              fill="none"
-              style={{ opacity: ropeOpacity, transition: "opacity 2s ease" }}
-            />
-            <path
-              d={`M ${LX} ${TOP_Y - 7} Q ${CX} ${ctrlY} ${RX} ${rightAnchorY - 7}`}
-              stroke="#c9414d"
-              strokeWidth="1.4"
-              strokeLinecap="round"
-              strokeDasharray="2 5"
-              fill="none"
-              style={{ opacity: ropeOpacity * 0.5, transition: "opacity 2s ease" }}
-            />
-          </g>
-
-        </svg>
-
-        {/* Foreground apron — full-width Twin Peaks floor in perspective,
-            holds the Venus (left) and traffic light (right) in front of
-            everything else. */}
-        <ForegroundApron />
-
-        {/* Dream objects — HTML layer for real CSS 3D transforms */}
+        {/* Dream objects — HTML layer with CSS 3D transforms.
+            These still live on top of the 3D canvas as a separate
+            DOM layer. Next iteration: port them into the Three.js
+            scene as real meshes. */}
         <DreamObjects />
 
         {/* Vignette on top of everything */}
