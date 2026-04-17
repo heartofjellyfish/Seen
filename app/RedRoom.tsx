@@ -465,78 +465,104 @@ function StageCandleRing({
   );
 }
 
-// ————— stage mist — dry-ice fog, shader-based —————
-// A horizontal ShaderMaterial plane driven by double-FBM noise.
-// Much more gas-like than drei <Cloud> (which is billboard cloud
-// puffs). Two layers: a slow dense base + a faster wispy top.
+// ————— stage mist — volumetric ray-marched dry-ice fog —————
+// A box geometry whose fragment shader casts a ray from cameraPosition
+// through a world-space AABB, accumulating 3D double-FBM density.
+// No billboards, no flat planes — genuine volumetric appearance.
 
-const MIST_VERT = /* glsl */`
-  varying vec2 vUv;
+const VOL_VERT = /* glsl */`
+  varying vec3 vWorldPos;
   void main() {
-    vUv = uv;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    vec4 wp = modelMatrix * vec4(position, 1.0);
+    vWorldPos = wp.xyz;
+    gl_Position = projectionMatrix * viewMatrix * wp;
   }
 `;
 
-function mistFrag(driftSpeed: number, noiseScale: number, opacity: number): string {
-  const dx = (driftSpeed * 0.05).toFixed(4);
-  const dy = (driftSpeed * 0.03).toFixed(4);
-  const sx = (driftSpeed * 0.026).toFixed(4);
-  const sy = (driftSpeed * 0.019).toFixed(4);
-  const ns = noiseScale.toFixed(1);
-  const op = opacity.toFixed(2);
+// Build the fragment shader with the fog AABB baked in as literals.
+function volFrag(
+  minX: number, maxX: number,
+  minY: number, maxY: number,
+  minZ: number, maxZ: number,
+): string {
+  const f = (n: number) => n.toFixed(3);
   return /* glsl */`
     uniform float uTime;
-    varying vec2 vUv;
+    varying vec3 vWorldPos;
 
-    // Value noise hash
-    float h(vec2 p) {
-      p = fract(p * vec2(127.1, 311.7));
-      p += dot(p, p + 45.32);
-      return fract(p.x * p.y);
+    // 3-D value noise
+    float h3(vec3 p) {
+      p = fract(p * vec3(443.9, 397.3, 491.2));
+      p += dot(p, p.yxz + 19.19);
+      return fract((p.x + p.y) * p.z);
     }
-    // Smooth bilinear noise
-    float sn(vec2 p) {
-      vec2 i = floor(p), f = fract(p);
+    float n3(vec3 p) {
+      vec3 i = floor(p), f = fract(p);
       f = f * f * (3.0 - 2.0 * f);
-      return mix(mix(h(i), h(i + vec2(1,0)), f.x),
-                 mix(h(i + vec2(0,1)), h(i + vec2(1,1)), f.x), f.y);
+      return mix(
+        mix(mix(h3(i),             h3(i+vec3(1,0,0)), f.x),
+            mix(h3(i+vec3(0,1,0)), h3(i+vec3(1,1,0)), f.x), f.y),
+        mix(mix(h3(i+vec3(0,0,1)), h3(i+vec3(1,0,1)), f.x),
+            mix(h3(i+vec3(0,1,1)), h3(i+vec3(1,1,1)), f.x), f.y),
+        f.z);
     }
-    // Fractal Brownian Motion — 5 octaves, rotated each step
-    float fbm(vec2 p) {
+    // 4-octave FBM — enough detail without excess cost
+    float fbm(vec3 p) {
       float v = 0.0, a = 0.5;
-      mat2 rot = mat2(cos(0.5), sin(0.5), -sin(0.5), cos(0.5));
-      for (int i = 0; i < 5; i++) {
-        v += a * sn(p);
-        p = rot * p * 2.0 + 100.0;
+      for (int i = 0; i < 4; i++) {
+        v += a * n3(p);
+        p = p * 2.01 + vec3(100.0, 73.0, 51.0);
         a *= 0.5;
       }
       return v;
     }
 
     void main() {
-      // Slow horizontal drift
-      vec2 p = vUv * ${ns} + vec2(uTime * ${dx}, uTime * ${dy});
-      // Double-FBM: warp input coords with a first pass, then sample again
-      // — produces curling tendrils instead of lumpy blobs
-      float f = fbm(p);
-      f = fbm(p + f * 1.2 + vec2(-uTime * ${sx}, uTime * ${sy}));
+      vec3 ro = cameraPosition;              // world-space ray origin
+      vec3 rd = normalize(vWorldPos - ro);   // ray direction
 
-      // Soft rectangular vignette so fog stays inside stage bounds
-      vec2 c = (vUv - 0.5) * 2.0;
-      float vig = 1.0 - smoothstep(0.5, 1.0, max(abs(c.x * 0.88), abs(c.y)));
+      // Ray–AABB intersection against the fog slab (world space)
+      vec3 bMin = vec3(${f(minX)}, ${f(minY)}, ${f(minZ)});
+      vec3 bMax = vec3(${f(maxX)}, ${f(maxY)}, ${f(maxZ)});
+      vec3 tA = (bMin - ro) / rd, tB = (bMax - ro) / rd;
+      vec3 t1 = min(tA, tB), t2 = max(tA, tB);
+      float tNear = max(max(t1.x, t1.y), t1.z);
+      float tFar  = min(min(t2.x, t2.y), t2.z);
+      if (tNear >= tFar || tFar <= 0.0) discard;
+      tNear = max(tNear, 0.0);
 
-      float alpha = smoothstep(0.28, 0.65, f) * vig;
-      // Cool blue-white: reads as gas against the warm red room
-      vec3 col = mix(vec3(0.76, 0.82, 0.90), vec3(0.95, 0.97, 1.00), f);
-      gl_FragColor = vec4(col, alpha * ${op});
+      // March 16 steps through the volume
+      const int N = 16;
+      float dt = (tFar - tNear) / float(N);
+      float density = 0.0;
+
+      for (int i = 0; i < N; i++) {
+        vec3 p = ro + rd * (tNear + (float(i) + 0.5) * dt);
+
+        // Squash Y heavily → noise reads as horizontal gas sheets
+        vec3 sp = vec3(p.x * 0.28, p.y * 3.0, p.z * 0.28)
+                + vec3(uTime * 0.038, 0.0, -uTime * 0.024);
+
+        float f = fbm(sp);
+        f = fbm(sp + f * vec3(1.1, 0.15, 1.1));  // domain-warp for tendrils
+
+        // Density falls off toward the top of the slab
+        float yFade = 1.0 - smoothstep(${f(minY)}, ${f(maxY)}, p.y);
+        density += f * yFade * dt;
+      }
+
+      density = clamp(density * 2.2, 0.0, 1.0);
+      if (density < 0.015) discard;
+
+      // Cool blue-white — reads as gas against warm red room
+      vec3 col = mix(vec3(0.74, 0.81, 0.92), vec3(0.95, 0.97, 1.0), density);
+      gl_FragColor = vec4(col, density * 0.72);
     }
   `;
 }
 
-// Pre-build fragment strings once at module level (static strings)
-const MIST_FRAG_BASE = mistFrag(1.0, 3.5, 0.58); // dense, slow
-const MIST_FRAG_WISP = mistFrag(1.8, 5.2, 0.34); // thin, faster
+// World Z of the Stage group (must match stageZ in Stage())
+const STAGE_WORLD_Z = -13;
 
 function StageMist({
   stageW,
@@ -547,52 +573,43 @@ function StageMist({
   stageD: number;
   stageH: number;
 }) {
-  const mat1Ref = useRef<THREE.ShaderMaterial>(null);
-  const mat2Ref = useRef<THREE.ShaderMaterial>(null);
-
+  const matRef = useRef<THREE.ShaderMaterial>(null);
   useFrame(({ clock }) => {
-    const t = clock.elapsedTime;
-    if (mat1Ref.current) mat1Ref.current.uniforms.uTime.value = t;
-    if (mat2Ref.current) mat2Ref.current.uniforms.uTime.value = t;
+    if (matRef.current) matRef.current.uniforms.uTime.value = clock.elapsedTime;
   });
+  const uniforms = useMemo(() => ({ uTime: { value: 0 } }), []);
 
-  const uniforms1 = useMemo(() => ({ uTime: { value: 0 } }), []);
-  const uniforms2 = useMemo(() => ({ uTime: { value: 0 } }), []);
+  // Fog volume in world space
+  const hw  = stageW * 0.41;           // half-width  ≈ 5.33 m
+  const hd  = (stageD + 1.2) * 0.5;   // half-depth  ≈ 2.85 m
+  const cz  = STAGE_WORLD_Z + 0.3;     // world centre-Z = −12.7
+  const minY = stageH - 0.05;          // just below deck surface
+  const maxY = stageH + 0.72;          // ~72 cm above deck
 
-  // Narrower than stage (inset ~1m each side) + cover apron in front
-  const fogW = stageW * 0.82;  // ~10.7m wide
-  const fogD = stageD + 1.2;   // ~5.7m deep (deck + apron)
-  const fogZ = 0.3;            // lean slightly toward apron (stage front)
+  const fragSrc = useMemo(
+    () => volFrag(-hw, hw, minY, maxY, cz - hd, cz + hd),
+    [hw, minY, maxY, hd, cz],
+  );
+
+  // Bounding-box mesh (stage-local) — slightly generous so no pixel is missed.
+  // The fragment shader clips to the actual fog AABB via ray–box intersection.
+  const bw = hw * 2 + 2.0;   // 12.7 m wide
+  const bh = maxY - minY + 0.3;  // ~1.0 m tall
+  const bd = hd * 2 + 2.0;   // 7.7 m deep
 
   return (
-    <group>
-      {/* Dense base — slow double-FBM, hugs the deck */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, stageH + 0.03, fogZ]}>
-        <planeGeometry args={[fogW, fogD]} />
-        <shaderMaterial
-          ref={mat1Ref}
-          vertexShader={MIST_VERT}
-          fragmentShader={MIST_FRAG_BASE}
-          uniforms={uniforms1}
-          transparent
-          depthWrite={false}
-          side={THREE.DoubleSide}
-        />
-      </mesh>
-      {/* Wispy top layer — faster drift, smaller footprint, slight lift */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, stageH + 0.22, fogZ + 0.2]}>
-        <planeGeometry args={[fogW * 0.78, fogD * 0.72]} />
-        <shaderMaterial
-          ref={mat2Ref}
-          vertexShader={MIST_VERT}
-          fragmentShader={MIST_FRAG_WISP}
-          uniforms={uniforms2}
-          transparent
-          depthWrite={false}
-          side={THREE.DoubleSide}
-        />
-      </mesh>
-    </group>
+    <mesh position={[0, (minY + maxY) * 0.5, 0.3]}>
+      <boxGeometry args={[bw, bh, bd]} />
+      <shaderMaterial
+        ref={matRef}
+        vertexShader={VOL_VERT}
+        fragmentShader={fragSrc}
+        uniforms={uniforms}
+        transparent
+        depthWrite={false}
+        side={THREE.FrontSide}
+      />
+    </mesh>
   );
 }
 
