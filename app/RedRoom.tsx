@@ -108,6 +108,7 @@ function CurtainPanel({
   color = "#7a1212",
   sheenColor = "#d42828",
   segments = 80,
+  breathe = true,
 }: {
   width: number;
   height: number;
@@ -118,6 +119,7 @@ function CurtainPanel({
   color?: string;
   sheenColor?: string;
   segments?: number;
+  breathe?: boolean;
 }) {
   const geometry = useMemo(() => {
     const geo = new THREE.PlaneGeometry(width, height, segments, 6);
@@ -142,8 +144,22 @@ function CurtainPanel({
     return geo;
   }, [width, height, pleatCount, pleatDepth, segments]);
 
+  // ————— 4i breathing —————
+  // Very slow scale along the curtain's local z (normal direction).
+  // Each panel gets its own random phase so walls don't breathe in
+  // sync. Amplitude is tiny (~2%) — you only notice it peripherally.
+  const meshRef = useRef<THREE.Mesh>(null);
+  const seed = useMemo(() => Math.random() * 100, []);
+  useFrame(({ clock }) => {
+    if (!breathe || !meshRef.current) return;
+    const t = clock.elapsedTime + seed;
+    const s = 1 + Math.sin(t * 0.38) * 0.022 + Math.sin(t * 0.71 + 1.3) * 0.012;
+    meshRef.current.scale.z = s;
+  });
+
   return (
     <mesh
+      ref={meshRef}
       position={position}
       rotation={rotation}
       geometry={geometry}
@@ -352,13 +368,17 @@ function Venus() {
   const shadowTex = useMemo(() => makeContactShadowTexture(), []);
 
   // Layout:
-  //   y=0 to 0.31       → 3D marble pedestal
+  //   y=0 to 0.31       → darker wooden pedestal (de-emphasised)
   //   y=0.31 to 2.71    → Venus body plane (feet at bottom, head at top)
+  //
+  // Position: tucked into the left corner at [-8, 0, -8], rotated
+  // 15° toward the room's centre so her gaze sweeps the carpet and
+  // the stage instead of the empty left wall.
   return (
-    <group position={[-5.5, 0, -4.5]}>
-      {/* Ground shadow */}
+    <group position={[-8, 0, -8]} rotation={[0, Math.PI / 12, 0]}>
+      {/* Ground shadow — tighter now that the uplight is focused */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.012, 0]}>
-        <planeGeometry args={[3.2, 1.8]} />
+        <planeGeometry args={[2.8, 1.6]} />
         <meshBasicMaterial
           map={shadowTex}
           transparent
@@ -367,52 +387,58 @@ function Venus() {
         />
       </mesh>
 
-      {/* 3D marble pedestal — cream stone, picks up scene lighting */}
+      {/* Pedestal — darker wood, intentionally low-key so it doesn't
+          compete with Venus for the eye. */}
       <mesh position={[0, 0.155, 0]} castShadow receiveShadow>
         <boxGeometry args={[0.9, 0.31, 0.55]} />
         <meshStandardMaterial
-          color="#b0997a"
-          roughness={0.82}
+          color="#2a1a0e"
+          roughness={0.9}
           metalness={0.02}
         />
       </mesh>
       {/* Thin darker base line where pedestal meets floor */}
       <mesh position={[0, 0.005, 0]} castShadow>
         <boxGeometry args={[0.95, 0.01, 0.6]} />
-        <meshStandardMaterial color="#4a3e30" roughness={0.9} />
+        <meshStandardMaterial color="#1a0f06" roughness={0.95} />
       </mesh>
 
-      {/* Altar uplight — a small warm point-light at the front of
-          the pedestal, washing upward over the statue. Turns her
-          from a dim silhouette into a visible piece of marble.
-          Short distance so it doesn't bleed onto the curtains. */}
-      <pointLight
-        position={[0, 0.4, 0.35]}
-        color="#ffd8a0"
-        intensity={7}
-        distance={4.5}
-        decay={1.4}
-      />
-      {/* Visible tiny brass cap at the uplight origin so the light
-          has a believable source in the scene */}
-      <mesh position={[0, 0.35, 0.35]} castShadow>
-        <cylinderGeometry args={[0.08, 0.09, 0.05, 16]} />
+      {/* Directional uplight — narrow SpotLight from the front edge
+          of the pedestal, aimed up at Venus's chest/face. Narrow
+          cone keeps the beam off the pedestal and the floor; only
+          the statue catches it. The target is defined as a child of
+          the spotlight so its offset is in the spotlight's local
+          frame (spotlight is not rotated, so this = world offset). */}
+      <spotLight
+        position={[0, 0.08, 0.32]}
+        angle={0.34}
+        penumbra={0.48}
+        intensity={18}
+        distance={5.5}
+        decay={1.6}
+        color="#ffd2a0"
+      >
+        <object3D position={[0, 1.9, -0.15]} attach="target" />
+      </spotLight>
+      {/* Tiny brass shroud suggesting a louvered lamp in the floor —
+          smaller and dimmer than before, not a focal point. */}
+      <mesh position={[0, 0.04, 0.32]} castShadow>
+        <cylinderGeometry args={[0.05, 0.06, 0.04, 16]} />
         <meshStandardMaterial
-          color="#8b6a34"
+          color="#4a3010"
           metalness={0.7}
-          roughness={0.45}
-          emissive="#f0c47c"
-          emissiveIntensity={0.6}
+          roughness={0.55}
+          emissive="#805020"
+          emissiveIntensity={0.35}
         />
       </mesh>
 
       {/* Venus body. MeshStandardMaterial gives her full PBR
-          lighting — every torchiere, sconce, altar spot, and the
-          hemisphere wash will affect her. Black-background keying
-          is done via an onBeforeCompile hook that injects a
-          luminance-based discard right after the map is sampled —
-          avoids the alphaMap-goes-semi-transparent bug that
-          alphaMap + transparent=true was causing. */}
+          lighting — every torchiere, sconce, altar spot, the new
+          chest-aimed spot, and the hemisphere wash all affect her.
+          Black-background keying is done via an onBeforeCompile
+          hook that injects a luminance-based discard right after the
+          map is sampled. */}
       <VenusBody geometry={geometry} tex={tex} />
     </group>
   );
@@ -606,6 +632,330 @@ function SideSconce({ position }: { position: [number, number, number] }) {
   );
 }
 
+// ————— 3a red carpet —————
+// A long dark-crimson runner from the camera's feet to the stage
+// front. Pins the eye to the central axis and gives the room a
+// processional spine.
+
+function RedCarpet() {
+  return (
+    <group>
+      <mesh
+        rotation={[-Math.PI / 2, 0, 0]}
+        position={[0, 0.015, -3.5]}
+        receiveShadow
+      >
+        <planeGeometry args={[2.6, 18, 1, 1]} />
+        <meshPhysicalMaterial
+          color="#3a0808"
+          roughness={0.96}
+          metalness={0}
+          sheen={1}
+          sheenColor="#8a1818"
+          sheenRoughness={0.35}
+          emissive="#120202"
+          emissiveIntensity={0.25}
+        />
+      </mesh>
+      {/* Thin brass edge trim along each side */}
+      <mesh position={[-1.3, 0.02, -3.5]} castShadow>
+        <boxGeometry args={[0.04, 0.02, 18]} />
+        <meshStandardMaterial color="#8b6a34" metalness={0.8} roughness={0.45} />
+      </mesh>
+      <mesh position={[1.3, 0.02, -3.5]} castShadow>
+        <boxGeometry args={[0.04, 0.02, 18]} />
+        <meshStandardMaterial color="#8b6a34" metalness={0.8} roughness={0.45} />
+      </mesh>
+    </group>
+  );
+}
+
+// ————— 3b candelabra —————
+// A low brass three-candle stand. Each candle has its own flicker
+// phase. Placed on the stage as if the ceremony is already prepared.
+
+function Candelabra({ position }: { position: [number, number, number] }) {
+  const lightRefs = useRef<Array<THREE.PointLight | null>>([null, null, null]);
+  const flameRefs = useRef<Array<THREE.Mesh | null>>([null, null, null]);
+  const seeds = useMemo(
+    () => [Math.random() * 10, Math.random() * 10, Math.random() * 10],
+    [],
+  );
+
+  useFrame(({ clock }) => {
+    for (let i = 0; i < 3; i++) {
+      const l = lightRefs.current[i];
+      const f = flameRefs.current[i];
+      const t = clock.elapsedTime + seeds[i];
+      const flick =
+        1 + Math.sin(t * 3.2) * 0.22 + Math.sin(t * 7.1 + 0.4) * 0.14;
+      if (l) l.intensity = 1.8 * flick;
+      if (f) f.scale.setScalar(0.9 + 0.25 * (flick - 1) * 2);
+    }
+  });
+
+  const branches: Array<[number, number]> = [
+    [-0.28, 0],
+    [0, 0.09],
+    [0.28, 0],
+  ];
+
+  return (
+    <group position={position}>
+      {/* Base disc */}
+      <mesh position={[0, 0.04, 0]} castShadow>
+        <cylinderGeometry args={[0.16, 0.2, 0.08, 24]} />
+        <meshStandardMaterial color="#3a2614" metalness={0.7} roughness={0.5} />
+      </mesh>
+      {/* Stem */}
+      <mesh position={[0, 0.45, 0]} castShadow>
+        <cylinderGeometry args={[0.025, 0.028, 0.8, 14]} />
+        <meshStandardMaterial color="#8b6a34" metalness={0.8} roughness={0.4} />
+      </mesh>
+      {/* Crossbar */}
+      <mesh position={[0, 0.84, 0]} rotation={[0, 0, Math.PI / 2]} castShadow>
+        <cylinderGeometry args={[0.02, 0.02, 0.62, 12]} />
+        <meshStandardMaterial color="#8b6a34" metalness={0.8} roughness={0.4} />
+      </mesh>
+      {branches.map(([dx, dy], i) => (
+        <group key={i} position={[dx, 0.88 + dy, 0]}>
+          {/* Tiny cup */}
+          <mesh position={[0, 0.02, 0]} castShadow>
+            <cylinderGeometry args={[0.05, 0.04, 0.03, 14]} />
+            <meshStandardMaterial
+              color="#8b6a34"
+              metalness={0.8}
+              roughness={0.4}
+            />
+          </mesh>
+          {/* Candle wax */}
+          <mesh position={[0, 0.11, 0]} castShadow>
+            <cylinderGeometry args={[0.035, 0.035, 0.16, 10]} />
+            <meshStandardMaterial color="#f2e6ca" roughness={0.75} />
+          </mesh>
+          {/* Flame glow sphere */}
+          <mesh
+            ref={(el) => {
+              flameRefs.current[i] = el;
+            }}
+            position={[0, 0.24, 0]}
+          >
+            <sphereGeometry args={[0.05, 10, 10]} />
+            <meshBasicMaterial color="#ffd08a" toneMapped={false} />
+          </mesh>
+          {/* Light */}
+          <pointLight
+            ref={(el) => {
+              lightRefs.current[i] = el;
+            }}
+            position={[0, 0.26, 0]}
+            color="#f0b070"
+            intensity={1.8}
+            distance={5.5}
+            decay={1.6}
+          />
+        </group>
+      ))}
+    </group>
+  );
+}
+
+// ————— 3d velvet chair —————
+// Empty chairs, backs toward the camera, facing the stage. Their
+// emptiness is the point.
+
+function VelvetChair({
+  position,
+  rotation = [0, 0, 0],
+}: {
+  position: [number, number, number];
+  rotation?: [number, number, number];
+}) {
+  return (
+    <group position={position} rotation={rotation}>
+      {/* Seat cushion */}
+      <mesh position={[0, 0.5, 0]} castShadow receiveShadow>
+        <boxGeometry args={[0.55, 0.1, 0.5]} />
+        <meshPhysicalMaterial
+          color="#5a0f0f"
+          roughness={0.92}
+          metalness={0}
+          sheen={1}
+          sheenColor="#a02020"
+          sheenRoughness={0.4}
+        />
+      </mesh>
+      {/* Backrest — on +z side so default orientation faces -z (stage) */}
+      <mesh position={[0, 0.96, 0.22]} castShadow>
+        <boxGeometry args={[0.55, 0.95, 0.08]} />
+        <meshPhysicalMaterial
+          color="#5a0f0f"
+          roughness={0.92}
+          metalness={0}
+          sheen={1}
+          sheenColor="#a02020"
+          sheenRoughness={0.4}
+        />
+      </mesh>
+      {/* Top rail — tiny brass cap */}
+      <mesh position={[0, 1.44, 0.22]} castShadow>
+        <boxGeometry args={[0.58, 0.04, 0.1]} />
+        <meshStandardMaterial color="#8b6a34" metalness={0.8} roughness={0.45} />
+      </mesh>
+      {/* Four legs */}
+      {(
+        [
+          [-0.23, 0.225, -0.2],
+          [0.23, 0.225, -0.2],
+          [-0.23, 0.225, 0.2],
+          [0.23, 0.225, 0.2],
+        ] as Array<[number, number, number]>
+      ).map((p, i) => (
+        <mesh key={i} position={p} castShadow>
+          <cylinderGeometry args={[0.028, 0.028, 0.45, 8]} />
+          <meshStandardMaterial
+            color="#2a1608"
+            metalness={0.4}
+            roughness={0.55}
+          />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+// ————— 4iii dust motes —————
+// A few hundred tiny warm specks drifting upward. Only clearly
+// visible where they cross warm pools of light — Vermeer air.
+
+function DustMotes() {
+  const ref = useRef<THREE.Points>(null);
+  const { positions, speeds } = useMemo(() => {
+    const N = 220;
+    const positions = new Float32Array(N * 3);
+    const speeds = new Float32Array(N);
+    for (let i = 0; i < N; i++) {
+      positions[i * 3] = (Math.random() - 0.5) * 18;
+      positions[i * 3 + 1] = Math.random() * 7 + 0.3;
+      positions[i * 3 + 2] = Math.random() * -18 + 3;
+      speeds[i] = 0.04 + Math.random() * 0.08;
+    }
+    return { positions, speeds };
+  }, []);
+
+  useFrame(({ clock }, dt) => {
+    if (!ref.current) return;
+    const geo = ref.current.geometry as THREE.BufferGeometry;
+    const arr = geo.attributes.position.array as Float32Array;
+    const t = clock.elapsedTime;
+    const step = Math.min(dt, 0.05);
+    for (let i = 0; i < speeds.length; i++) {
+      arr[i * 3 + 1] += speeds[i] * step;
+      arr[i * 3] += Math.sin(t * 0.25 + i) * step * 0.05;
+      arr[i * 3 + 2] += Math.cos(t * 0.2 + i * 1.3) * step * 0.03;
+      if (arr[i * 3 + 1] > 8) {
+        arr[i * 3 + 1] = 0.3;
+        arr[i * 3] = (Math.random() - 0.5) * 18;
+        arr[i * 3 + 2] = Math.random() * -18 + 3;
+      }
+    }
+    geo.attributes.position.needsUpdate = true;
+  });
+
+  return (
+    <points ref={ref}>
+      <bufferGeometry>
+        <bufferAttribute
+          attach="attributes-position"
+          count={positions.length / 3}
+          array={positions}
+          itemSize={3}
+        />
+      </bufferGeometry>
+      <pointsMaterial
+        size={0.05}
+        color="#f0c887"
+        transparent
+        opacity={0.55}
+        sizeAttenuation
+        depthWrite={false}
+        toneMapped={false}
+      />
+    </points>
+  );
+}
+
+// ————— 4iv walker —————
+// Every 45s or so a slender dark silhouette crosses the stage in
+// front of the closed curtain, right to left or left to right
+// alternately. Not aggressive — a slow, deliberate passage, fade
+// in and out at the edges.
+
+function Walker() {
+  const groupRef = useRef<THREE.Group>(null);
+  const matRef = useRef<THREE.MeshBasicMaterial>(null);
+
+  const figShape = useMemo(() => {
+    const s = new THREE.Shape();
+    s.moveTo(-0.22, 0);
+    s.lineTo(0.22, 0);
+    s.lineTo(0.18, 1.35);
+    s.lineTo(0.12, 1.46);
+    s.absarc(0, 1.58, 0.13, -0.35, Math.PI + 0.35, false);
+    s.lineTo(-0.18, 1.35);
+    s.lineTo(-0.22, 0);
+    return s;
+  }, []);
+
+  const lastPhase = useRef(0);
+  const direction = useRef(1);
+
+  useFrame(({ clock }) => {
+    if (!groupRef.current) return;
+    const period = 45; // seconds between walks
+    const walkDur = 8; // seconds per crossing
+    const t = clock.elapsedTime;
+    const cycle = t % period;
+
+    // Flip direction each new cycle
+    const phaseIdx = Math.floor(t / period);
+    if (phaseIdx !== lastPhase.current) {
+      lastPhase.current = phaseIdx;
+      direction.current *= -1;
+    }
+
+    if (cycle < walkDur) {
+      const p = cycle / walkDur;
+      groupRef.current.visible = true;
+      const xStart = direction.current > 0 ? -5.5 : 5.5;
+      const xEnd = -xStart;
+      groupRef.current.position.x = THREE.MathUtils.lerp(xStart, xEnd, p);
+      // Gentle sine bob — a walker, not a float
+      groupRef.current.position.y = 0.01 + Math.sin(p * Math.PI * 6) * 0.025;
+      const fade = Math.min(p * 5, (1 - p) * 5, 1);
+      if (matRef.current) matRef.current.opacity = 0.88 * fade;
+    } else {
+      groupRef.current.visible = false;
+    }
+  });
+
+  return (
+    <group ref={groupRef} position={[0, 0, -10.55]} visible={false}>
+      <mesh>
+        <shapeGeometry args={[figShape]} />
+        <meshBasicMaterial
+          ref={matRef}
+          color="#080202"
+          transparent
+          opacity={0}
+          depthWrite={false}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+    </group>
+  );
+}
+
 // ————— main scene —————
 
 export function RedRoom() {
@@ -654,9 +1004,25 @@ export function RedRoom() {
         />
 
         <Floor />
+        <RedCarpet />
         <Walls />
         <Stage />
+
+        {/* Candelabras flanking the stage mouth */}
+        <Candelabra position={[-5.2, 1.0, -11.2]} />
+        <Candelabra position={[5.2, 1.0, -11.2]} />
+
+        {/* Four empty chairs — two rows, flanking the carpet */}
+        <VelvetChair position={[-3.2, 0, -3]} />
+        <VelvetChair position={[3.2, 0, -3]} />
+        <VelvetChair position={[-3.2, 0, -6]} />
+        <VelvetChair position={[3.2, 0, -6]} />
+
         <Venus />
+
+        {/* Atmospheric dynamics */}
+        <DustMotes />
+        <Walker />
       </Suspense>
     </Canvas>
   );
