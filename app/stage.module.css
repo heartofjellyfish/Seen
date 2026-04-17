@@ -149,11 +149,15 @@
   left: clamp(140px, 26vw, 440px);
   right: clamp(140px, 26vw, 440px);
   bottom: 0;
-  width: auto;
-  height: auto;
-  display: block;
   z-index: 0;
   pointer-events: none;
+  overflow: hidden;
+}
+
+.cosmosCanvas {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 /* ————— central stage scene SVG ————— */

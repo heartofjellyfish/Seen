@@ -217,5 +217,9 @@ export function Cosmos() {
     };
   }, []);
 
-  return <canvas ref={canvasRef} className={styles.cosmos} aria-hidden />;
+  return (
+    <div className={styles.cosmos} aria-hidden>
+      <canvas ref={canvasRef} className={styles.cosmosCanvas} />
+    </div>
+  );
 }
