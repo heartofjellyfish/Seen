@@ -76,3 +76,29 @@ A single Vercel cron runs hourly (`/api/cron/maintain`), doing:
 
 The state endpoint also does (1) and (3) opportunistically, so cron is
 belt-and-suspenders, not load-bearing.
+
+## manual deploy (when build minutes are exhausted)
+
+Vercel Hobby has a monthly Build Minutes quota. When it's empty, `git
+push` still reaches the repo but Vercel silently refuses to build.
+Check: Vercel dashboard → Usage → Build Minutes. If it shows `used /
+0s` you're out until the 1st of next month, or until you upgrade.
+
+Workaround: build on your laptop, upload the artifact. Vercel's build
+server is never invoked, so no minutes are consumed.
+
+```bash
+# one-time: link this checkout to the Vercel project
+npx vercel login
+npx vercel link            # pick your account → existing project → "seen"
+
+# every manual deploy
+npx vercel build --prod    # runs next build locally into .vercel/output
+npx vercel deploy --prebuilt --prod   # uploads the artifact, aliases prod
+```
+
+After a successful `deploy`, the production domain alias moves to the
+new deployment automatically — no extra step.
+
+If later you want a fresh token / re-auth: `rm -rf ~/.vercel` and
+repeat `vercel login`.
