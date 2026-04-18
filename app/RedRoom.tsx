@@ -6,16 +6,18 @@ import {
   Cloud,
   Clouds,
   PerspectiveCamera,
+  Sparkles,
   useAnimations,
   useGLTF,
   useTexture,
 } from "@react-three/drei";
 import {
-  BrightnessContrast,
+  ChromaticAberration,
   EffectComposer,
-  HueSaturation,
+  Noise,
   Vignette,
 } from "@react-three/postprocessing";
+import { BlendFunction } from "postprocessing";
 import { RectAreaLightUniformsLib } from "three/examples/jsm/lights/RectAreaLightUniformsLib.js";
 import * as THREE from "three";
 
@@ -680,15 +682,15 @@ function StageBackLight({ stageH }: { stageH: number }) {
     const t = clock.elapsedTime;
     const breath = 0.85 + Math.sin(t * 0.42) * 0.12;
     const flick = Math.sin(t * 3.1) * 0.10 + Math.sin(t * 7.3 + 0.4) * 0.05;
-    ref.current.intensity = 4.0 * Math.max(0, breath + flick);
+    ref.current.intensity = 3.2 * Math.max(0, breath + flick);
   });
   return (
     <pointLight
       ref={ref}
       position={[0, stageH + 3, -0.3]}
       color="#e6b070"
-      intensity={4.0}
-      distance={7.5}
+      intensity={3.2}
+      distance={7}
       decay={2}
     />
   );
@@ -891,16 +893,16 @@ function CurtainBleedGlow({
       peak: number; // peak opacity
     }> = [
       // Large diffuse halos — slow-breathing atmosphere
-      { x: -4.2, y: 1.8, size: 2.8, color: "#ff5830", peak: 0.36 },
-      { x:  4.0, y: 2.0, size: 2.6, color: "#ff5830", peak: 0.36 },
-      { x:  0.0, y: 2.2, size: 3.0, color: "#ffa040", peak: 0.31 },
+      { x: -4.2, y: 1.8, size: 2.8, color: "#ff5830", peak: 0.28 },
+      { x:  4.0, y: 2.0, size: 2.6, color: "#ff5830", peak: 0.28 },
+      { x:  0.0, y: 2.2, size: 3.0, color: "#ffa040", peak: 0.24 },
       // Medium focal glows — the flicker workhorses
-      { x: -5.3, y: 0.5, size: 1.3, color: "#ffb060", peak: 0.72 },
-      { x: -3.0, y: 1.2, size: 1.6, color: "#ffd890", peak: 0.62 },
-      { x: -1.0, y: 0.4, size: 1.2, color: "#ff8040", peak: 0.68 },
-      { x:  1.2, y: 1.0, size: 1.5, color: "#ffd890", peak: 0.62 },
-      { x:  3.1, y: 0.6, size: 1.3, color: "#ffb060", peak: 0.72 },
-      { x:  5.2, y: 1.4, size: 1.2, color: "#ff8040", peak: 0.65 },
+      { x: -5.3, y: 0.5, size: 1.3, color: "#ffb060", peak: 0.55 },
+      { x: -3.0, y: 1.2, size: 1.6, color: "#ffd890", peak: 0.48 },
+      { x: -1.0, y: 0.4, size: 1.2, color: "#ff8040", peak: 0.52 },
+      { x:  1.2, y: 1.0, size: 1.5, color: "#ffd890", peak: 0.48 },
+      { x:  3.1, y: 0.6, size: 1.3, color: "#ffb060", peak: 0.55 },
+      { x:  5.2, y: 1.4, size: 1.2, color: "#ff8040", peak: 0.50 },
     ];
     return raw.map((p) => ({
       ...p,
@@ -1564,99 +1566,25 @@ function CandleStand({ position }: { position: [number, number, number] }) {
   );
 }
 
-// ————— 4iii dust motes — plane billboards —————
-// drei's <Sparkles> uses gl.POINTS primitive, which on some GPUs
-// (notably Apple Silicon) leaves sub-pixel aliasing artifacts at the
-// point-sprite quad corners. Post-processing with boosted contrast +
-// saturation turns those into visible "selection brackets".
-//
-// Fix: render each mote as a regular triangulated quad (camera-facing
-// billboard), so rasterization goes through the normal mesh path. Soft
-// radial texture gives the same glow look.
-
-function makeDustSpriteTexture(): THREE.CanvasTexture {
-  const S = 128;
-  const c = document.createElement("canvas");
-  c.width = c.height = S;
-  const ctx = c.getContext("2d")!;
-  // Very soft gaussian-ish falloff — bright pinpoint centre, long tail
-  const g = ctx.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
-  g.addColorStop(0.00, "rgba(255, 220, 170, 1)");
-  g.addColorStop(0.08, "rgba(245, 195, 135, 0.85)");
-  g.addColorStop(0.25, "rgba(225, 170, 110, 0.35)");
-  g.addColorStop(0.55, "rgba(200, 145, 90, 0.08)");
-  g.addColorStop(1.00, "rgba(180, 125, 75, 0)");
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, S, S);
-  const tex = new THREE.CanvasTexture(c);
-  tex.needsUpdate = true;
-  return tex;
-}
+// ————— 4iii dust motes — drei <Sparkles> —————
+// Replaced the hand-rolled Points loop with drei's Sparkles, which
+// handles spawning, drift, and size-attenuation internally. The
+// scale box keeps motes confined to the central corridor (away from
+// the side curtains). Speed is low so they drift rather than dart.
 
 function DustMotes() {
-  const COUNT = 80;
-  const meshRef = useRef<THREE.InstancedMesh>(null);
-  const tex = useMemo(() => makeDustSpriteTexture(), []);
-
-  // Deterministic-ish spawn data (same random per mount)
-  const motes = useMemo(() => {
-    // Matches old Sparkles box: scale=[9,5,12], position=[0,2.8,-3]
-    return Array.from({ length: COUNT }, () => ({
-      base: new THREE.Vector3(
-        (Math.random() - 0.5) * 9,
-        2.8 + (Math.random() - 0.5) * 5,
-        -3 + (Math.random() - 0.5) * 12,
-      ),
-      phase: Math.random() * Math.PI * 2,
-      freq: 0.25 + Math.random() * 0.35,
-      // Tiny — dust, not marbles. Most in 2-3cm range, a few slightly larger.
-      size: 0.018 + Math.pow(Math.random(), 2) * 0.035,
-    }));
-  }, []);
-
-  // Reusable scratch objects
-  const scratch = useMemo(
-    () => ({
-      pos: new THREE.Vector3(),
-      quat: new THREE.Quaternion(),
-      scl: new THREE.Vector3(1, 1, 1),
-      mat: new THREE.Matrix4(),
-    }),
-    [],
-  );
-
-  useFrame(({ camera, clock }) => {
-    const mesh = meshRef.current;
-    if (!mesh) return;
-    const t = clock.elapsedTime;
-    // Billboard: every mote faces the camera → copy camera's world rotation
-    scratch.quat.copy(camera.quaternion);
-    for (let i = 0; i < COUNT; i++) {
-      const m = motes[i];
-      scratch.pos.set(
-        m.base.x + Math.sin(t * m.freq + m.phase) * 0.25,
-        m.base.y + Math.cos(t * m.freq * 0.7 + m.phase * 1.3) * 0.18,
-        m.base.z + Math.sin(t * m.freq * 0.5 + m.phase * 0.7) * 0.22,
-      );
-      scratch.scl.setScalar(m.size);
-      scratch.mat.compose(scratch.pos, scratch.quat, scratch.scl);
-      mesh.setMatrixAt(i, scratch.mat);
-    }
-    mesh.instanceMatrix.needsUpdate = true;
-  });
-
   return (
-    <instancedMesh ref={meshRef} args={[undefined, undefined, COUNT]}>
-      <planeGeometry args={[1, 1]} />
-      <meshBasicMaterial
-        map={tex}
-        transparent
-        depthWrite={false}
-        opacity={0.55}
-        blending={THREE.AdditiveBlending}
-        toneMapped={false}
-      />
-    </instancedMesh>
+    <Sparkles
+      count={80}
+      // [x, y, z] box centred on position — 9m wide, 5m tall, 12m deep
+      scale={[9, 5, 12]}
+      position={[0, 2.8, -3]}
+      size={1.4}
+      speed={0.18}
+      opacity={0.28}
+      color="#d8a46a"
+      noise={0.5}
+    />
   );
 }
 
@@ -1770,13 +1698,13 @@ function WallCurtainLights() {
   return (
     <group>
       {/* Left wall — near stage */}
-      <rectAreaLight position={[-10.5, 3.2, -11.5]} rotation={[0,  Math.PI / 2, 0]} width={3} height={5} color="#e8960a" intensity={2.5} />
+      <rectAreaLight position={[-10.5, 3.2, -11.5]} rotation={[0,  Math.PI / 2, 0]} width={3} height={5} color="#e8960a" intensity={2} />
       {/* Left wall — second block (higher intensity to offset missing stage spill) */}
-      <rectAreaLight position={[-10.5, 3.2, -7.0]} rotation={[0,  Math.PI / 2, 0]} width={3} height={5} color="#e8960a" intensity={2.5} />
+      <rectAreaLight position={[-10.5, 3.2, -7.0]} rotation={[0,  Math.PI / 2, 0]} width={3} height={5} color="#e8960a" intensity={2} />
       {/* Right wall — near stage */}
-      <rectAreaLight position={[10.5,  3.2, -11.5]} rotation={[0, -Math.PI / 2, 0]} width={3} height={5} color="#e8960a" intensity={2.5} />
+      <rectAreaLight position={[10.5,  3.2, -11.5]} rotation={[0, -Math.PI / 2, 0]} width={3} height={5} color="#e8960a" intensity={2} />
       {/* Right wall — second block (higher intensity to offset missing stage spill) */}
-      <rectAreaLight position={[10.5,  3.2, -7.0]} rotation={[0, -Math.PI / 2, 0]} width={3} height={5} color="#e8960a" intensity={2.5} />
+      <rectAreaLight position={[10.5,  3.2, -7.0]} rotation={[0, -Math.PI / 2, 0]} width={3} height={5} color="#e8960a" intensity={2} />
     </group>
   );
 }
@@ -2535,12 +2463,20 @@ export function RedRoom() {
         <Flock />
         <Bird />
 
-        {/* Post-processing — color grade + focus. multisampling={0}
-            keeps MSAA off so Sparkles' point-sprite quads don't leave
-            corner-bracket artifacts after the post pass. */}
-        <EffectComposer multisampling={0}>
-          <BrightnessContrast brightness={0.05} contrast={0.08} />
-          <HueSaturation saturation={0.22} />
+        {/* Post-processing — texture + focus layer. No brightening:
+            Vignette darkens corners, ChromaticAberration adds a subtle
+            RGB shift at edges (vintage lens feel), Noise is film grain. */}
+        <EffectComposer>
+          <ChromaticAberration
+            offset={new THREE.Vector2(0.0008, 0.0008)}
+            radialModulation={false}
+            modulationOffset={0}
+          />
+          <Noise
+            premultiply
+            blendFunction={BlendFunction.SOFT_LIGHT}
+            opacity={0.35}
+          />
           <Vignette offset={0.35} darkness={0.55} eskil={false} />
         </EffectComposer>
       </Suspense>
