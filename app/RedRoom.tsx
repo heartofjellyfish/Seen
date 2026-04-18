@@ -1337,12 +1337,42 @@ function Bird() {
 
   // Grab the flap clip so we can drive its timeScale dynamically —
   // steady during the roam, frantic during the final sprint.
+  //
+  // The Sketchfab GLB can ship with multiple clips (fly / idle /
+  // takeoff). `Object.values(actions)[0]` is order-dependent and can
+  // land on a near-still idle pose, which makes the crow glide past
+  // without ever flapping. Prefer a clip whose name mentions
+  // fly/flap/wing; fall back to the longest clip (flight cycles are
+  // typically longer than idle poses).
   const flapAction = useRef<THREE.AnimationAction | null>(null);
   useEffect(() => {
-    const first = Object.values(actions)[0];
-    if (first) {
-      first.reset().play();
-      flapAction.current = first;
+    const entries = Object.entries(actions).filter(
+      ([, a]) => a != null,
+    ) as [string, THREE.AnimationAction][];
+
+    let chosen: THREE.AnimationAction | null = null;
+    for (const [name, action] of entries) {
+      if (/fly|flap|wing/i.test(name)) {
+        chosen = action;
+        break;
+      }
+    }
+    if (!chosen) {
+      for (const [, action] of entries) {
+        if (
+          !chosen ||
+          action.getClip().duration > chosen.getClip().duration
+        ) {
+          chosen = action;
+        }
+      }
+    }
+
+    if (chosen) {
+      chosen.setLoop(THREE.LoopRepeat, Infinity);
+      chosen.clampWhenFinished = false;
+      chosen.reset().play();
+      flapAction.current = chosen;
     }
   }, [actions]);
 
@@ -1435,6 +1465,12 @@ function Bird() {
       s.startTime = t;
       s.duration = 18 + Math.random() * 3; // 18–21s — extremely slow, savor it
       s.curve = generatePath();
+      // Rewind the flap cycle at each flight start so wings are
+      // unambiguously beating the moment the bird appears.
+      if (flapAction.current) {
+        flapAction.current.reset().play();
+        flapAction.current.timeScale = 1.0;
+      }
     }
 
     if (!s.flying || !s.curve) {
