@@ -1,8 +1,8 @@
 "use client";
 
-import { Suspense, useMemo, useRef } from "react";
+import { Suspense, useEffect, useMemo, useRef } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { PerspectiveCamera, Sparkles, useTexture } from "@react-three/drei";
+import { PerspectiveCamera, Sparkles, useGLTF, useAnimations, useTexture } from "@react-three/drei";
 import { RectAreaLightUniformsLib } from "three/examples/jsm/lights/RectAreaLightUniformsLib.js";
 import * as THREE from "three";
 
@@ -1312,6 +1312,155 @@ function WallCurtainLights() {
   );
 }
 
+// ————— 4v white bird fly-by —————
+// A rare, startling flight: a white stork emerges from the stage wing,
+// curves toward the camera along a CatmullRom spline, almost hits the
+// lens, then swerves past the right and exits. Uses three.js's
+// example Stork.glb (served from /public). One instance, reused.
+//
+// Timing: first appearance ~18–32s in, then every 55–135s. Flight
+// duration ~2.6–3.4s, with an ease-out so the bird accelerates into
+// the camera — the perspective blow-up in the final ~0.3s is the
+// spectacle.
+//
+// Materials: all meshes are replaced with a cream-white
+// MeshBasicMaterial (toneMapped off) so the bird reads as a clean,
+// self-lit apparition against the red velvet — if you leave the PBR
+// material in, the red hemisphere + emissive walls stain the bird
+// dark red and the silhouette disappears into the curtain.
+
+function Bird() {
+  const groupRef = useRef<THREE.Group>(null);
+  const { scene, animations } = useGLTF("/Stork.glb");
+  const { actions } = useAnimations(animations, scene);
+
+  // Start the flying animation (whichever clip is first — stork has
+  // one flap cycle). Bump timeScale slightly so the wingbeat reads
+  // as energetic rather than lazy.
+  useEffect(() => {
+    const first = Object.values(actions)[0];
+    if (first) {
+      first.reset().play();
+      first.timeScale = 1.4;
+    }
+  }, [actions]);
+
+  // Force a dove-white look. The red room's strong red ambient +
+  // hemisphere stains anything PBR dark-red at this distance, which
+  // kills the dove's whole silhouette against the curtains. We
+  // replace each material with a MeshBasicMaterial tinted slightly
+  // cream so the bird reads as an unambiguous white apparition —
+  // very Lynchian (the bird is "lit from inside the dream", not the
+  // room).
+  useEffect(() => {
+    scene.traverse((obj) => {
+      const mesh = obj as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const white = new THREE.MeshBasicMaterial({
+        color: "#f0ebe0",
+        toneMapped: false,
+        side: THREE.FrontSide,
+      });
+      mesh.material = white;
+    });
+  }, [scene]);
+
+  // Spline path. Start in the stage wing (behind back curtain z=-16,
+  // in front of stage curtain z=-10.75), descend toward camera which
+  // sits at (0, 1.65, 6). The "near-miss" point is (0.3, 2.5, 1.5) —
+  // head-on to the camera, ~4.5m away. Then a last-second swerve to
+  // the right (positive x) and exit behind camera.
+  // Camera sits at (0, 1.65, 6) looking at (0, 3, -13) — line of sight
+  // climbs very slightly upward. To keep the bird centered in view as
+  // it closes on the camera, stay near x≈0 and y≈2.0–2.6 through the
+  // approach, and only swerve sideways in the last 20% of the journey.
+  const curve = useMemo(
+    () =>
+      new THREE.CatmullRomCurve3([
+        new THREE.Vector3(3.5, 5.8, -12),
+        new THREE.Vector3(1.6, 4.2, -7),
+        new THREE.Vector3(0.5, 3.0, -2),
+        new THREE.Vector3(0.15, 2.4, 1.5),  // head-on, in camera cone
+        new THREE.Vector3(0.3, 2.1, 3.5),   // still head-on, closer
+        new THREE.Vector3(0.9, 1.9, 5.4),   // last-second swerve right
+        new THREE.Vector3(2.4, 1.7, 8.5),   // gone past camera
+      ]),
+    [],
+  );
+
+  // Helper reusable vectors so we don't allocate per frame.
+  const posVec = useRef(new THREE.Vector3()).current;
+  const tanVec = useRef(new THREE.Vector3()).current;
+  const lookVec = useRef(new THREE.Vector3()).current;
+
+  const state = useRef({
+    flying: false,
+    startTime: 0,
+    duration: 3.0,
+    nextFlightAt: 18 + Math.random() * 14, // first appearance 18–32s in
+    mirror: 1 as 1 | -1,
+  });
+
+  useFrame(({ clock }) => {
+    if (!groupRef.current) return;
+    const t = clock.elapsedTime;
+    const s = state.current;
+
+    if (!s.flying && t >= s.nextFlightAt) {
+      s.flying = true;
+      s.startTime = t;
+      s.duration = 2.6 + Math.random() * 0.8;
+      s.mirror = (Math.random() > 0.5 ? 1 : -1) as 1 | -1;
+    }
+
+    if (!s.flying) {
+      groupRef.current.visible = false;
+      return;
+    }
+
+    const raw = (t - s.startTime) / s.duration;
+    if (raw >= 1) {
+      s.flying = false;
+      // Spaced out — this is a rare spectacle, not a loop
+      s.nextFlightAt = t + 55 + Math.random() * 80; // 55–135s between fly-bys
+      groupRef.current.visible = false;
+      return;
+    }
+
+    // Ease-out-cubic-ish so bird accelerates as it closes on camera —
+    // the perspective blow-up in the final ~0.3s is the spectacle.
+    const p = 1 - Math.pow(1 - raw, 2.4);
+
+    curve.getPoint(p, posVec);
+    curve.getTangent(p, tanVec);
+
+    groupRef.current.visible = true;
+    groupRef.current.position.set(
+      posVec.x * s.mirror,
+      posVec.y,
+      posVec.z,
+    );
+
+    // Face direction of travel
+    lookVec.copy(posVec).add(tanVec);
+    lookVec.x *= s.mirror;
+    groupRef.current.lookAt(lookVec);
+
+    // No opacity fading — the bird just appears/disappears. Entry
+    // is behind the stage area so emergence reads as "coming out of
+    // the curtain", and exit is behind the camera so there's nothing
+    // to fade.
+  });
+
+  return (
+    <group ref={groupRef} visible={false}>
+      <primitive object={scene} scale={0.02} />
+    </group>
+  );
+}
+
+useGLTF.preload("/Stork.glb");
+
 // ————— main scene —————
 
 export function RedRoom() {
@@ -1374,6 +1523,7 @@ export function RedRoom() {
 
         {/* Atmospheric dynamics */}
         <DustMotes />
+        <Bird />
       </Suspense>
     </Canvas>
   );
