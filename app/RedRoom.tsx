@@ -301,6 +301,8 @@ function CurtainPanel({
   pleatDepth = 0.18,
   color = "#7a1212",
   sheenColor = "#d42828",
+  emissiveColor = "#2a0303",
+  emissiveStrength = 0.35,
   segments = 80,
   breathe = true,
 }: {
@@ -312,6 +314,8 @@ function CurtainPanel({
   pleatDepth?: number;
   color?: string;
   sheenColor?: string;
+  emissiveColor?: string;
+  emissiveStrength?: number;
   segments?: number;
   breathe?: boolean;
 }) {
@@ -374,8 +378,8 @@ function CurtainPanel({
         sheen={1}
         sheenColor={sheenColor}
         sheenRoughness={0.3}
-        emissive="#2a0303"
-        emissiveIntensity={0.35}
+        emissive={emissiveColor}
+        emissiveIntensity={emissiveStrength}
         side={THREE.DoubleSide}
       />
     </mesh>
@@ -514,6 +518,8 @@ function Stage() {
         pleatDepth={0.15}
         color="#8a1818"
         sheenColor="#e03030"
+        emissiveColor="#3c0606"
+        emissiveStrength={0.55}
       />
       <CurtainPanel
         width={stageW / 2 + 0.3}
@@ -523,16 +529,14 @@ function Stage() {
         pleatDepth={0.15}
         color="#8a1818"
         sheenColor="#e03030"
+        emissiveColor="#3c0606"
+        emissiveStrength={0.55}
       />
 
-      {/* Tiny inner warm glow as if the stage behind the curtain is lit */}
-      <pointLight
-        position={[0, stageH + 3, -0.3]}
-        color="#d4a363"
-        intensity={2.5}
-        distance={6}
-        decay={2}
-      />
+      {/* Inner warm glow, as if something just behind the curtain is lit.
+          Gently flickers so the backlight isn't static — the whole stage
+          breathes. */}
+      <StageBackLight stageH={stageH} />
 
       {/* Invisible flicker rim — the candle ring has been replaced
           by a bank of mist, but the warm point lights still flicker
@@ -542,6 +546,29 @@ function Stage() {
 
       <CurtainBleedGlow stageD={stageD} stageH={stageH} />
     </group>
+  );
+}
+
+// Dedicated flickering pointLight behind the stage curtain — warmer +
+// more animated than the original static light.
+function StageBackLight({ stageH }: { stageH: number }) {
+  const ref = useRef<THREE.PointLight>(null);
+  useFrame(({ clock }) => {
+    if (!ref.current) return;
+    const t = clock.elapsedTime;
+    const breath = 0.85 + Math.sin(t * 0.42) * 0.12;
+    const flick = Math.sin(t * 3.1) * 0.10 + Math.sin(t * 7.3 + 0.4) * 0.05;
+    ref.current.intensity = 3.2 * Math.max(0, breath + flick);
+  });
+  return (
+    <pointLight
+      ref={ref}
+      position={[0, stageH + 3, -0.3]}
+      color="#e6b070"
+      intensity={3.2}
+      distance={7}
+      decay={2}
+    />
   );
 }
 
@@ -731,18 +758,33 @@ function CurtainBleedGlow({
 }) {
   const tex = useMemo(() => makeRadialGlowTexture(), []);
   const patches = useMemo(() => {
-    // Distributed along the curtain width + height. Height is
-    // biased low so the glows sit where candle flames would be
-    // behind them (~y = stageH + 0.5 world).
-    const raw: Array<{ x: number; y: number; size: number }> = [
-      { x: -5.3, y: 0.4, size: 1.1 },
-      { x: -3.2, y: 1.3, size: 1.5 },
-      { x: -1.2, y: 0.3, size: 1.0 },
-      { x: 0.9, y: 1.1, size: 1.4 },
-      { x: 2.9, y: 0.7, size: 1.2 },
-      { x: 5.1, y: 1.5, size: 1.1 },
+    // 9 patches spread across the curtain — mix of sizes (some huge &
+    // diffuse, some small & focused) and 3 warm colors so the backlight
+    // reads as multiple sources of different temperatures.
+    const raw: Array<{
+      x: number;
+      y: number;
+      size: number;
+      color: string;
+      peak: number; // peak opacity
+    }> = [
+      // Large diffuse halos — slow-breathing atmosphere
+      { x: -4.2, y: 1.8, size: 2.8, color: "#ff5830", peak: 0.28 },
+      { x:  4.0, y: 2.0, size: 2.6, color: "#ff5830", peak: 0.28 },
+      { x:  0.0, y: 2.2, size: 3.0, color: "#ffa040", peak: 0.24 },
+      // Medium focal glows — the flicker workhorses
+      { x: -5.3, y: 0.5, size: 1.3, color: "#ffb060", peak: 0.55 },
+      { x: -3.0, y: 1.2, size: 1.6, color: "#ffd890", peak: 0.48 },
+      { x: -1.0, y: 0.4, size: 1.2, color: "#ff8040", peak: 0.52 },
+      { x:  1.2, y: 1.0, size: 1.5, color: "#ffd890", peak: 0.48 },
+      { x:  3.1, y: 0.6, size: 1.3, color: "#ffb060", peak: 0.55 },
+      { x:  5.2, y: 1.4, size: 1.2, color: "#ff8040", peak: 0.50 },
     ];
-    return raw.map((p) => ({ ...p, seed: Math.random() * 10 }));
+    return raw.map((p) => ({
+      ...p,
+      seed: Math.random() * 10,
+      breathSeed: Math.random() * 6,
+    }));
   }, []);
   const matRefs = useRef<Array<THREE.MeshBasicMaterial | null>>(
     Array(patches.length).fill(null),
@@ -751,10 +793,14 @@ function CurtainBleedGlow({
     for (let i = 0; i < patches.length; i++) {
       const m = matRefs.current[i];
       if (!m) continue;
-      const t = clock.elapsedTime + patches[i].seed;
-      const flick =
-        0.55 + Math.sin(t * 2.3) * 0.22 + Math.sin(t * 5.8 + 0.3) * 0.1;
-      m.opacity = Math.max(0, 0.42 * flick);
+      const p = patches[i];
+      const t = clock.elapsedTime;
+      // Layered drive: slow breathing + medium wave + fast flicker
+      const breath = 0.70 + Math.sin(t * 0.35 + p.breathSeed) * 0.25;
+      const mid = Math.sin(t * 2.1 + p.seed) * 0.18;
+      const fast = Math.sin(t * 6.3 + p.seed * 0.4) * 0.08;
+      const drive = Math.max(0, breath + mid + fast);
+      m.opacity = p.peak * drive;
     }
   });
   // Patches sit just in FRONT of the curtain plane at local z =
@@ -770,9 +816,9 @@ function CurtainBleedGlow({
               matRefs.current[i] = el;
             }}
             map={tex}
-            color="#ffb060"
+            color={p.color}
             transparent
-            opacity={0.35}
+            opacity={0.0}
             depthWrite={false}
             blending={THREE.AdditiveBlending}
             toneMapped={false}
