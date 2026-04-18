@@ -1586,28 +1586,18 @@ class Boid {
   private accel = new THREE.Vector3();
   private tmp = new THREE.Vector3();
 
-  // World fills the ENTIRE hall. Room is x=±11, y=0–9, z=-16 to +8.
-  // We give the flock a box that fills most of that, stopping short
-  // of the walls/floor/ceiling so birds visually bank away from
-  // them rather than clipping.
-  //   worldHalf (10, 4.5, 11) + group position (0, 4.5, -4) =
-  //   world extent x=±10, y=0–9, z=-15 to +7 (full hall height)
-  // That's every part of the room the camera can see, including
-  // near/in front of the camera so crows fly past/around you, not
-  // just distantly above the stage.
-  worldHalf = new THREE.Vector3(10, 4.5, 11);
-  // Ratios kept close to the original (neighborhood : worldHalf ≈
-  // 0.4 of the SMALLEST axis, maxSteerForce : maxSpeed ≈ 0.03).
-  //
-  // Previously neighborhoodRadius was 3.5 against worldHalf.y=4 —
-  // 87% of the vertical axis — which meant every boid was inside
-  // every other boid's neighborhood in y. Cohesion collapsed the
-  // whole flock onto the y centroid, producing the "crowded at the
-  // top" blob instead of independent swooping arcs. Lowering to 2.0
-  // against worldHalf.y=4.5 gives ~44% of the narrowest axis —
-  // closer to the original pen's 40% and enough for subgroups to
-  // form and drift apart.
-  neighborhoodRadius = 2.0;
+  // Room is x=±11, y=0–9, z=-16 to +8. Box tuned so 40 birds produce
+  // demo-like density (rather than filling the full hall sparsely). Original pen:
+  // 200 birds in ±500 volume ≈ 200/64M = 3.1e-6 per unit³, neighbor
+  // radius 200 → ~100 theoretical neighbors per bird (with 40%
+  // sampling, ~40 per call — plenty for coordinated motion). Our
+  // 40 birds need a smaller box to reach comparable density.
+  //   worldHalf (8, 4, 9) → volume 2*8*2*4*2*9 = 1152
+  //   density 40/1152 = 0.0347 per unit³
+  //   neighbors at radius 4: 0.0347 * (4/3 π 64) = 9.3 → ~4 after
+  //   sampling. Enough to produce real alignment/cohesion.
+  worldHalf = new THREE.Vector3(8, 4, 9);
+  neighborhoodRadius = 4.0;
   maxSpeed = 0.06;
   maxSteerForce = 0.0018;
   goal: THREE.Vector3 | null = null;
@@ -1631,11 +1621,15 @@ class Boid {
     const dsq = this.position.distanceToSquared(this.tmp);
     if (dsq < 1e-6) return;
     const steer = new THREE.Vector3().copy(this.position).sub(this.tmp);
-    // Original pen uses 5 against worldHalf=500 (force/worldHalf ≈
-    // 0.01). Our worldHalf is 4.5–11, so 5 is disproportionately
-    // strong, slamming boids into the walls as bumpers. Softened to
-    // 2 keeps them inside the box without the hyper-bounce.
-    steer.multiplyScalar(2 / dsq);
+    // Original pen uses constant 5 against worldHalf=500, maxSpeed=5.
+    // At wall distance d, force magnitude = 5/d. Near the wall (d=50)
+    // that's 0.1 — 2% of maxSpeed. Gentle turn, not bumper.
+    //
+    // Our worldHalf is ~8 and maxSpeed is 0.06. To get the same 2%
+    // relative behavior at a comparable near-wall distance (d=1),
+    // we need force = 0.02 × 0.06 = 0.0012, so constant ≈ 0.03.
+    // (Prior 2.0 was ~1500× too strong and slammed birds off walls.)
+    steer.multiplyScalar(0.03 / dsq);
     this.accel.add(steer);
   }
 
@@ -1692,12 +1686,18 @@ class Boid {
         count++;
       }
     }
-    if (count > 0) posSum.divideScalar(count);
-    // Match the original pen exactly: the steer vector is computed
-    // even when count === 0 (posSum stays at origin), which gives
-    // isolated birds a gentle pull back toward the centroid of the
-    // flock's local coord system. This is subtle but is a big part
-    // of the "momentum" feel — without it, stragglers drift off.
+    // When no neighbors are in range (count === 0), return zero
+    // steer. The original pen falls through to steer = -position
+    // here, which gives an implicit "pull toward origin" for
+    // stragglers. In the pen that branch almost never triggered (200
+    // dense birds, everyone has neighbors); in our sparser port it
+    // triggers constantly and pulls isolated birds toward the
+    // flock's local origin — which maps to mid-hall height in world
+    // coords and produces a blob of birds clustering near the
+    // ceiling. Disabling the implicit origin-pull lets true flocking
+    // behavior emerge from alignment + real cohesion only.
+    if (count === 0) return new THREE.Vector3();
+    posSum.divideScalar(count);
     const steer = new THREE.Vector3().copy(posSum).sub(this.position);
     const l = steer.length();
     if (l > this.maxSteerForce) steer.multiplyScalar(this.maxSteerForce / l);
@@ -1728,17 +1728,25 @@ function Flock() {
     const list: Boid[] = [];
     for (let i = 0; i < NUM; i++) {
       const b = new Boid();
+      // Spawn in the central 40% of the box (matching the original
+      // pen which spawns in ±200 inside a ±500 world). Uniform-across-
+      // box spawning put birds at the corners and they collapsed
+      // toward the center as the first visible behavior, which read
+      // as "birds gathering at the ceiling" rather than flying.
+      const SPAWN = 0.4;
       b.position.set(
-        (Math.random() - 0.5) * 2 * b.worldHalf.x,
-        (Math.random() - 0.5) * 2 * b.worldHalf.y,
-        (Math.random() - 0.5) * 2 * b.worldHalf.z,
+        (Math.random() - 0.5) * 2 * b.worldHalf.x * SPAWN,
+        (Math.random() - 0.5) * 2 * b.worldHalf.y * SPAWN,
+        (Math.random() - 0.5) * 2 * b.worldHalf.z * SPAWN,
       );
-      // Seed with velocity at maxSpeed so the flock starts in
-      // motion instead of drifting in from zero.
+      // Seed with ~20% of maxSpeed (matching the pen: velocity ±1
+      // against maxSpeed 5). Previously I seeded at full maxSpeed,
+      // which made the flock look like a shotgun blast on frame 0.
+      const V0 = b.maxSpeed * 0.2;
       b.velocity.set(
-        (Math.random() - 0.5) * 0.08,
-        (Math.random() - 0.5) * 0.08,
-        (Math.random() - 0.5) * 0.08,
+        (Math.random() - 0.5) * 2 * V0,
+        (Math.random() - 0.5) * 2 * V0,
+        (Math.random() - 0.5) * 2 * V0,
       );
       list.push(b);
     }
@@ -1774,11 +1782,12 @@ function Flock() {
   });
 
   return (
-    // Centered in the hall: group at (0, 4.5, -4) with worldHalf
-    // (10, 4.5, 11) means birds roam x=±10, y=0–9, z=-15 to +7 —
-    // the entire visible interior including in front of the camera,
-    // not just hanging above the stage.
-    <group position={[0, 4.5, -4]}>
+    // Group at (0, 4, -4) with worldHalf (8, 4, 9) places the flock's
+    // local origin at world y=4 — a bit above eye level (1.65) but
+    // no longer at ceiling height. World extent x=±8, y=0–8, z=-13
+    // to +5. Origin-pull from cohesion now draws toward this height,
+    // not the ceiling.
+    <group position={[0, 4, -4]}>
       {boids.map((_, i) => (
         <mesh
           key={i}
