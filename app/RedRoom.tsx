@@ -2472,9 +2472,8 @@ export function RedRoom() {
           <BrightnessContrast brightness={0.05} contrast={0.08} />
           <HueSaturation saturation={0.22} />
           <Noise
-            premultiply
-            blendFunction={BlendFunction.SOFT_LIGHT}
-            opacity={0.35}
+            blendFunction={BlendFunction.OVERLAY}
+            opacity={0.18}
           />
           <Vignette offset={0.35} darkness={0.55} eskil={false} />
         </EffectComposer>
