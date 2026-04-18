@@ -1312,15 +1312,16 @@ function WallCurtainLights() {
   );
 }
 
-// ————— stork fly-by —————
-// Dream visitation: a stork materializes high/far in the back of the
+// ————— crow fly-by —————
+// Dream visitation: a crow materializes high/far in the back of the
 // hall, roams the space as if looking for a way out, then commits
 // and sprints at the camera, exiting past the lens.
 //
-// Uses three.js's example Flamingo.glb (served from /public). Native
-// GLB materials are kept unmodified — the red hemisphere + amber
-// spots tint the bird naturally, which reads as a shadowed creature
-// caught in the stage light, not a clean cartoon dove.
+// Model: "LowPoly Crow Animated" by Shaina (Regan) Alvarez,
+// licensed CC-BY — https://sketchfab.com/3d-models/lowpoly-crow-
+// animated-c320a8494a604353b3cfadbc4fa033da
+// Native GLB materials are kept unmodified so the red hemisphere +
+// amber spots tint the bird naturally.
 //
 // Path is regenerated PER flight: a random-biased entry point up
 // near the back wall, 4 random wander waypoints covering most of
@@ -1331,7 +1332,7 @@ function WallCurtainLights() {
 
 function Bird() {
   const groupRef = useRef<THREE.Group>(null);
-  const { scene, animations } = useGLTF("/Flamingo.glb");
+  const { scene, animations } = useGLTF("/Crow.glb");
   const { actions } = useAnimations(animations, scene);
 
   // Grab the flap clip so we can drive its timeScale dynamically —
@@ -1345,9 +1346,20 @@ function Bird() {
     }
   }, [actions]);
 
-  // No material override — use the Flamingo.glb native PBR materials
-  // so the bird is tinted by scene lighting. It won't be pure-white
-  // anymore; it'll look like a real bird in a red room.
+  // Auto-fit: Sketchfab models come in arbitrary native units, so
+  // measure the bounding box after load and normalize the scene so
+  // the bird's longest dimension is ~0.7m in our world units. This
+  // keeps the near-miss perspective blow-up consistent regardless of
+  // which GLB we swap in.
+  useEffect(() => {
+    const box = new THREE.Box3().setFromObject(scene);
+    const size = box.getSize(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z);
+    if (maxDim > 0) {
+      const TARGET = 0.7; // ~0.7m longest dimension ≈ a real crow
+      scene.scale.setScalar(TARGET / maxDim);
+    }
+  }, [scene]);
 
   // Helper reusable vectors so we don't allocate per frame.
   const posVec = useRef(new THREE.Vector3()).current;
@@ -1474,12 +1486,13 @@ function Bird() {
 
   return (
     <group ref={groupRef} visible={false}>
-      <primitive object={scene} scale={0.02} />
+      {/* scale is set directly on `scene` by the auto-fit useEffect */}
+      <primitive object={scene} />
     </group>
   );
 }
 
-useGLTF.preload("/Flamingo.glb");
+useGLTF.preload("/Crow.glb");
 
 // ————— background flock —————
 // A small, slow drift of cream triangle-birds in the back half of the
