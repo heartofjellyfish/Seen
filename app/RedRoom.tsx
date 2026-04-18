@@ -1317,7 +1317,7 @@ function WallCurtainLights() {
 // hall, roams the space as if looking for a way out, then commits
 // and sprints at the camera, exiting past the lens.
 //
-// Uses three.js's example Stork.glb (served from /public). Native
+// Uses three.js's example Flamingo.glb (served from /public). Native
 // GLB materials are kept unmodified — the red hemisphere + amber
 // spots tint the bird naturally, which reads as a shadowed creature
 // caught in the stage light, not a clean cartoon dove.
@@ -1331,7 +1331,7 @@ function WallCurtainLights() {
 
 function Bird() {
   const groupRef = useRef<THREE.Group>(null);
-  const { scene, animations } = useGLTF("/Stork.glb");
+  const { scene, animations } = useGLTF("/Flamingo.glb");
   const { actions } = useAnimations(animations, scene);
 
   // Grab the flap clip so we can drive its timeScale dynamically —
@@ -1345,7 +1345,7 @@ function Bird() {
     }
   }, [actions]);
 
-  // No material override — use the Stork.glb native PBR materials
+  // No material override — use the Flamingo.glb native PBR materials
   // so the bird is tinted by scene lighting. It won't be pure-white
   // anymore; it'll look like a real bird in a red room.
 
@@ -1479,7 +1479,7 @@ function Bird() {
   );
 }
 
-useGLTF.preload("/Stork.glb");
+useGLTF.preload("/Flamingo.glb");
 
 // ————— background flock —————
 // A small, slow drift of cream triangle-birds in the back half of the
