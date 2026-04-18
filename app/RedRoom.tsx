@@ -1587,19 +1587,19 @@ class Boid {
   private tmp = new THREE.Vector3();
 
   // Room is x=±11, y=0–9, z=-16 to +8. Box tuned so 40 birds produce
-  // demo-like density (rather than filling the full hall sparsely). Original pen:
-  // 200 birds in ±500 volume ≈ 200/64M = 3.1e-6 per unit³, neighbor
-  // radius 200 → ~100 theoretical neighbors per bird (with 40%
-  // sampling, ~40 per call — plenty for coordinated motion). Our
-  // 40 birds need a smaller box to reach comparable density.
-  //   worldHalf (8, 4, 9) → volume 2*8*2*4*2*9 = 1152
-  //   density 40/1152 = 0.0347 per unit³
-  //   neighbors at radius 4: 0.0347 * (4/3 π 64) = 9.3 → ~4 after
-  //   sampling. Enough to produce real alignment/cohesion.
-  worldHalf = new THREE.Vector3(8, 4, 9);
-  neighborhoodRadius = 4.0;
-  maxSpeed = 0.06;
-  maxSteerForce = 0.0018;
+  // demo-like density (rather than filling the full hall sparsely).
+  //   worldHalf (12, 4.5, 13) → volume 2*12*2*4.5*2*13 = 5616
+  //   density 60/5616 = 0.0107 per unit³
+  //   neighbors at radius 5: 0.0107 * (4/3 π 125) = 5.6 → ~2.2
+  //   after 40% sampling. Enough for real flocking without the
+  //   separation force dominating every frame.
+  worldHalf = new THREE.Vector3(12, 4.5, 13);
+  neighborhoodRadius = 5.0;
+  maxSpeed = 0.12;
+  // 50:1 ratio of maxSpeed:maxSteerForce matches the pen and gives
+  // the gentle-arc feel — steering takes many frames to redirect
+  // velocity, so turns draw smooth curves instead of snapping.
+  maxSteerForce = 0.0024;
   goal: THREE.Vector3 | null = null;
   avoidWalls = true;
 
@@ -1625,11 +1625,10 @@ class Boid {
     // At wall distance d, force magnitude = 5/d. Near the wall (d=50)
     // that's 0.1 — 2% of maxSpeed. Gentle turn, not bumper.
     //
-    // Our worldHalf is ~8 and maxSpeed is 0.06. To get the same 2%
-    // relative behavior at a comparable near-wall distance (d=1),
-    // we need force = 0.02 × 0.06 = 0.0012, so constant ≈ 0.03.
-    // (Prior 2.0 was ~1500× too strong and slammed birds off walls.)
-    steer.multiplyScalar(0.03 / dsq);
+    // Our worldHalf is ~12 and maxSpeed is 0.12. Constant 0.06 gives
+    // force 0.06/d: at d=1 that's 50% of maxSpeed (firm push inside
+    // the final meter), at d=4 it's 12.5% (gentle nudge further out).
+    steer.multiplyScalar(0.06 / dsq);
     this.accel.add(steer);
   }
 
@@ -1727,15 +1726,20 @@ class Boid {
     // frame to its own direction, overwhelming alignment/cohesion
     // and making each bird "spin in place" as close neighbors flip
     // the push-away direction tick to tick.
+    // Cap at 4× maxSteerForce: 2× was too restrictive — it stifled
+    // the disperse-after-convergence beat by not letting close
+    // neighbors actually push each other apart. 4× still prevents
+    // the "spin in place" pathology but restores the natural
+    // expand/contract pulse of a real flock.
     const l = posSum.length();
-    const cap = this.maxSteerForce * 2;
+    const cap = this.maxSteerForce * 4;
     if (l > cap) posSum.multiplyScalar(cap / l);
     return posSum;
   }
 }
 
 function Flock() {
-  const NUM = 40;
+  const NUM = 60;
 
   const boids = useMemo(() => {
     const list: Boid[] = [];
@@ -1795,12 +1799,13 @@ function Flock() {
   });
 
   return (
-    // Group at (0, 4, -4) with worldHalf (8, 4, 9) places the flock's
-    // local origin at world y=4 — a bit above eye level (1.65) but
-    // no longer at ceiling height. World extent x=±8, y=0–8, z=-13
-    // to +5. Origin-pull from cohesion now draws toward this height,
-    // not the ceiling.
-    <group position={[0, 4, -4]}>
+    // Group at (0, 4.5, -4) with worldHalf (12, 4.5, 13) places the
+    // flock's local origin at world y=4.5 and gives it the whole hall
+    // to roam in. World extent x=±12, y=0–9, z=-17 to +9 — birds
+    // can now sweep past the camera (z=6) and out of frame, as
+    // requested. Origin-pull is gone (cohesion returns zero when
+    // isolated), so the wider box doesn't collapse to center.
+    <group position={[0, 4.5, -4]}>
       {boids.map((_, i) => (
         <mesh
           key={i}
@@ -1809,14 +1814,18 @@ function Flock() {
             meshRefs.current[i] = m;
           }}
         >
-          {/* Near-black body, no emissive — we WANT the scene lights
-              to tint the birds. Red hemisphere + warm spots give the
-              birds a crow-like red/warm sheen as they pass near lit
-              surfaces (curtain, stage floor, sconces). */}
+          {/* Dark warm-brown body (not pure black): under PBR
+              diffuse ≈ baseColor × lightColor, so a near-black
+              body can't reflect much red no matter how strong the
+              lights. #1a0d08 keeps the silhouette dark but has
+              enough red in the base that passes through red zones
+              visibly warm up. Slight metalness adds a subtle sheen
+              when catching the warm spots. */}
           <meshStandardMaterial
-            color="#0a0807"
+            color="#1a0d08"
             side={THREE.DoubleSide}
-            roughness={0.55}
+            roughness={0.5}
+            metalness={0.1}
           />
         </mesh>
       ))}
