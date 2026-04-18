@@ -1368,25 +1368,35 @@ function Bird() {
     });
   }, [scene]);
 
-  // Spline path. Start in the stage wing (behind back curtain z=-16,
-  // in front of stage curtain z=-10.75), descend toward camera which
-  // sits at (0, 1.65, 6). The "near-miss" point is (0.3, 2.5, 1.5) —
-  // head-on to the camera, ~4.5m away. Then a last-second swerve to
-  // the right (positive x) and exit behind camera.
-  // Camera sits at (0, 1.65, 6) looking at (0, 3, -13) — line of sight
-  // climbs very slightly upward. To keep the bird centered in view as
-  // it closes on the camera, stay near x≈0 and y≈2.0–2.6 through the
-  // approach, and only swerve sideways in the last 20% of the journey.
+  // Spline path, three choreographed beats:
+  //   1. Emerge from back-left of the stage, sweep across and down
+  //      toward the right wall (steady cruise).
+  //   2. Bank hard at the right wall — "quick pivot" — and lock onto
+  //      the camera.
+  //   3. Dive straight at the lens, accelerating. Last frame: pull
+  //      up and pass over the top of the camera.
+  //
+  // Camera sits at (0, 1.65, 6) looking at (0, 3, -13).
   const curve = useMemo(
     () =>
       new THREE.CatmullRomCurve3([
-        new THREE.Vector3(3.5, 5.8, -12),   // stage wing, high
-        new THREE.Vector3(1.6, 4.4, -6.5),  // still far, descending
-        new THREE.Vector3(0.4, 3.1, -1),    // committed dive toward camera
-        new THREE.Vector3(0.0, 2.3, 2.5),   // head-on, ~3.5m out
-        new THREE.Vector3(0.05, 1.95, 4.6), // nearly touching lens (1.4m)
-        new THREE.Vector3(0.6, 1.75, 5.8),  // last-frame hard swerve right
-        new THREE.Vector3(2.6, 1.5, 8.8),   // gone past camera
+        // Beat 1 — stage crossing
+        new THREE.Vector3(-6.0, 4.6, -13),  // back-left of stage, high
+        new THREE.Vector3(-3.5, 4.1, -10),  // sweeping right, mid stage
+        new THREE.Vector3(0.0, 3.6, -7),    // middle of stage front
+        new THREE.Vector3(3.2, 3.2, -4),    // continuing right, into room
+        new THREE.Vector3(5.6, 3.0, -1.5),  // approaching right wall
+        // Beat 2 — pivot at the right wall. Three close-spaced points
+        // here bend the CatmullRom into a visible banking turn.
+        new THREE.Vector3(7.0, 2.85, 0.3),  // furthest-right apex
+        new THREE.Vector3(6.6, 2.7, 1.4),   // pivoting back toward camera
+        new THREE.Vector3(5.0, 2.55, 2.6),  // banking toward camera
+        // Beat 3 — lock onto lens and detonate
+        new THREE.Vector3(2.6, 2.3, 4.2),   // committed dive
+        new THREE.Vector3(0.6, 2.05, 5.4),  // ~0.6m before camera, head-on
+        new THREE.Vector3(0.05, 2.4, 5.95), // starting to pull up right over camera
+        new THREE.Vector3(-0.1, 3.6, 6.4),  // clearing above camera
+        new THREE.Vector3(-0.2, 5.4, 7.2),  // gone, up and behind
       ]),
     [],
   );
@@ -1399,9 +1409,8 @@ function Bird() {
   const state = useRef({
     flying: false,
     startTime: 0,
-    duration: 3.0,
+    duration: 3.4,
     nextFlightAt: 2 + Math.random() * 3, // first appearance 2–5s in
-    mirror: 1 as 1 | -1,
   });
 
   useFrame(({ clock }) => {
@@ -1412,8 +1421,7 @@ function Bird() {
     if (!s.flying && t >= s.nextFlightAt) {
       s.flying = true;
       s.startTime = t;
-      s.duration = 2.1 + Math.random() * 0.5; // 2.1–2.6s, tight
-      s.mirror = (Math.random() > 0.5 ? 1 : -1) as 1 | -1;
+      s.duration = 3.2 + Math.random() * 0.6; // 3.2–3.8s
     }
 
     if (!s.flying) {
@@ -1429,37 +1437,39 @@ function Bird() {
       return;
     }
 
-    // Sharp ease-in: bird hangs far-out for most of the flight, then
-    // detonates through the last ~25% of the path straight at the
-    // lens. Exponent 4.0 is much more aggressive than a standard
-    // ease-out — this is where the thriller jump lives.
-    const p = 1 - Math.pow(1 - raw, 4.0);
+    // Piecewise timing — this is the thriller:
+    //   • Beat 1 (first 65% of time) is a steady cruise across the
+    //     stage: linearly covers the first 55% of the path.
+    //   • Beats 2+3 (last 35% of time) are a cube-ease-in for the
+    //     pivot + dive: the last 45% of path accelerates hard into
+    //     the lens. The previous version used the complementary
+    //     (1-x)^n curve, which was actually ease-OUT — the bird was
+    //     finishing slow near the camera instead of speeding up into
+    //     it. That's why it read as "chill". Cube ease-in here
+    //     inverts it so the final moment is the fastest.
+    let p: number;
+    if (raw < 0.65) {
+      p = (raw / 0.65) * 0.55;
+    } else {
+      const p2 = (raw - 0.65) / 0.35;
+      p = 0.55 + Math.pow(p2, 3) * 0.45;
+    }
 
-    // Wingbeat scales with approach — slow, gliding flaps when far,
-    // frantic panic flaps at the moment of near-miss.
+    // Wingbeat climbs with raw time — slow glide during cruise,
+    // frantic panic flaps through the pivot + dive.
     if (flapAction.current) {
-      flapAction.current.timeScale = 1.3 + 2.2 * p;
+      flapAction.current.timeScale = 0.9 + 3.0 * Math.pow(raw, 2);
     }
 
     curve.getPoint(p, posVec);
     curve.getTangent(p, tanVec);
 
     groupRef.current.visible = true;
-    groupRef.current.position.set(
-      posVec.x * s.mirror,
-      posVec.y,
-      posVec.z,
-    );
+    groupRef.current.position.copy(posVec);
 
     // Face direction of travel
     lookVec.copy(posVec).add(tanVec);
-    lookVec.x *= s.mirror;
     groupRef.current.lookAt(lookVec);
-
-    // No opacity fading — the bird just appears/disappears. Entry
-    // is behind the stage area so emergence reads as "coming out of
-    // the curtain", and exit is behind the camera so there's nothing
-    // to fade.
   });
 
   return (
