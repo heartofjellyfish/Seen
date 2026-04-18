@@ -2,7 +2,7 @@
 
 import { Suspense, useMemo, useRef } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { Cloud, Clouds, PerspectiveCamera, Sparkles, useTexture } from "@react-three/drei";
+import { PerspectiveCamera, Sparkles, useTexture } from "@react-three/drei";
 import { RectAreaLightUniformsLib } from "three/examples/jsm/lights/RectAreaLightUniformsLib.js";
 import * as THREE from "three";
 
@@ -350,11 +350,6 @@ function Stage() {
           burning just behind the fog' survives. */}
       <StageCandleRing stageW={stageW} stageD={stageD} stageH={stageH} />
 
-      {/* Dry-ice mist rolling across the apron — hides where the
-          candles would have been, and the flicker from the ring
-          lights crawls through it as warm breath. */}
-      <StageMist stageW={stageW} stageD={stageD} stageH={stageH} />
-
       <CurtainBleedGlow stageD={stageD} stageH={stageH} />
     </group>
   );
@@ -467,67 +462,6 @@ function StageCandleRing({
           />
         ) : null,
       )}
-    </group>
-  );
-}
-
-// ————— stage mist — dry-ice fog on the apron —————
-// Ground-hugging dry-ice effect. The secret is very flat bounds[1]
-// (height) so particles can't stack vertically into sky-cloud puffs,
-// small growth so individual particles stay tight, and high fade so
-// edges blend into the scene. Two layers at slightly different y
-// blend into one continuous flat bank; the candle ring's
-// MeshLambertMaterial response means the flickering pointLights
-// still animate the fog as warm breath.
-
-function StageMist({
-  stageD,
-  stageH,
-}: {
-  stageW: number;
-  stageD: number;
-  stageH: number;
-}) {
-  // Anchor sits just above the deck surface so the fog hugs the floor.
-  const anchor: [number, number, number] = [0, stageH + 0.06, stageD / 2 + 0.2];
-  return (
-    <group position={anchor}>
-      <Clouds material={THREE.MeshLambertMaterial} limit={300}>
-        {/* Dense flat base — wide and pancake-thin so it reads as a
-            ground-level gas, not a cumulus cloud. High segments fill
-            the volume continuously; low growth keeps each particle
-            small so they merge rather than standing out individually. */}
-        <Cloud
-          seed={3}
-          segments={90}
-          bounds={[10, 0.10, 1.1]}
-          volume={2.2}
-          smallestVolume={0.3}
-          growth={0.9}
-          speed={0.07}
-          concentrate="inside"
-          color="#cbbda0"
-          opacity={0.92}
-          fade={28}
-        />
-        {/* Slightly wider fringe layer at the same height — the
-            outer wisps that trail off the apron edges. Very thin,
-            barely opaque, drift a little faster. */}
-        <Cloud
-          seed={17}
-          segments={50}
-          bounds={[12, 0.08, 1.4]}
-          volume={1.6}
-          smallestVolume={0.2}
-          growth={0.7}
-          speed={0.11}
-          concentrate="inside"
-          color="#ddd0b5"
-          opacity={0.60}
-          fade={35}
-          position={[0, 0.02, 0.08]}
-        />
-      </Clouds>
     </group>
   );
 }
