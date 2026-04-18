@@ -1795,42 +1795,80 @@ function Flock() {
   const meshRefs = useRef<(THREE.Mesh | null)[]>([]);
 
   // Roaming goal — a waypoint the whole flock slowly steers toward.
-  // Every DWELL seconds it jumps to the next corner of the room.
+  // Two pools of waypoints, strictly alternating: the flock hides
+  // off-frame for ~18s, swoops through the visible area for ~5s,
+  // hides again. Hidden time is 70–78% overall, so each visible
+  // pass feels like an event rather than continuous ambient motion.
+  //
+  // Hideouts sit just inside the box edges (wall-avoid prevents
+  // reaching them exactly, but d=1–2 from the wall is enough to
+  // keep the flock outside the camera frustum). Shows sit inside
+  // the visible stage area — the flock passes THROUGH frame on its
+  // way to each show waypoint, then transits back out again.
+  //
   // Waypoints are in WORLD coords; converted to local by subtracting
-  // the <group> position below. These are picked to tour places the
-  // flock wasn't visiting organically: over Venus (front-left near
-  // the camera), past the camera on either side, deep into the
-  // back-stage corners, down at floor level, high near the ceiling.
+  // the <group> position.
   const GROUP_POS = useMemo(() => new THREE.Vector3(0, 5, -3), []);
-  const waypointsLocal = useMemo(() => {
-    const world: Array<[number, number, number]> = [
-      [-4, 5, 1],    // over Venus
-      [10, 3, 11],   // past-camera right (out of frame right)
-      [12, 7, -16],  // deep back-right, near ceiling
-      [-12, 7, -16], // deep back-left, near ceiling
-      [0, 1, 12],    // low past-camera (out of frame bottom)
-      [11, 1, -2],   // mid-right floor level
-      [-11, 8, -5],  // mid-left ceiling
-    ];
-    return world.map(([x, y, z]) =>
-      new THREE.Vector3(x - GROUP_POS.x, y - GROUP_POS.y, z - GROUP_POS.z),
-    );
+  const { hideouts, shows } = useMemo(() => {
+    const toLocal = (wx: number, wy: number, wz: number, dwell: number) => ({
+      local: new THREE.Vector3(wx - GROUP_POS.x, wy - GROUP_POS.y, wz - GROUP_POS.z),
+      dwell,
+    });
+    return {
+      // 6 hideouts, 18s each. All reliably outside the fov 55°
+      // frustum on BOTH portrait and landscape viewports:
+      //   - z > camera.z (=6) puts the bird behind the camera —
+      //     the most robust offscreen test, works any aspect.
+      //   - |x| ≥ 12 at z=-3 (distance 9 from camera): landscape
+      //     horizontal half-width ≈ 8.2 → outside. Portrait narrower
+      //     still. Safe.
+      // Previously had (0, 9, -17) listed as a hideout but at z=-17
+      // frame-center-y is 3.28 and frame half-height is 11.96, so
+      // y=9 sits only 48% up from center — fully in frame. Removed.
+      hideouts: [
+        toLocal(0, 8, 10, 18),     // behind camera, high center
+        toLocal(0, 1, 11, 18),     // behind camera, low center
+        toLocal(9, 5, 10, 18),     // behind camera, slight right
+        toLocal(-9, 5, 10, 18),    // behind camera, slight left
+        toLocal(12, 8, -3, 18),    // far-right, high (beyond lateral frustum)
+        toLocal(-12, 8, -3, 18),   // far-left, high
+      ],
+      // 5 shows, 5s each — clearly inside the visible area. This is
+      // where the user's eye is rewarded. Includes the deep-back
+      // corners (|x|=4 at z=-16 is inside the frustum even on
+      // portrait aspect) so the flock does visit the back-stage.
+      // Transit from any hideout to any show passes the flock
+      // through the camera frame, which IS the spectacle.
+      shows: [
+        toLocal(-4, 5, 1, 5),      // dive over Venus
+        toLocal(0, 4, -10, 5),     // sweep through upper stage
+        toLocal(3, 3, -5, 5),      // mid-room center dive
+        toLocal(4, 7, -16, 5),     // deep back-right corner
+        toLocal(-4, 7, -16, 5),    // deep back-left corner
+      ],
+    };
   }, [GROUP_POS]);
-  const goal = useRef(new THREE.Vector3().copy(waypointsLocal[0]));
-  const waypointIdx = useRef(0);
+
+  // Start on a show so the opening 5s rewards the viewer immediately
+  // (an 18s hide-transit at t=0 would look like nothing is happening).
+  // The next cycle flips to hide, then show, then hide — so across
+  // time the ~18:5 hide:show ratio still holds.
+  const goal = useRef(new THREE.Vector3().copy(shows[0].local));
+  const current = useRef(shows[0]);
+  const phase = useRef<"hide" | "show">("show");
   const waypointStart = useRef(0);
-  const DWELL = 14; // seconds per waypoint
 
   useFrame(({ clock }) => {
     const t = clock.elapsedTime;
-    if (t - waypointStart.current > DWELL) {
+    if (t - waypointStart.current > current.current.dwell) {
       waypointStart.current = t;
-      let next = waypointIdx.current;
-      while (next === waypointIdx.current) {
-        next = Math.floor(Math.random() * waypointsLocal.length);
-      }
-      waypointIdx.current = next;
-      goal.current.copy(waypointsLocal[next]);
+      // Strict alternation: hide → show → hide → show …
+      // so the viewer gets a predictable spectacle cadence.
+      phase.current = phase.current === "hide" ? "show" : "hide";
+      const pool = phase.current === "hide" ? hideouts : shows;
+      const next = pool[Math.floor(Math.random() * pool.length)];
+      current.current = next;
+      goal.current.copy(next.local);
     }
 
     for (let i = 0; i < boids.length; i++) {
