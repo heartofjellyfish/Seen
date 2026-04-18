@@ -6,7 +6,6 @@ import {
   Cloud,
   Clouds,
   PerspectiveCamera,
-  Sparkles,
   useAnimations,
   useGLTF,
   useTexture,
@@ -1565,25 +1564,94 @@ function CandleStand({ position }: { position: [number, number, number] }) {
   );
 }
 
-// ————— 4iii dust motes — drei <Sparkles> —————
-// Replaced the hand-rolled Points loop with drei's Sparkles, which
-// handles spawning, drift, and size-attenuation internally. The
-// scale box keeps motes confined to the central corridor (away from
-// the side curtains). Speed is low so they drift rather than dart.
+// ————— 4iii dust motes — plane billboards —————
+// drei's <Sparkles> uses gl.POINTS primitive, which on some GPUs
+// (notably Apple Silicon) leaves sub-pixel aliasing artifacts at the
+// point-sprite quad corners. Post-processing with boosted contrast +
+// saturation turns those into visible "selection brackets".
+//
+// Fix: render each mote as a regular triangulated quad (camera-facing
+// billboard), so rasterization goes through the normal mesh path. Soft
+// radial texture gives the same glow look.
+
+function makeDustSpriteTexture(): THREE.CanvasTexture {
+  const S = 64;
+  const c = document.createElement("canvas");
+  c.width = c.height = S;
+  const ctx = c.getContext("2d")!;
+  const g = ctx.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+  g.addColorStop(0, "rgba(216, 164, 106, 1)");
+  g.addColorStop(0.45, "rgba(216, 164, 106, 0.35)");
+  g.addColorStop(1, "rgba(216, 164, 106, 0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, S, S);
+  const tex = new THREE.CanvasTexture(c);
+  tex.needsUpdate = true;
+  return tex;
+}
 
 function DustMotes() {
+  const COUNT = 80;
+  const meshRef = useRef<THREE.InstancedMesh>(null);
+  const tex = useMemo(() => makeDustSpriteTexture(), []);
+
+  // Deterministic-ish spawn data (same random per mount)
+  const motes = useMemo(() => {
+    // Matches old Sparkles box: scale=[9,5,12], position=[0,2.8,-3]
+    return Array.from({ length: COUNT }, () => ({
+      base: new THREE.Vector3(
+        (Math.random() - 0.5) * 9,
+        2.8 + (Math.random() - 0.5) * 5,
+        -3 + (Math.random() - 0.5) * 12,
+      ),
+      phase: Math.random() * Math.PI * 2,
+      freq: 0.25 + Math.random() * 0.35,
+      size: 0.06 + Math.random() * 0.06,
+    }));
+  }, []);
+
+  // Reusable scratch objects
+  const scratch = useMemo(
+    () => ({
+      pos: new THREE.Vector3(),
+      quat: new THREE.Quaternion(),
+      scl: new THREE.Vector3(1, 1, 1),
+      mat: new THREE.Matrix4(),
+    }),
+    [],
+  );
+
+  useFrame(({ camera, clock }) => {
+    const mesh = meshRef.current;
+    if (!mesh) return;
+    const t = clock.elapsedTime;
+    // Billboard: every mote faces the camera → copy camera's world rotation
+    scratch.quat.copy(camera.quaternion);
+    for (let i = 0; i < COUNT; i++) {
+      const m = motes[i];
+      scratch.pos.set(
+        m.base.x + Math.sin(t * m.freq + m.phase) * 0.25,
+        m.base.y + Math.cos(t * m.freq * 0.7 + m.phase * 1.3) * 0.18,
+        m.base.z + Math.sin(t * m.freq * 0.5 + m.phase * 0.7) * 0.22,
+      );
+      scratch.scl.setScalar(m.size);
+      scratch.mat.compose(scratch.pos, scratch.quat, scratch.scl);
+      mesh.setMatrixAt(i, scratch.mat);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+  });
+
   return (
-    <Sparkles
-      count={80}
-      // [x, y, z] box centred on position — 9m wide, 5m tall, 12m deep
-      scale={[9, 5, 12]}
-      position={[0, 2.8, -3]}
-      size={1.4}
-      speed={0.18}
-      opacity={0.28}
-      color="#d8a46a"
-      noise={0.5}
-    />
+    <instancedMesh ref={meshRef} args={[undefined, undefined, COUNT]}>
+      <planeGeometry args={[1, 1]} />
+      <meshBasicMaterial
+        map={tex}
+        transparent
+        depthWrite={false}
+        opacity={0.5}
+        toneMapped={false}
+      />
+    </instancedMesh>
   );
 }
 
