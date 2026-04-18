@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { EB_Garamond } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 
 const garamond = EB_Garamond({
@@ -33,6 +34,7 @@ export default function RootLayout({
           seen
         </span>
         {children}
+        <Analytics />
       </body>
     </html>
   );
