@@ -1431,7 +1431,7 @@ function Bird() {
     if (!s.flying && t >= s.nextFlightAt) {
       s.flying = true;
       s.startTime = t;
-      s.duration = 5.5 + Math.random() * 1.5; // 5.5–7s — room to wander
+      s.duration = 8 + Math.random() * 2; // 8–10s — slow enough to follow
       s.curve = generatePath();
     }
 
@@ -1450,26 +1450,27 @@ function Bird() {
     }
 
     // Two-phase timing:
-    //   • roam (first 72% of time, first 72% of path): linear pace,
+    //   • roam (first 65% of time, first 65% of path): linear pace,
     //     bird meanders through the wander points at cruise speed.
-    //   • sprint (last 28% of time, last 28% of path): cube ease-in
-    //     so the final dive + exit accelerates into the lens.
-    const ROAM = 0.72;
+    //   • sprint (last 35% of time, last 35% of path): quadratic ease-in
+    //     so the final dive + exit accelerates into the lens — but
+    //     gently enough that the eye can still follow.
+    const ROAM = 0.65;
     let p: number;
     if (raw < ROAM) {
       p = raw; // linear roam: p = raw when roam covers its share of path
     } else {
       const p2 = (raw - ROAM) / (1 - ROAM);
-      p = ROAM + Math.pow(p2, 3) * (1 - ROAM);
+      p = ROAM + Math.pow(p2, 2) * (1 - ROAM);
     }
 
-    // Wingbeat: steady during roam, panic during sprint.
+    // Wingbeat: steady during roam, quicker during sprint.
     if (flapAction.current) {
       if (raw < ROAM) {
         flapAction.current.timeScale = 1.0;
       } else {
         const sp = (raw - ROAM) / (1 - ROAM);
-        flapAction.current.timeScale = 1.0 + 2.8 * Math.pow(sp, 2);
+        flapAction.current.timeScale = 1.0 + 1.6 * Math.pow(sp, 2);
       }
     }
 
