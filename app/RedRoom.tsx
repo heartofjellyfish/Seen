@@ -1407,17 +1407,19 @@ function Bird() {
       prev.copy(p);
     }
 
-    // Commit: near-miss in front of camera (lens at z=6, y=1.65),
-    // slight random jitter left/right. Then exit up + past camera.
+    // Commit: near-miss well in front of camera (lens at z=6, y=1.65),
+    // slight random jitter left/right. Closer than ~2m would make
+    // angular velocity huge at any speed — we want the bird readable
+    // even at its closest point.
     const near = new THREE.Vector3(
-      (Math.random() - 0.5) * 0.5,  // tight to center, slight jitter
-      2.0 + Math.random() * 0.4,    // roughly lens height
-      5.3,                           // ~0.7m in front of camera
+      (Math.random() - 0.5) * 1.0,
+      2.2 + Math.random() * 0.4,
+      3.5, // ~2.5m in front of camera — close enough to thrill, far enough to see
     );
     const exit = new THREE.Vector3(
       (Math.random() - 0.5) * 1.5,
-      4.5 + Math.random() * 1.5, // rising
-      8.5, // behind/past camera
+      5.0 + Math.random() * 1.5, // rising up and over
+      8.0, // just past the camera
     );
 
     return new THREE.CatmullRomCurve3([start, ...wander, near, exit]);
@@ -1431,7 +1433,7 @@ function Bird() {
     if (!s.flying && t >= s.nextFlightAt) {
       s.flying = true;
       s.startTime = t;
-      s.duration = 8 + Math.random() * 2; // 8–10s — slow enough to follow
+      s.duration = 18 + Math.random() * 3; // 18–21s — extremely slow, savor it
       s.curve = generatePath();
     }
 
@@ -1449,28 +1451,25 @@ function Bird() {
       return;
     }
 
-    // Two-phase timing:
-    //   • roam (first 65% of time, first 65% of path): linear pace,
-    //     bird meanders through the wander points at cruise speed.
-    //   • sprint (last 35% of time, last 35% of path): quadratic ease-in
-    //     so the final dive + exit accelerates into the lens — but
-    //     gently enough that the eye can still follow.
-    const ROAM = 0.65;
+    // Near-linear pacing: a hair of ease-in at the very end so the
+    // exit still reads as a "commit" rather than a pure constant
+    // drift, but gentle enough that the eye can follow the whole arc.
+    const ROAM = 0.8;
     let p: number;
     if (raw < ROAM) {
-      p = raw; // linear roam: p = raw when roam covers its share of path
+      p = raw;
     } else {
       const p2 = (raw - ROAM) / (1 - ROAM);
-      p = ROAM + Math.pow(p2, 2) * (1 - ROAM);
+      p = ROAM + Math.pow(p2, 1.4) * (1 - ROAM);
     }
 
-    // Wingbeat: steady during roam, quicker during sprint.
+    // Wingbeat: steady throughout, barely perceptible quickening at the end.
     if (flapAction.current) {
       if (raw < ROAM) {
         flapAction.current.timeScale = 1.0;
       } else {
         const sp = (raw - ROAM) / (1 - ROAM);
-        flapAction.current.timeScale = 1.0 + 1.6 * Math.pow(sp, 2);
+        flapAction.current.timeScale = 1.0 + 0.8 * Math.pow(sp, 2);
       }
     }
 
