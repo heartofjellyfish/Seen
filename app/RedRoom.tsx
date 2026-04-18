@@ -1588,12 +1588,13 @@ class Boid {
 
   // Room is x=±11, y=0–9, z=-16 to +8. Box tuned so 40 birds produce
   // demo-like density (rather than filling the full hall sparsely).
-  //   worldHalf (12, 4.5, 13) → volume 2*12*2*4.5*2*13 = 5616
-  //   density 60/5616 = 0.0107 per unit³
-  //   neighbors at radius 5: 0.0107 * (4/3 π 125) = 5.6 → ~2.2
-  //   after 40% sampling. Enough for real flocking without the
-  //   separation force dominating every frame.
-  worldHalf = new THREE.Vector3(12, 4.5, 13);
+  //   worldHalf (14, 5, 16) → volume 2*14*2*5*2*16 = 8960
+  //   density 60/8960 = 0.0067 per unit³
+  //   neighbors at radius 5: 0.0067 * (4/3 π 125) = 3.5 → ~1.4
+  //   after 40% sampling. Thinner than before but the active
+  //   roaming goal keeps the flock cohesive as a unit even when
+  //   individual neighbor counts dip.
+  worldHalf = new THREE.Vector3(14, 5, 16);
   neighborhoodRadius = 5.0;
   maxSpeed = 0.12;
   // 50:1 ratio of maxSpeed:maxSteerForce matches the pen and gives
@@ -1625,19 +1626,28 @@ class Boid {
     // At wall distance d, force magnitude = 5/d. Near the wall (d=50)
     // that's 0.1 — 2% of maxSpeed. Gentle turn, not bumper.
     //
-    // Our worldHalf is ~12 and maxSpeed is 0.12. Constant 0.06 gives
-    // force 0.06/d: at d=1 that's 50% of maxSpeed (firm push inside
-    // the final meter), at d=4 it's 12.5% (gentle nudge further out).
-    steer.multiplyScalar(0.06 / dsq);
+    // Softer wall-avoid so the flock can actually graze the edges of
+    // the box and linger in the deep corners instead of being held
+    // off from d=5. Constant 0.02 gives 0.02/d: at d=1 that's 17% of
+    // maxSpeed (still firm enough to prevent penetration), at d=2
+    // it's 8% — gentle enough that a goal pull toward the corner
+    // can overpower it over time.
+    steer.multiplyScalar(0.02 / dsq);
     this.accel.add(steer);
   }
 
   private doFlock(flock: Boid[]) {
     if (this.goal) {
+      // Goal multiplier scaled to our maxSpeed (0.12) rather than
+      // the pen's (5). At d=10 this gives a 0.005 nudge — same order
+      // as maxSteerForce — so it biases flock direction over many
+      // frames without overpowering alignment/cohesion on any
+      // single frame. Roaming the goal produces long elegant arcs
+      // as the flock leans slowly toward each new waypoint.
       const steer = new THREE.Vector3()
         .copy(this.goal)
         .sub(this.position)
-        .multiplyScalar(0.005);
+        .multiplyScalar(0.0005);
       this.accel.add(steer);
     }
     this.accel.add(this.alignment(flock));
@@ -1775,11 +1785,50 @@ function Flock() {
   const geos = useMemo(() => boids.map(() => makeBirdGeo()), [boids]);
   const meshRefs = useRef<(THREE.Mesh | null)[]>([]);
 
-  useFrame(() => {
+  // Roaming goal — a waypoint the whole flock slowly steers toward.
+  // Every DWELL seconds it jumps to the next corner of the room.
+  // Waypoints are in WORLD coords; converted to local by subtracting
+  // the <group> position below. These are picked to tour places the
+  // flock wasn't visiting organically: over Venus (front-left near
+  // the camera), past the camera on either side, deep into the
+  // back-stage corners, down at floor level, high near the ceiling.
+  const GROUP_POS = useMemo(() => new THREE.Vector3(0, 5, -3), []);
+  const waypointsLocal = useMemo(() => {
+    const world: Array<[number, number, number]> = [
+      [-4, 5, 1],    // over Venus
+      [10, 3, 11],   // past-camera right (out of frame right)
+      [12, 7, -16],  // deep back-right, near ceiling
+      [-12, 7, -16], // deep back-left, near ceiling
+      [0, 1, 12],    // low past-camera (out of frame bottom)
+      [11, 1, -2],   // mid-right floor level
+      [-11, 8, -5],  // mid-left ceiling
+    ];
+    return world.map(([x, y, z]) =>
+      new THREE.Vector3(x - GROUP_POS.x, y - GROUP_POS.y, z - GROUP_POS.z),
+    );
+  }, [GROUP_POS]);
+  const goal = useRef(new THREE.Vector3().copy(waypointsLocal[0]));
+  const waypointIdx = useRef(0);
+  const waypointStart = useRef(0);
+  const DWELL = 14; // seconds per waypoint
+
+  useFrame(({ clock }) => {
+    const t = clock.elapsedTime;
+    if (t - waypointStart.current > DWELL) {
+      waypointStart.current = t;
+      let next = waypointIdx.current;
+      while (next === waypointIdx.current) {
+        next = Math.floor(Math.random() * waypointsLocal.length);
+      }
+      waypointIdx.current = next;
+      goal.current.copy(waypointsLocal[next]);
+    }
+
     for (let i = 0; i < boids.length; i++) {
       const b = boids[i];
       const mesh = meshRefs.current[i];
       if (!mesh) continue;
+      b.goal = goal.current;
       b.run(boids);
 
       mesh.position.copy(b.position);
@@ -1799,13 +1848,18 @@ function Flock() {
   });
 
   return (
-    // Group at (0, 4.5, -4) with worldHalf (12, 4.5, 13) places the
-    // flock's local origin at world y=4.5 and gives it the whole hall
-    // to roam in. World extent x=±12, y=0–9, z=-17 to +9 — birds
-    // can now sweep past the camera (z=6) and out of frame, as
-    // requested. Origin-pull is gone (cohesion returns zero when
-    // isolated), so the wider box doesn't collapse to center.
-    <group position={[0, 4.5, -4]}>
+    // Group at (0, 5, -3) with worldHalf (14, 5, 16) gives the flock
+    // the full hall plus generous headroom past the camera:
+    //   x=-14 to +14  (room walls are around ±10, so ±4 of overshoot
+    //                  lets birds exit frame sideways)
+    //   y=0 to 10     (floor to ceiling)
+    //   z=-19 to +13  (back curtain is at -22, camera at +6 — so
+    //                  birds can go deep behind-stage and well past
+    //                  the camera on the viewer's side)
+    // The roaming goal above sends the flock on a tour through the
+    // room's deep corners, past-camera space, and Venus' upper
+    // area, so the whole volume actually gets used.
+    <group position={[0, 5, -3]}>
       {boids.map((_, i) => (
         <mesh
           key={i}
