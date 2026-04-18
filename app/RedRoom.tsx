@@ -15,10 +15,8 @@ import {
   BrightnessContrast,
   EffectComposer,
   HueSaturation,
-  Noise,
   Vignette,
 } from "@react-three/postprocessing";
-import { BlendFunction } from "postprocessing";
 import { RectAreaLightUniformsLib } from "three/examples/jsm/lights/RectAreaLightUniformsLib.js";
 import * as THREE from "three";
 
@@ -2464,17 +2462,12 @@ export function RedRoom() {
         <Flock />
         <Bird />
 
-        {/* Post-processing — color grade + texture + focus. No brightening:
-            lift saturation/contrast so reds pop, Noise adds film grain,
-            Vignette darkens corners. (Chromatic aberration removed: it
-            split the Sparkles dust motes into weird rainbow asterisks.) */}
-        <EffectComposer>
+        {/* Post-processing — color grade + focus. multisampling={0}
+            keeps MSAA off so Sparkles' point-sprite quads don't leave
+            corner-bracket artifacts after the post pass. */}
+        <EffectComposer multisampling={0}>
           <BrightnessContrast brightness={0.05} contrast={0.08} />
           <HueSaturation saturation={0.22} />
-          <Noise
-            blendFunction={BlendFunction.OVERLAY}
-            opacity={0.18}
-          />
           <Vignette offset={0.35} darkness={0.55} eskil={false} />
         </EffectComposer>
       </Suspense>
