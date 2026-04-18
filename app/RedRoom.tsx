@@ -1540,10 +1540,21 @@ class Boid {
   private accel = new THREE.Vector3();
   private tmp = new THREE.Vector3();
 
-  worldHalf = new THREE.Vector3(4, 2, 3.5);
-  neighborhoodRadius = 2.5;
-  maxSpeed = 0.035;
-  maxSteerForce = 0.0012;
+  // World fills the hall (not just above stage). Boid local coords;
+  // placement offset handled by the <group> that contains the flock.
+  // Original pen: worldHalf (500, 500, 400). Ours scaled ~1/70 →
+  // (7, 3, 9) covers x=±7 (walls), y=±3 centered at group-y=4 so
+  // birds roam 1–7m above the floor, z=±9 centered at group-z=-5
+  // so they range from the back wall (z=-14) to just short of the
+  // camera (z=4).
+  worldHalf = new THREE.Vector3(7, 3, 9);
+  // Ratios kept close to original (neighborhoodRadius : worldHalf ≈
+  // 200 : 500 = 0.4, maxSteerForce : maxSpeed ≈ 0.02). Tuned up a
+  // bit so the flock feels like it has real momentum in our space
+  // instead of floating sluggishly.
+  neighborhoodRadius = 3.0;
+  maxSpeed = 0.05;
+  maxSteerForce = 0.0015;
   goal: THREE.Vector3 | null = null;
   avoidWalls = true;
 
@@ -1622,13 +1633,15 @@ class Boid {
         count++;
       }
     }
-    const steer = new THREE.Vector3();
-    if (count > 0) {
-      posSum.divideScalar(count);
-      steer.copy(posSum).sub(this.position);
-      const l = steer.length();
-      if (l > this.maxSteerForce) steer.multiplyScalar(this.maxSteerForce / l);
-    }
+    if (count > 0) posSum.divideScalar(count);
+    // Match the original pen exactly: the steer vector is computed
+    // even when count === 0 (posSum stays at origin), which gives
+    // isolated birds a gentle pull back toward the centroid of the
+    // flock's local coord system. This is subtle but is a big part
+    // of the "momentum" feel — without it, stragglers drift off.
+    const steer = new THREE.Vector3().copy(posSum).sub(this.position);
+    const l = steer.length();
+    if (l > this.maxSteerForce) steer.multiplyScalar(this.maxSteerForce / l);
     return steer;
   }
 
@@ -1650,7 +1663,7 @@ class Boid {
 }
 
 function Flock() {
-  const NUM = 32;
+  const NUM = 60;
 
   const boids = useMemo(() => {
     const list: Boid[] = [];
@@ -1661,10 +1674,12 @@ function Flock() {
         (Math.random() - 0.5) * 2 * b.worldHalf.y,
         (Math.random() - 0.5) * 2 * b.worldHalf.z,
       );
+      // Seed with velocity roughly matching maxSpeed so the flock
+      // kicks off with momentum instead of drifting in from zero.
       b.velocity.set(
-        (Math.random() - 0.5) * 0.02,
-        (Math.random() - 0.5) * 0.02,
-        (Math.random() - 0.5) * 0.02,
+        (Math.random() - 0.5) * 0.06,
+        (Math.random() - 0.5) * 0.06,
+        (Math.random() - 0.5) * 0.06,
       );
       list.push(b);
     }
@@ -1700,7 +1715,11 @@ function Flock() {
   });
 
   return (
-    <group position={[0, 6, -10.5]}>
+    // Centered in the hall: y=4 so birds roam 1–7m off the floor,
+    // z=-5 so the local-box spans back wall (z=-14) to just short of
+    // the camera (z=4). Birds drift through the full room, catching
+    // the red hemisphere + amber stage spots on their backs.
+    <group position={[0, 4, -5]}>
       {boids.map((_, i) => (
         <mesh
           key={i}
@@ -1709,12 +1728,14 @@ function Flock() {
             meshRefs.current[i] = m;
           }}
         >
+          {/* Near-black body, no emissive — we WANT the scene lights
+              to tint the birds. Red hemisphere + warm spots give the
+              birds a crow-like red/warm sheen as they pass near lit
+              surfaces (curtain, stage floor, sconces). */}
           <meshStandardMaterial
-            color="#d8cdb2"
-            emissive="#efe6cb"
-            emissiveIntensity={0.55}
+            color="#0a0807"
             side={THREE.DoubleSide}
-            roughness={0.7}
+            roughness={0.55}
           />
         </mesh>
       ))}
