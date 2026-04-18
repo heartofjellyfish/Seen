@@ -1471,6 +1471,247 @@ function Bird() {
 
 useGLTF.preload("/Stork.glb");
 
+// ————— background flock —————
+// A small, slow drift of cream triangle-birds in the back half of the
+// room — a distant "vision" layer behind the single white stork's
+// thriller dive. Visible above the stage, dense enough to read as a
+// flock, sparse and slow enough to feel like a dream texture.
+//
+// Ported (with author jtrdev's permission) from his CodePen pen
+// yLVJogz — itself a modernization of mrdoob's r51 canvas_geometry_
+// birds example. The boid math is 1:1 with the original; the
+// rewrite is modernization-only:
+//   • THREE.Geometry/Face3 → BufferGeometry + indexed attributes,
+//   • addSelf / subSelf / divideScalar(l/n) → modern .add / .sub
+//     / .multiplyScalar(1/n),
+//   • CanvasRenderer → our existing WebGL renderer,
+//   • world scaled from ±500 units to ±(4, 2, 3.5) room units so the
+//     flock lives behind the stage instead of in open sky,
+//   • 200 birds → 32 (dense enough for flock read, easy at 60fps).
+//
+// The flock is placed via <group position={[0, 6, -10.5]}> behind
+// and above the stage, so boids orbit above head height and recede
+// into the curtain — they never collide with the camera or the
+// stork's dive corridor.
+
+// Simple triangle-bird geometry — three tris forming a body + two
+// wings. Vertices 4 and 5 are the wingtips; we oscillate their Y
+// per-frame for the flap.
+function makeBirdGeo() {
+  const s = 0.035; // overall scale — bird ~0.35m long
+  const verts = new Float32Array([
+    5 * s, 0, 0,
+    -5 * s, -2 * s, 1 * s,
+    -5 * s, 0, 0,
+    -5 * s, -2 * s, -1 * s,
+    0, 2 * s, -6 * s, // wingtip -z
+    0, 2 * s, 6 * s,  // wingtip +z
+    2 * s, 0, 0,
+    -3 * s, 0, 0,
+  ]);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.BufferAttribute(verts, 3));
+  g.setIndex([0, 2, 1, 4, 7, 6, 5, 6, 7]);
+  g.computeVertexNormals();
+  return g;
+}
+const BIRD_WING_SCALE = 0.035 * 5; // see makeBirdGeo: wingtip y swings ±5s
+
+// Reynolds boid with wall-avoidance. State is per-instance; every
+// frame each boid reads the full flock to compute alignment,
+// cohesion, separation. The Math.random() > 0.6 skip in each loop
+// is intentional — it's straight from the original and gives the
+// flock a slightly twitchy, non-uniform read instead of a
+// perfectly-coordinated one.
+class Boid {
+  position = new THREE.Vector3();
+  velocity = new THREE.Vector3();
+  phase = Math.random() * 62.83;
+  private accel = new THREE.Vector3();
+  private tmp = new THREE.Vector3();
+
+  worldHalf = new THREE.Vector3(4, 2, 3.5);
+  neighborhoodRadius = 2.5;
+  maxSpeed = 0.035;
+  maxSteerForce = 0.0012;
+  goal: THREE.Vector3 | null = null;
+  avoidWalls = true;
+
+  run(flock: Boid[]) {
+    if (this.avoidWalls) {
+      this.addAvoid(-this.worldHalf.x, this.position.y, this.position.z);
+      this.addAvoid(this.worldHalf.x, this.position.y, this.position.z);
+      this.addAvoid(this.position.x, -this.worldHalf.y, this.position.z);
+      this.addAvoid(this.position.x, this.worldHalf.y, this.position.z);
+      this.addAvoid(this.position.x, this.position.y, -this.worldHalf.z);
+      this.addAvoid(this.position.x, this.position.y, this.worldHalf.z);
+    }
+    if (Math.random() > 0.5) this.doFlock(flock);
+    this.move();
+  }
+
+  private addAvoid(x: number, y: number, z: number) {
+    this.tmp.set(x, y, z);
+    const dsq = this.position.distanceToSquared(this.tmp);
+    if (dsq < 1e-6) return;
+    const steer = new THREE.Vector3().copy(this.position).sub(this.tmp);
+    steer.multiplyScalar(5 / dsq);
+    this.accel.add(steer);
+  }
+
+  private doFlock(flock: Boid[]) {
+    if (this.goal) {
+      const steer = new THREE.Vector3()
+        .copy(this.goal)
+        .sub(this.position)
+        .multiplyScalar(0.005);
+      this.accel.add(steer);
+    }
+    this.accel.add(this.alignment(flock));
+    this.accel.add(this.cohesion(flock));
+    this.accel.add(this.separation(flock));
+  }
+
+  private move() {
+    this.velocity.add(this.accel);
+    const l = this.velocity.length();
+    if (l > this.maxSpeed) this.velocity.multiplyScalar(this.maxSpeed / l);
+    this.position.add(this.velocity);
+    this.accel.set(0, 0, 0);
+  }
+
+  private alignment(flock: Boid[]) {
+    const velSum = new THREE.Vector3();
+    let count = 0;
+    for (let i = 0; i < flock.length; i++) {
+      if (Math.random() > 0.6) continue;
+      const other = flock[i];
+      const d = other.position.distanceTo(this.position);
+      if (d > 0 && d <= this.neighborhoodRadius) {
+        velSum.add(other.velocity);
+        count++;
+      }
+    }
+    if (count > 0) {
+      velSum.divideScalar(count);
+      const l = velSum.length();
+      if (l > this.maxSteerForce) velSum.multiplyScalar(this.maxSteerForce / l);
+    }
+    return velSum;
+  }
+
+  private cohesion(flock: Boid[]) {
+    const posSum = new THREE.Vector3();
+    let count = 0;
+    for (let i = 0; i < flock.length; i++) {
+      if (Math.random() > 0.6) continue;
+      const other = flock[i];
+      const d = other.position.distanceTo(this.position);
+      if (d > 0 && d <= this.neighborhoodRadius) {
+        posSum.add(other.position);
+        count++;
+      }
+    }
+    const steer = new THREE.Vector3();
+    if (count > 0) {
+      posSum.divideScalar(count);
+      steer.copy(posSum).sub(this.position);
+      const l = steer.length();
+      if (l > this.maxSteerForce) steer.multiplyScalar(this.maxSteerForce / l);
+    }
+    return steer;
+  }
+
+  private separation(flock: Boid[]) {
+    const posSum = new THREE.Vector3();
+    const repulse = new THREE.Vector3();
+    for (let i = 0; i < flock.length; i++) {
+      if (Math.random() > 0.6) continue;
+      const other = flock[i];
+      const d = other.position.distanceTo(this.position);
+      if (d > 0 && d <= this.neighborhoodRadius) {
+        repulse.copy(this.position).sub(other.position).normalize();
+        repulse.divideScalar(d);
+        posSum.add(repulse);
+      }
+    }
+    return posSum;
+  }
+}
+
+function Flock() {
+  const NUM = 32;
+
+  const boids = useMemo(() => {
+    const list: Boid[] = [];
+    for (let i = 0; i < NUM; i++) {
+      const b = new Boid();
+      b.position.set(
+        (Math.random() - 0.5) * 2 * b.worldHalf.x,
+        (Math.random() - 0.5) * 2 * b.worldHalf.y,
+        (Math.random() - 0.5) * 2 * b.worldHalf.z,
+      );
+      b.velocity.set(
+        (Math.random() - 0.5) * 0.02,
+        (Math.random() - 0.5) * 0.02,
+        (Math.random() - 0.5) * 0.02,
+      );
+      list.push(b);
+    }
+    return list;
+  }, []);
+
+  // Each bird gets its own geometry clone so wing-flap vertex writes
+  // don't affect its neighbors.
+  const geos = useMemo(() => boids.map(() => makeBirdGeo()), [boids]);
+  const meshRefs = useRef<(THREE.Mesh | null)[]>([]);
+
+  useFrame(() => {
+    for (let i = 0; i < boids.length; i++) {
+      const b = boids[i];
+      const mesh = meshRefs.current[i];
+      if (!mesh) continue;
+      b.run(boids);
+
+      mesh.position.copy(b.position);
+      mesh.rotation.y = Math.atan2(-b.velocity.z, b.velocity.x);
+      const speed = b.velocity.length();
+      mesh.rotation.z = speed > 1e-6 ? Math.asin(b.velocity.y / speed) : 0;
+
+      // Flap: wingtip y oscillates sin(phase) * scale.
+      b.phase =
+        (b.phase + Math.max(0, mesh.rotation.z) + 0.1) % 62.83;
+      const pos = mesh.geometry.attributes.position as THREE.BufferAttribute;
+      const flap = Math.sin(b.phase) * BIRD_WING_SCALE;
+      pos.setY(4, flap);
+      pos.setY(5, flap);
+      pos.needsUpdate = true;
+    }
+  });
+
+  return (
+    <group position={[0, 6, -10.5]}>
+      {boids.map((_, i) => (
+        <mesh
+          key={i}
+          geometry={geos[i]}
+          ref={(m) => {
+            meshRefs.current[i] = m;
+          }}
+        >
+          <meshStandardMaterial
+            color="#d8cdb2"
+            emissive="#efe6cb"
+            emissiveIntensity={0.55}
+            side={THREE.DoubleSide}
+            roughness={0.7}
+          />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
 // ————— main scene —————
 
 export function RedRoom() {
@@ -1533,6 +1774,7 @@ export function RedRoom() {
 
         {/* Atmospheric dynamics */}
         <DustMotes />
+        <Flock />
         <Bird />
       </Suspense>
     </Canvas>
