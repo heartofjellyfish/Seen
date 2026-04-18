@@ -1335,43 +1335,39 @@ function Bird() {
   const { scene, animations } = useGLTF("/Crow.glb");
   const { actions } = useAnimations(animations, scene);
 
-  // Grab the flap clip so we can drive its timeScale dynamically —
-  // steady during the roam, frantic during the final sprint.
+  // Grab the flap clip so we can drive its timeScale dynamically.
   //
-  // The Sketchfab GLB can ship with multiple clips (fly / idle /
-  // takeoff). `Object.values(actions)[0]` is order-dependent and can
-  // land on a near-still idle pose, which makes the crow glide past
-  // without ever flapping. Prefer a clip whose name mentions
-  // fly/flap/wing; fall back to the longest clip (flight cycles are
-  // typically longer than idle poses).
+  // This Sketchfab crow ships with a single 10.52s clip called
+  // `root|TakeOff`. Takeoff animations start with the bird in a
+  // ground-prep pose (wings tucked, no flapping) for the first ~2s
+  // before transitioning into active wingbeat. If we start the clip
+  // at t=0 on each appearance, every sighting begins in the prep
+  // pose — which reads as an idle glide. Skip past the prep by
+  // starting the action mid-clip, so the wings are always mid-beat
+  // when the crow appears.
   const flapAction = useRef<THREE.AnimationAction | null>(null);
+  const FLAP_START_OFFSET = 2.5; // seconds into the clip, past prep pose
   useEffect(() => {
     const entries = Object.entries(actions).filter(
       ([, a]) => a != null,
     ) as [string, THREE.AnimationAction][];
-
+    // Pick the longest clip (on this model there's only one, but be
+    // safe for future model swaps).
     let chosen: THREE.AnimationAction | null = null;
-    for (const [name, action] of entries) {
-      if (/fly|flap|wing/i.test(name)) {
+    for (const [, action] of entries) {
+      if (
+        !chosen ||
+        action.getClip().duration > chosen.getClip().duration
+      ) {
         chosen = action;
-        break;
-      }
-    }
-    if (!chosen) {
-      for (const [, action] of entries) {
-        if (
-          !chosen ||
-          action.getClip().duration > chosen.getClip().duration
-        ) {
-          chosen = action;
-        }
       }
     }
 
     if (chosen) {
       chosen.setLoop(THREE.LoopRepeat, Infinity);
       chosen.clampWhenFinished = false;
-      chosen.reset().play();
+      chosen.time = FLAP_START_OFFSET;
+      chosen.play();
       flapAction.current = chosen;
     }
   }, [actions]);
@@ -1465,10 +1461,11 @@ function Bird() {
       s.startTime = t;
       s.duration = 18 + Math.random() * 3; // 18–21s — extremely slow, savor it
       s.curve = generatePath();
-      // Rewind the flap cycle at each flight start so wings are
+      // Jump the flap cycle past the takeoff prep pose so wings are
       // unambiguously beating the moment the bird appears.
       if (flapAction.current) {
-        flapAction.current.reset().play();
+        flapAction.current.time = FLAP_START_OFFSET;
+        flapAction.current.play();
         flapAction.current.timeScale = 1.0;
       }
     }
@@ -1593,16 +1590,24 @@ class Boid {
   // We give the flock a box that fills most of that, stopping short
   // of the walls/floor/ceiling so birds visually bank away from
   // them rather than clipping.
-  //   worldHalf (10, 4, 11) + group position (0, 4.5, -4) =
-  //   world extent x=±10, y=0.5–8.5, z=-15 to +7
+  //   worldHalf (10, 4.5, 11) + group position (0, 4.5, -4) =
+  //   world extent x=±10, y=0–9, z=-15 to +7 (full hall height)
   // That's every part of the room the camera can see, including
   // near/in front of the camera so crows fly past/around you, not
   // just distantly above the stage.
-  worldHalf = new THREE.Vector3(10, 4, 11);
+  worldHalf = new THREE.Vector3(10, 4.5, 11);
   // Ratios kept close to the original (neighborhood : worldHalf ≈
-  // 0.4, maxSteerForce : maxSpeed ≈ 0.02). Tuned up slightly so
-  // motion reads as momentum in our units.
-  neighborhoodRadius = 3.5;
+  // 0.4 of the SMALLEST axis, maxSteerForce : maxSpeed ≈ 0.03).
+  //
+  // Previously neighborhoodRadius was 3.5 against worldHalf.y=4 —
+  // 87% of the vertical axis — which meant every boid was inside
+  // every other boid's neighborhood in y. Cohesion collapsed the
+  // whole flock onto the y centroid, producing the "crowded at the
+  // top" blob instead of independent swooping arcs. Lowering to 2.0
+  // against worldHalf.y=4.5 gives ~44% of the narrowest axis —
+  // closer to the original pen's 40% and enough for subgroups to
+  // form and drift apart.
+  neighborhoodRadius = 2.0;
   maxSpeed = 0.06;
   maxSteerForce = 0.0018;
   goal: THREE.Vector3 | null = null;
@@ -1626,7 +1631,11 @@ class Boid {
     const dsq = this.position.distanceToSquared(this.tmp);
     if (dsq < 1e-6) return;
     const steer = new THREE.Vector3().copy(this.position).sub(this.tmp);
-    steer.multiplyScalar(5 / dsq);
+    // Original pen uses 5 against worldHalf=500 (force/worldHalf ≈
+    // 0.01). Our worldHalf is 4.5–11, so 5 is disproportionately
+    // strong, slamming boids into the walls as bumpers. Softened to
+    // 2 keeps them inside the box without the hyper-bounce.
+    steer.multiplyScalar(2 / dsq);
     this.accel.add(steer);
   }
 
@@ -1766,7 +1775,7 @@ function Flock() {
 
   return (
     // Centered in the hall: group at (0, 4.5, -4) with worldHalf
-    // (10, 4, 11) means birds roam x=±10, y=0.5–8.5, z=-15 to +7 —
+    // (10, 4.5, 11) means birds roam x=±10, y=0–9, z=-15 to +7 —
     // the entire visible interior including in front of the camera,
     // not just hanging above the stage.
     <group position={[0, 4.5, -4]}>
