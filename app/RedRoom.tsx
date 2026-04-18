@@ -1,13 +1,203 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useRef } from "react";
-import { Canvas, useFrame } from "@react-three/fiber";
-import { PerspectiveCamera, Sparkles, useGLTF, useAnimations, useTexture } from "@react-three/drei";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import {
+  Cloud,
+  Clouds,
+  PerspectiveCamera,
+  Sparkles,
+  useAnimations,
+  useGLTF,
+  useTexture,
+} from "@react-three/drei";
+import {
+  ChromaticAberration,
+  EffectComposer,
+  Noise,
+  Vignette,
+} from "@react-three/postprocessing";
+import { BlendFunction } from "postprocessing";
 import { RectAreaLightUniformsLib } from "three/examples/jsm/lights/RectAreaLightUniformsLib.js";
 import * as THREE from "three";
 
 // Must be called once before any RectAreaLight renders
 RectAreaLightUniformsLib.init();
+
+// ————— scattering fog — atmospheric light scattering —————
+// WebGL port of the Three.js WebGPU `custom_fog_scattering` example.
+// Henyey-Greenstein phase function is injected into every opaque
+// material's <fog_fragment> chunk via onBeforeCompile, so lights in
+// the scene scatter visibly through the fog. No new geometry — this
+// is pure light-transport math applied at the material level.
+
+const SCATTER_LIGHT_COUNT = 6;
+
+// Shared uniforms — all patched materials reference the same objects,
+// so updating values here propagates to every shader.
+const scatterUniforms = {
+  uScatterLightPos: {
+    value: Array.from({ length: SCATTER_LIGHT_COUNT }, () => new THREE.Vector3()),
+  },
+  uScatterLightColor: {
+    value: Array.from({ length: SCATTER_LIGHT_COUNT }, () => new THREE.Color()),
+  },
+  uScatterLightStrength: {
+    value: new Array(SCATTER_LIGHT_COUNT).fill(1),
+  },
+  uScatterFactor: { value: 1.0 },
+  uAnisotropy: { value: 0.55 },
+};
+
+function patchMaterialForScattering(material: THREE.Material): void {
+  const ud = material.userData as { scatterPatched?: boolean };
+  if (ud.scatterPatched) return;
+  ud.scatterPatched = true;
+
+  const prev = material.onBeforeCompile?.bind(material);
+
+  material.onBeforeCompile = (shader, renderer) => {
+    if (prev) prev(shader, renderer);
+
+    shader.uniforms.uScatterLightPos = scatterUniforms.uScatterLightPos;
+    shader.uniforms.uScatterLightColor = scatterUniforms.uScatterLightColor;
+    shader.uniforms.uScatterLightStrength = scatterUniforms.uScatterLightStrength;
+    shader.uniforms.uScatterFactor = scatterUniforms.uScatterFactor;
+    shader.uniforms.uAnisotropy = scatterUniforms.uAnisotropy;
+
+    // Vertex: emit world-space position for fog scattering
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        "#include <common>",
+        "#include <common>\nvarying vec3 vWorldPosFog;",
+      )
+      .replace(
+        "#include <fog_vertex>",
+        `#include <fog_vertex>
+         vWorldPosFog = (modelMatrix * vec4(transformed, 1.0)).xyz;`,
+      );
+
+    // Fragment: add uniforms + varying declarations next to fog pars
+    shader.fragmentShader = shader.fragmentShader.replace(
+      "#include <fog_pars_fragment>",
+      `#include <fog_pars_fragment>
+       varying vec3 vWorldPosFog;
+       uniform vec3 uScatterLightPos[${SCATTER_LIGHT_COUNT}];
+       uniform vec3 uScatterLightColor[${SCATTER_LIGHT_COUNT}];
+       uniform float uScatterLightStrength[${SCATTER_LIGHT_COUNT}];
+       uniform float uScatterFactor;
+       uniform float uAnisotropy;`,
+    );
+
+    // Fragment: replace <fog_fragment> with scattering version.
+    // Matches built-in fog math for fogFactor, then ADDS in-scattering
+    // contribution to fogColor before compositing.
+    shader.fragmentShader = shader.fragmentShader.replace(
+      "#include <fog_fragment>",
+      /* glsl */ `
+      #ifdef USE_FOG
+        #ifdef FOG_EXP2
+          float sfFogFactor = 1.0 - exp(-fogDensity * fogDensity * vFogDepth * vFogDepth);
+        #else
+          float sfFogFactor = smoothstep(fogNear, fogFar, vFogDepth);
+        #endif
+
+        // View direction from fragment toward camera
+        vec3 sfViewDir = normalize(cameraPosition - vWorldPosFog);
+        vec3 sfScatter = vec3(0.0);
+
+        for (int i = 0; i < ${SCATTER_LIGHT_COUNT}; i++) {
+          vec3 sfToLight = uScatterLightPos[i] - vWorldPosFog;
+          float sfDist = length(sfToLight);
+          vec3 sfLightDir = sfToLight / max(sfDist, 1e-4);
+          float sfCos = clamp(dot(sfViewDir, sfLightDir), -1.0, 1.0);
+
+          // Henyey-Greenstein phase function
+          float g = uAnisotropy;
+          float g2 = g * g;
+          float denom = 1.0 + g2 - 2.0 * g * sfCos;
+          float phase = (1.0 - g2) / (4.0 * 3.14159265 * pow(max(denom, 1e-4), 1.5));
+
+          // Distance attenuation (soft inverse-square)
+          float atten = 1.0 / (1.0 + 0.08 * sfDist * sfDist);
+
+          sfScatter += uScatterLightColor[i] * uScatterLightStrength[i] * phase * atten;
+        }
+
+        // Fog color + scattered light → compose onto frame
+        vec3 sfFogOut = fogColor + sfScatter * uScatterFactor;
+        gl_FragColor.rgb = mix(gl_FragColor.rgb, sfFogOut, sfFogFactor);
+      #endif
+      `,
+    );
+  };
+
+  material.needsUpdate = true;
+}
+
+// Component: configures FogExp2 + traverses scene, patching eligible
+// materials. Updates light uniforms each frame to match curtain-bleed
+// flicker so scattered halos breathe with the lights behind the curtain.
+function ScatteringFog() {
+  const scene = useThree((s) => s.scene);
+
+  // Positions of the 6 curtain-bleed-glow patches (world space)
+  const glowWorldPositions = useMemo(() => {
+    const STAGE_Z = -13;
+    const STAGE_H = 1.0;
+    const CURTAIN_Z = STAGE_Z + 2.25 + 0.02;  // stageZ + stageD/2 + tiny offset
+    const patches: Array<[number, number]> = [
+      [-5.3, 0.4],
+      [-3.2, 1.3],
+      [-1.2, 0.3],
+      [0.9, 1.1],
+      [2.9, 0.7],
+      [5.1, 1.5],
+    ];
+    return patches.map(([x, y]) => new THREE.Vector3(x, STAGE_H + y, CURTAIN_Z));
+  }, []);
+
+  // Initialize uniforms once
+  useEffect(() => {
+    glowWorldPositions.forEach((p, i) => {
+      scatterUniforms.uScatterLightPos.value[i].copy(p);
+      scatterUniforms.uScatterLightColor.value[i].setHex(0xff7638); // warm amber
+    });
+  }, [glowWorldPositions]);
+
+  // Patch all eligible materials once on mount. All scene materials
+  // are created synchronously during initial render, so a single pass
+  // is enough — no need for a repeating interval.
+  useEffect(() => {
+    scene.traverse((obj) => {
+      const mesh = obj as THREE.Mesh;
+      if (!mesh.isMesh || !mesh.material) return;
+      const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      for (const m of mats) {
+        if (m instanceof THREE.MeshBasicMaterial) continue;
+        if (
+          (m as THREE.Material).transparent &&
+          (m as THREE.Material).blending === THREE.AdditiveBlending
+        ) {
+          continue;
+        }
+        patchMaterialForScattering(m);
+      }
+    });
+  }, [scene]);
+
+  // Flicker each scatter light in sync with curtain bleed aesthetic
+  useFrame(({ clock }) => {
+    const t = clock.elapsedTime;
+    for (let i = 0; i < SCATTER_LIGHT_COUNT; i++) {
+      const seed = i * 1.73;
+      scatterUniforms.uScatterLightStrength.value[i] =
+        0.55 + Math.sin(t * 2.3 + seed) * 0.22 + Math.sin(t * 5.8 + seed * 0.3) * 0.10;
+    }
+  });
+
+  return null;
+}
 
 /* ————————————————————————————————————————————————
    Red Room — a real 3D stage-in-a-curtained-room.
@@ -462,6 +652,43 @@ function StageCandleRing({
           />
         ) : null,
       )}
+    </group>
+  );
+}
+
+// ————— stage mist — one big drei Cloud —————
+// A single large <Cloud> sitting above the stage deck. drei's Cloud
+// is a billboard-sprite volume — for a stage-sized puff that drifts
+// in place (no emitter logic, no lifecycle) this is the right fit.
+// Bounds are roughly balanced (not a pancake) so it reads as a big
+// puffy cloud, not a flat fog strip.
+
+function StageMist({
+  stageW,
+  stageD,
+  stageH,
+}: {
+  stageW: number;
+  stageD: number;
+  stageH: number;
+}) {
+  return (
+    <group position={[0, stageH + 2.4, stageD / 2 - 0.3]}>
+      <Clouds material={THREE.MeshLambertMaterial} limit={400}>
+        <Cloud
+          seed={7}
+          segments={22}                   // fewer pieces → less visible puff count
+          bounds={[5.5, 1.8, 1.8]}        // tighter, not spread out
+          volume={5}
+          smallestVolume={1.2}            // no tiny stragglers at edges
+          growth={4.0}                    // each piece big → they merge, not separate
+          speed={0.10}
+          concentrate="inside"
+          color="#c8c0b0"
+          opacity={0.9}
+          fade={25}
+        />
+      </Clouds>
     </group>
   );
 }
@@ -1945,7 +2172,7 @@ export function RedRoom() {
         antialias: true,
         alpha: false,
         toneMapping: THREE.ACESFilmicToneMapping,
-        toneMappingExposure: 1.05,
+        toneMappingExposure: 0.72,
       }}
       dpr={[1, 2]}
       style={{ position: "absolute", inset: 0 }}
@@ -1956,8 +2183,8 @@ export function RedRoom() {
       <Suspense fallback={null}>
         <CameraRig />
 
-        <hemisphereLight args={["#8a3030", "#2a0808", 1.05]} />
-        <ambientLight intensity={0.38} color="#7a2828" />
+        <hemisphereLight args={["#8a3030", "#2a0808", 0.25]} />
+        <ambientLight intensity={0.08} color="#7a2828" />
         <AltarSpot />
 
         {/* Soft amber area lights behind the side velvet wall curtains */}
@@ -1998,6 +2225,23 @@ export function RedRoom() {
         <DustMotes />
         <Flock />
         <Bird />
+
+        {/* Post-processing — texture + focus layer. No brightening:
+            Vignette darkens corners, ChromaticAberration adds a subtle
+            RGB shift at edges (vintage lens feel), Noise is film grain. */}
+        <EffectComposer>
+          <ChromaticAberration
+            offset={[0.0008, 0.0008]}
+            radialModulation={false}
+            modulationOffset={0}
+          />
+          <Noise
+            premultiply
+            blendFunction={BlendFunction.SOFT_LIGHT}
+            opacity={0.35}
+          />
+          <Vignette offset={0.35} darkness={0.55} eskil={false} />
+        </EffectComposer>
       </Suspense>
     </Canvas>
   );
