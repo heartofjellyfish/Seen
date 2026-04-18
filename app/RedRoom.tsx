@@ -1717,6 +1717,19 @@ class Boid {
         posSum.add(repulse);
       }
     }
+    // Cap separation the same way alignment/cohesion are capped.
+    // The original pen deliberately left this uncapped because in
+    // its density (d ~ 50 in a ±500 world) each contribution is 1/50
+    // ≈ 0.02 and ~5 neighbors sum to ≈ 0.1, right at maxSteerForce
+    // naturally. Our port has d ~ 2 in a ±8 world, so each
+    // contribution is ~1/2 = 0.5 and the raw magnitude is ~1000×
+    // maxSteerForce. Uncapped, separation clamps velocity every
+    // frame to its own direction, overwhelming alignment/cohesion
+    // and making each bird "spin in place" as close neighbors flip
+    // the push-away direction tick to tick.
+    const l = posSum.length();
+    const cap = this.maxSteerForce * 2;
+    if (l > cap) posSum.multiplyScalar(cap / l);
     return posSum;
   }
 }
