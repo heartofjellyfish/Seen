@@ -1575,14 +1575,17 @@ function CandleStand({ position }: { position: [number, number, number] }) {
 // radial texture gives the same glow look.
 
 function makeDustSpriteTexture(): THREE.CanvasTexture {
-  const S = 64;
+  const S = 128;
   const c = document.createElement("canvas");
   c.width = c.height = S;
   const ctx = c.getContext("2d")!;
+  // Very soft gaussian-ish falloff — bright pinpoint centre, long tail
   const g = ctx.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
-  g.addColorStop(0, "rgba(216, 164, 106, 1)");
-  g.addColorStop(0.45, "rgba(216, 164, 106, 0.35)");
-  g.addColorStop(1, "rgba(216, 164, 106, 0)");
+  g.addColorStop(0.00, "rgba(255, 220, 170, 1)");
+  g.addColorStop(0.08, "rgba(245, 195, 135, 0.85)");
+  g.addColorStop(0.25, "rgba(225, 170, 110, 0.35)");
+  g.addColorStop(0.55, "rgba(200, 145, 90, 0.08)");
+  g.addColorStop(1.00, "rgba(180, 125, 75, 0)");
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, S, S);
   const tex = new THREE.CanvasTexture(c);
@@ -1606,7 +1609,8 @@ function DustMotes() {
       ),
       phase: Math.random() * Math.PI * 2,
       freq: 0.25 + Math.random() * 0.35,
-      size: 0.06 + Math.random() * 0.06,
+      // Tiny — dust, not marbles. Most in 2-3cm range, a few slightly larger.
+      size: 0.018 + Math.pow(Math.random(), 2) * 0.035,
     }));
   }, []);
 
@@ -1648,7 +1652,8 @@ function DustMotes() {
         map={tex}
         transparent
         depthWrite={false}
-        opacity={0.5}
+        opacity={0.55}
+        blending={THREE.AdditiveBlending}
         toneMapped={false}
       />
     </instancedMesh>
