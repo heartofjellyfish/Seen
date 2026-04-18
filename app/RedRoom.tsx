@@ -24,6 +24,130 @@ import * as THREE from "three";
 // Must be called once before any RectAreaLight renders
 RectAreaLightUniformsLib.init();
 
+// ————— showtime countdown —————
+// Every day at 12:00 America/Los_Angeles there is a 15-minute broadcast.
+// The curtain backlight visualizes how close we are: dim cold red when
+// far, warming up as the hour approaches, heartbeat pulse in the final
+// 15 minutes, full golden blaze during the show window.
+
+type ShowtimeState = {
+  // 0 → 1 — overall "anticipation" ramp across the day
+  anticipation: number;
+  // 0 → 1 — heartbeat pulse intensity (~last 15 min + showtime)
+  heartbeat: number;
+  // Hz — heartbeat frequency (slow → fast)
+  heartbeatHz: number;
+  // 0 → 1 — 1.0 only during the 15-minute showtime window
+  showtime: number;
+  // 0 → 1 — fraction of 24h cycle for debugging / display
+  phase: number;
+};
+
+// Seconds since LA midnight for the current wall-clock moment.
+// Uses Intl to handle PDT/PST without manual offset math.
+function laSecondsSinceMidnight(now: Date): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Los_Angeles",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(now);
+  const h = Number(parts.find((p) => p.type === "hour")!.value);
+  const m = Number(parts.find((p) => p.type === "minute")!.value);
+  const s = Number(parts.find((p) => p.type === "second")!.value);
+  // en-US with hour12:false sometimes returns "24" for midnight
+  return (h % 24) * 3600 + m * 60 + s;
+}
+
+const NOON_SEC = 12 * 3600;
+const SHOW_DURATION_SEC = 15 * 60;
+const DAY_SEC = 24 * 3600;
+
+function computeShowtime(now = new Date()): ShowtimeState {
+  const secs = laSecondsSinceMidnight(now);
+
+  // Showtime window
+  if (secs >= NOON_SEC && secs < NOON_SEC + SHOW_DURATION_SEC) {
+    return {
+      anticipation: 1,
+      heartbeat: 1,
+      heartbeatHz: 1.8, // fastest steady pulse during show
+      showtime: 1,
+      phase: secs / DAY_SEC,
+    };
+  }
+
+  // Seconds until next noon (today's if still upcoming, else tomorrow's)
+  const secsUntilShow =
+    secs < NOON_SEC ? NOON_SEC - secs : NOON_SEC + DAY_SEC - secs;
+  const minutes = secsUntilShow / 60;
+
+  // Anticipation ramp — piecewise so the visual has clear stages
+  let anticipation: number;
+  if (minutes > 240) anticipation = 0.12;             // pre-dawn idle baseline
+  else if (minutes > 60) anticipation = 0.12 + (240 - minutes) / 180 * 0.25; // 0.12→0.37
+  else if (minutes > 15) anticipation = 0.37 + (60 - minutes) / 45 * 0.30;   // 0.37→0.67
+  else if (minutes > 1)  anticipation = 0.67 + (15 - minutes) / 14 * 0.25;   // 0.67→0.92
+  else                    anticipation = 0.92 + (1 - minutes) * 0.08;         // 0.92→1.00
+
+  // Heartbeat starts subtly at 15 min, grows to full at 0
+  let heartbeat = 0;
+  let heartbeatHz = 0.6;
+  if (minutes < 60 && minutes > 15) {
+    heartbeat = (60 - minutes) / 45 * 0.35; // 0 → 0.35
+    heartbeatHz = 0.55;
+  } else if (minutes <= 15 && minutes > 1) {
+    heartbeat = 0.35 + (15 - minutes) / 14 * 0.45; // 0.35 → 0.80
+    heartbeatHz = 0.55 + (15 - minutes) / 14 * 0.75; // 0.55 → 1.30
+  } else if (minutes <= 1) {
+    heartbeat = 0.80 + (1 - minutes) * 0.20; // 0.80 → 1.00
+    heartbeatHz = 1.30 + (1 - minutes) * 0.40; // 1.30 → 1.70
+  }
+
+  // Post-show fade — if we're in first 30s AFTER show end, ease back down
+  if (secs >= NOON_SEC + SHOW_DURATION_SEC && secs < NOON_SEC + SHOW_DURATION_SEC + 30) {
+    const fade = 1 - (secs - NOON_SEC - SHOW_DURATION_SEC) / 30;
+    return {
+      anticipation: anticipation + (1 - anticipation) * fade,
+      heartbeat: heartbeat + (1 - heartbeat) * fade,
+      heartbeatHz: heartbeatHz + (1.8 - heartbeatHz) * fade,
+      showtime: 0,
+      phase: secs / DAY_SEC,
+    };
+  }
+
+  return {
+    anticipation,
+    heartbeat,
+    heartbeatHz,
+    showtime: 0,
+    phase: secs / DAY_SEC,
+  };
+}
+
+// Shared live state — ShowtimeDriver updates this each frame; consumers
+// (CurtainBleedGlow, StageBackLight) read it instead of recomputing.
+const showtimeLive: ShowtimeState = {
+  anticipation: 0.12,
+  heartbeat: 0,
+  heartbeatHz: 0.6,
+  showtime: 0,
+  phase: 0,
+};
+
+function ShowtimeDriver() {
+  useFrame(() => {
+    const s = computeShowtime();
+    showtimeLive.anticipation = s.anticipation;
+    showtimeLive.heartbeat = s.heartbeat;
+    showtimeLive.heartbeatHz = s.heartbeatHz;
+    showtimeLive.showtime = s.showtime;
+    showtimeLive.phase = s.phase;
+  });
+  return null;
+}
+
 // ————— scattering fog — atmospheric light scattering —————
 // WebGL port of the Three.js WebGPU `custom_fog_scattering` example.
 // Henyey-Greenstein phase function is injected into every opaque
