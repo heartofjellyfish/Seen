@@ -13,7 +13,6 @@ import {
 } from "@react-three/drei";
 import {
   BrightnessContrast,
-  ChromaticAberration,
   EffectComposer,
   HueSaturation,
   Noise,
@@ -2465,17 +2464,11 @@ export function RedRoom() {
         <Flock />
         <Bird />
 
-        {/* Post-processing — texture + focus layer. No brightening:
-            Vignette darkens corners, ChromaticAberration adds a subtle
-            RGB shift at edges (vintage lens feel), Noise is film grain. */}
+        {/* Post-processing — color grade + texture + focus. No brightening:
+            lift saturation/contrast so reds pop, Noise adds film grain,
+            Vignette darkens corners. (Chromatic aberration removed: it
+            split the Sparkles dust motes into weird rainbow asterisks.) */}
         <EffectComposer>
-          <ChromaticAberration
-            offset={new THREE.Vector2(0.0008, 0.0008)}
-            radialModulation={false}
-            modulationOffset={0}
-          />
-          {/* Color grading — lift contrast a hair and push saturation
-              so the reds pop without brightening the darks. */}
           <BrightnessContrast brightness={0.05} contrast={0.08} />
           <HueSaturation saturation={0.22} />
           <Noise
