@@ -1587,15 +1587,21 @@ class Boid {
   private tmp = new THREE.Vector3();
 
   // Room is x=±11, y=0–9, z=-16 to +8. Box tuned so 40 birds produce
-  // demo-like density (rather than filling the full hall sparsely).
-  //   worldHalf (14, 5, 16) → volume 2*14*2*5*2*16 = 8960
+  // demo-like density.
+  //   worldHalf (14, 5, 16) → volume 8960
   //   density 60/8960 = 0.0067 per unit³
-  //   neighbors at radius 5: 0.0067 * (4/3 π 125) = 3.5 → ~1.4
-  //   after 40% sampling. Thinner than before but the active
-  //   roaming goal keeps the flock cohesive as a unit even when
-  //   individual neighbor counts dip.
+  //   neighbors at radius 8: 0.0067 * (4/3 π 512) = 14.4 → ~5.7
+  //   after 40% sampling. Enough for each bird's cohesion average
+  //   to actually reflect the flock, producing real group motion.
   worldHalf = new THREE.Vector3(14, 5, 16);
-  neighborhoodRadius = 5.0;
+  // Wider neighborhood so each bird actually sees the flock when
+  // computing cohesion/alignment averages. At radius 5 and our low
+  // density, only ~1.4 neighbors were active per call (after 40%
+  // sampling) — too few to produce statistical coherence, which is
+  // why the flock felt like a loose scatter of independents. At
+  // radius 8 active neighbors become ~5.7 and real group behavior
+  // emerges.
+  neighborhoodRadius = 8.0;
   maxSpeed = 0.12;
   // 50:1 ratio of maxSpeed:maxSteerForce matches the pen and gives
   // the gentle-arc feel — steering takes many frames to redirect
@@ -1736,13 +1742,16 @@ class Boid {
     // frame to its own direction, overwhelming alignment/cohesion
     // and making each bird "spin in place" as close neighbors flip
     // the push-away direction tick to tick.
-    // Cap at 4× maxSteerForce: 2× was too restrictive — it stifled
-    // the disperse-after-convergence beat by not letting close
-    // neighbors actually push each other apart. 4× still prevents
-    // the "spin in place" pathology but restores the natural
-    // expand/contract pulse of a real flock.
+    // Cap at 2.5× maxSteerForce. 4× (when neighborhood was small)
+    // was needed to get dispersal at all — at r=5 most neighbors
+    // were invisible, so locally-dense encounters were rare and
+    // needed to fire hard. With r=8 and ~5.7 active neighbors,
+    // dispersal triggers more often on its own, and 4× started
+    // winning every close encounter 4:1 over cohesion — which is
+    // why the flock felt strung out. 2.5× keeps the disperse-beat
+    // visible but lets cohesion reel the flock back together.
     const l = posSum.length();
-    const cap = this.maxSteerForce * 4;
+    const cap = this.maxSteerForce * 2.5;
     if (l > cap) posSum.multiplyScalar(cap / l);
     return posSum;
   }
