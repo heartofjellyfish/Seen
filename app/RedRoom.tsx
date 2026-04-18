@@ -1312,30 +1312,30 @@ function WallCurtainLights() {
   );
 }
 
-// ————— 4v white bird fly-by —————
-// A rare, startling flight: a white stork emerges from the stage wing,
-// curves toward the camera along a CatmullRom spline, almost hits the
-// lens, then swerves past the right and exits. Uses three.js's
-// example Stork.glb (served from /public). One instance, reused.
+// ————— stork fly-by —————
+// Dream visitation: a stork materializes high/far in the back of the
+// hall, roams the space as if looking for a way out, then commits
+// and sprints at the camera, exiting past the lens.
 //
-// Timing: first appearance ~18–32s in, then every 55–135s. Flight
-// duration ~2.6–3.4s, with an ease-out so the bird accelerates into
-// the camera — the perspective blow-up in the final ~0.3s is the
-// spectacle.
+// Uses three.js's example Stork.glb (served from /public). Native
+// GLB materials are kept unmodified — the red hemisphere + amber
+// spots tint the bird naturally, which reads as a shadowed creature
+// caught in the stage light, not a clean cartoon dove.
 //
-// Materials: all meshes are replaced with a cream-white
-// MeshBasicMaterial (toneMapped off) so the bird reads as a clean,
-// self-lit apparition against the red velvet — if you leave the PBR
-// material in, the red hemisphere + emissive walls stain the bird
-// dark red and the silhouette disappears into the curtain.
+// Path is regenerated PER flight: a random-biased entry point up
+// near the back wall, 4 random wander waypoints covering most of
+// the hall, then a committed dive through a near-miss point in
+// front of the camera to an exit above/behind. The CatmullRom
+// through these points gives a meandering curve in phase 1 and a
+// straight commit in phase 2.
 
 function Bird() {
   const groupRef = useRef<THREE.Group>(null);
   const { scene, animations } = useGLTF("/Stork.glb");
   const { actions } = useAnimations(animations, scene);
 
-  // Grab the flap clip so we can drive its timeScale dynamically in
-  // useFrame — the flap accelerates as the bird closes on the camera.
+  // Grab the flap clip so we can drive its timeScale dynamically —
+  // steady during the roam, frantic during the final sprint.
   const flapAction = useRef<THREE.AnimationAction | null>(null);
   useEffect(() => {
     const first = Object.values(actions)[0];
@@ -1345,61 +1345,9 @@ function Bird() {
     }
   }, [actions]);
 
-  // Give the bird form. Flat MeshBasicMaterial reads as a cartoon
-  // ghost silhouette — no volume, no wing shape. Instead use
-  // MeshStandardMaterial with a strong cream emissive so:
-  //   • the bird is self-lit enough to hold a white read against
-  //     the red hemisphere stain,
-  //   • but scene lights still shade the body, so you can see the
-  //     breast, wing undersides, and depth of the flap pose.
-  useEffect(() => {
-    scene.traverse((obj) => {
-      const mesh = obj as THREE.Mesh;
-      if (!mesh.isMesh) return;
-      const mat = new THREE.MeshStandardMaterial({
-        color: "#d8cdb2",         // slightly warm off-white base
-        emissive: "#f4ecd6",      // cream self-light
-        emissiveIntensity: 1.1,   // overpowers the red ambient
-        roughness: 0.55,
-        metalness: 0.0,
-        side: THREE.FrontSide,
-      });
-      mesh.material = mat;
-    });
-  }, [scene]);
-
-  // Spline path, three choreographed beats:
-  //   1. Emerge from back-left of the stage, sweep across and down
-  //      toward the right wall (steady cruise).
-  //   2. Bank hard at the right wall — "quick pivot" — and lock onto
-  //      the camera.
-  //   3. Dive straight at the lens, accelerating. Last frame: pull
-  //      up and pass over the top of the camera.
-  //
-  // Camera sits at (0, 1.65, 6) looking at (0, 3, -13).
-  const curve = useMemo(
-    () =>
-      new THREE.CatmullRomCurve3([
-        // Beat 1 — stage crossing
-        new THREE.Vector3(-6.0, 4.6, -13),  // back-left of stage, high
-        new THREE.Vector3(-3.5, 4.1, -10),  // sweeping right, mid stage
-        new THREE.Vector3(0.0, 3.6, -7),    // middle of stage front
-        new THREE.Vector3(3.2, 3.2, -4),    // continuing right, into room
-        new THREE.Vector3(5.6, 3.0, -1.5),  // approaching right wall
-        // Beat 2 — pivot at the right wall. Three close-spaced points
-        // here bend the CatmullRom into a visible banking turn.
-        new THREE.Vector3(7.0, 2.85, 0.3),  // furthest-right apex
-        new THREE.Vector3(6.6, 2.7, 1.4),   // pivoting back toward camera
-        new THREE.Vector3(5.0, 2.55, 2.6),  // banking toward camera
-        // Beat 3 — lock onto lens and detonate
-        new THREE.Vector3(2.6, 2.3, 4.2),   // committed dive
-        new THREE.Vector3(0.6, 2.05, 5.4),  // ~0.6m before camera, head-on
-        new THREE.Vector3(0.05, 2.4, 5.95), // starting to pull up right over camera
-        new THREE.Vector3(-0.1, 3.6, 6.4),  // clearing above camera
-        new THREE.Vector3(-0.2, 5.4, 7.2),  // gone, up and behind
-      ]),
-    [],
-  );
+  // No material override — use the Stork.glb native PBR materials
+  // so the bird is tinted by scene lighting. It won't be pure-white
+  // anymore; it'll look like a real bird in a red room.
 
   // Helper reusable vectors so we don't allocate per frame.
   const posVec = useRef(new THREE.Vector3()).current;
@@ -1409,9 +1357,59 @@ function Bird() {
   const state = useRef({
     flying: false,
     startTime: 0,
-    duration: 3.4,
+    duration: 6.0,
     nextFlightAt: 2 + Math.random() * 3, // first appearance 2–5s in
+    curve: null as THREE.CatmullRomCurve3 | null,
   });
+
+  // Generate a fresh flight path. Start biased high/far (back wall,
+  // near-ceiling), 4 wander waypoints that stay continuous-ish
+  // (each near the last + a random hop) so the meander reads as
+  // exploration rather than teleport. Then commit: a near-miss in
+  // front of the camera, then an exit up and behind. Camera is at
+  // (0, 1.65, 6).
+  const generatePath = () => {
+    const start = new THREE.Vector3(
+      (Math.random() - 0.5) * 14, // x ±7, random across back
+      6.2 + Math.random() * 1.6,  // y 6.2–7.8, near the ceiling
+      -14.5 + Math.random() * 1.5, // z -14.5 to -13, back wall
+    );
+
+    const wander: THREE.Vector3[] = [];
+    const prev = start.clone();
+    for (let i = 0; i < 4; i++) {
+      // Each wander point drifts from the previous — so motion stays
+      // roughly continuous but with random hops. Net drift biases
+      // forward (+z) so the bird gradually works its way toward the
+      // camera over the roam.
+      const p = new THREE.Vector3(
+        prev.x + (Math.random() - 0.5) * 7,
+        prev.y + (Math.random() - 0.5) * 3,
+        prev.z + (Math.random() - 0.15) * 4, // +z bias so it drifts forward
+      );
+      // Clamp into the visible room
+      p.x = Math.max(-9, Math.min(9, p.x));
+      p.y = Math.max(2.0, Math.min(8.0, p.y));
+      p.z = Math.max(-14, Math.min(2, p.z));
+      wander.push(p);
+      prev.copy(p);
+    }
+
+    // Commit: near-miss in front of camera (lens at z=6, y=1.65),
+    // slight random jitter left/right. Then exit up + past camera.
+    const near = new THREE.Vector3(
+      (Math.random() - 0.5) * 0.5,  // tight to center, slight jitter
+      2.0 + Math.random() * 0.4,    // roughly lens height
+      5.3,                           // ~0.7m in front of camera
+    );
+    const exit = new THREE.Vector3(
+      (Math.random() - 0.5) * 1.5,
+      4.5 + Math.random() * 1.5, // rising
+      8.5, // behind/past camera
+    );
+
+    return new THREE.CatmullRomCurve3([start, ...wander, near, exit]);
+  };
 
   useFrame(({ clock }) => {
     if (!groupRef.current) return;
@@ -1421,10 +1419,11 @@ function Bird() {
     if (!s.flying && t >= s.nextFlightAt) {
       s.flying = true;
       s.startTime = t;
-      s.duration = 3.2 + Math.random() * 0.6; // 3.2–3.8s
+      s.duration = 5.5 + Math.random() * 1.5; // 5.5–7s — room to wander
+      s.curve = generatePath();
     }
 
-    if (!s.flying) {
+    if (!s.flying || !s.curve) {
       groupRef.current.visible = false;
       return;
     }
@@ -1432,37 +1431,38 @@ function Bird() {
     const raw = (t - s.startTime) / s.duration;
     if (raw >= 1) {
       s.flying = false;
-      s.nextFlightAt = t + 8 + Math.random() * 7; // 8–15s between fly-bys
+      s.nextFlightAt = t + 8 + Math.random() * 7; // 8–15s between
       groupRef.current.visible = false;
+      s.curve = null;
       return;
     }
 
-    // Piecewise timing — this is the thriller:
-    //   • Beat 1 (first 65% of time) is a steady cruise across the
-    //     stage: linearly covers the first 55% of the path.
-    //   • Beats 2+3 (last 35% of time) are a cube-ease-in for the
-    //     pivot + dive: the last 45% of path accelerates hard into
-    //     the lens. The previous version used the complementary
-    //     (1-x)^n curve, which was actually ease-OUT — the bird was
-    //     finishing slow near the camera instead of speeding up into
-    //     it. That's why it read as "chill". Cube ease-in here
-    //     inverts it so the final moment is the fastest.
+    // Two-phase timing:
+    //   • roam (first 72% of time, first 72% of path): linear pace,
+    //     bird meanders through the wander points at cruise speed.
+    //   • sprint (last 28% of time, last 28% of path): cube ease-in
+    //     so the final dive + exit accelerates into the lens.
+    const ROAM = 0.72;
     let p: number;
-    if (raw < 0.65) {
-      p = (raw / 0.65) * 0.55;
+    if (raw < ROAM) {
+      p = raw; // linear roam: p = raw when roam covers its share of path
     } else {
-      const p2 = (raw - 0.65) / 0.35;
-      p = 0.55 + Math.pow(p2, 3) * 0.45;
+      const p2 = (raw - ROAM) / (1 - ROAM);
+      p = ROAM + Math.pow(p2, 3) * (1 - ROAM);
     }
 
-    // Wingbeat climbs with raw time — slow glide during cruise,
-    // frantic panic flaps through the pivot + dive.
+    // Wingbeat: steady during roam, panic during sprint.
     if (flapAction.current) {
-      flapAction.current.timeScale = 0.9 + 3.0 * Math.pow(raw, 2);
+      if (raw < ROAM) {
+        flapAction.current.timeScale = 1.0;
+      } else {
+        const sp = (raw - ROAM) / (1 - ROAM);
+        flapAction.current.timeScale = 1.0 + 2.8 * Math.pow(sp, 2);
+      }
     }
 
-    curve.getPoint(p, posVec);
-    curve.getTangent(p, tanVec);
+    s.curve.getPoint(p, posVec);
+    s.curve.getTangent(p, tanVec);
 
     groupRef.current.visible = true;
     groupRef.current.position.copy(posVec);
@@ -1540,21 +1540,22 @@ class Boid {
   private accel = new THREE.Vector3();
   private tmp = new THREE.Vector3();
 
-  // World fills the hall (not just above stage). Boid local coords;
-  // placement offset handled by the <group> that contains the flock.
-  // Original pen: worldHalf (500, 500, 400). Ours scaled ~1/70 →
-  // (7, 3, 9) covers x=±7 (walls), y=±3 centered at group-y=4 so
-  // birds roam 1–7m above the floor, z=±9 centered at group-z=-5
-  // so they range from the back wall (z=-14) to just short of the
-  // camera (z=4).
-  worldHalf = new THREE.Vector3(7, 3, 9);
-  // Ratios kept close to original (neighborhoodRadius : worldHalf ≈
-  // 200 : 500 = 0.4, maxSteerForce : maxSpeed ≈ 0.02). Tuned up a
-  // bit so the flock feels like it has real momentum in our space
-  // instead of floating sluggishly.
-  neighborhoodRadius = 3.0;
-  maxSpeed = 0.05;
-  maxSteerForce = 0.0015;
+  // World fills the ENTIRE hall. Room is x=±11, y=0–9, z=-16 to +8.
+  // We give the flock a box that fills most of that, stopping short
+  // of the walls/floor/ceiling so birds visually bank away from
+  // them rather than clipping.
+  //   worldHalf (10, 4, 11) + group position (0, 4.5, -4) =
+  //   world extent x=±10, y=0.5–8.5, z=-15 to +7
+  // That's every part of the room the camera can see, including
+  // near/in front of the camera so crows fly past/around you, not
+  // just distantly above the stage.
+  worldHalf = new THREE.Vector3(10, 4, 11);
+  // Ratios kept close to the original (neighborhood : worldHalf ≈
+  // 0.4, maxSteerForce : maxSpeed ≈ 0.02). Tuned up slightly so
+  // motion reads as momentum in our units.
+  neighborhoodRadius = 3.5;
+  maxSpeed = 0.06;
+  maxSteerForce = 0.0018;
   goal: THREE.Vector3 | null = null;
   avoidWalls = true;
 
@@ -1663,7 +1664,7 @@ class Boid {
 }
 
 function Flock() {
-  const NUM = 60;
+  const NUM = 80;
 
   const boids = useMemo(() => {
     const list: Boid[] = [];
@@ -1674,12 +1675,12 @@ function Flock() {
         (Math.random() - 0.5) * 2 * b.worldHalf.y,
         (Math.random() - 0.5) * 2 * b.worldHalf.z,
       );
-      // Seed with velocity roughly matching maxSpeed so the flock
-      // kicks off with momentum instead of drifting in from zero.
+      // Seed with velocity at maxSpeed so the flock starts in
+      // motion instead of drifting in from zero.
       b.velocity.set(
-        (Math.random() - 0.5) * 0.06,
-        (Math.random() - 0.5) * 0.06,
-        (Math.random() - 0.5) * 0.06,
+        (Math.random() - 0.5) * 0.08,
+        (Math.random() - 0.5) * 0.08,
+        (Math.random() - 0.5) * 0.08,
       );
       list.push(b);
     }
@@ -1715,11 +1716,11 @@ function Flock() {
   });
 
   return (
-    // Centered in the hall: y=4 so birds roam 1–7m off the floor,
-    // z=-5 so the local-box spans back wall (z=-14) to just short of
-    // the camera (z=4). Birds drift through the full room, catching
-    // the red hemisphere + amber stage spots on their backs.
-    <group position={[0, 4, -5]}>
+    // Centered in the hall: group at (0, 4.5, -4) with worldHalf
+    // (10, 4, 11) means birds roam x=±10, y=0.5–8.5, z=-15 to +7 —
+    // the entire visible interior including in front of the camera,
+    // not just hanging above the stage.
+    <group position={[0, 4.5, -4]}>
       {boids.map((_, i) => (
         <mesh
           key={i}
