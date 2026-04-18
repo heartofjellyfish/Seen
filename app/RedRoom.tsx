@@ -1334,34 +1334,37 @@ function Bird() {
   const { scene, animations } = useGLTF("/Stork.glb");
   const { actions } = useAnimations(animations, scene);
 
-  // Start the flying animation (whichever clip is first — stork has
-  // one flap cycle). Bump timeScale slightly so the wingbeat reads
-  // as energetic rather than lazy.
+  // Grab the flap clip so we can drive its timeScale dynamically in
+  // useFrame — the flap accelerates as the bird closes on the camera.
+  const flapAction = useRef<THREE.AnimationAction | null>(null);
   useEffect(() => {
     const first = Object.values(actions)[0];
     if (first) {
       first.reset().play();
-      first.timeScale = 1.4;
+      flapAction.current = first;
     }
   }, [actions]);
 
-  // Force a dove-white look. The red room's strong red ambient +
-  // hemisphere stains anything PBR dark-red at this distance, which
-  // kills the dove's whole silhouette against the curtains. We
-  // replace each material with a MeshBasicMaterial tinted slightly
-  // cream so the bird reads as an unambiguous white apparition —
-  // very Lynchian (the bird is "lit from inside the dream", not the
-  // room).
+  // Give the bird form. Flat MeshBasicMaterial reads as a cartoon
+  // ghost silhouette — no volume, no wing shape. Instead use
+  // MeshStandardMaterial with a strong cream emissive so:
+  //   • the bird is self-lit enough to hold a white read against
+  //     the red hemisphere stain,
+  //   • but scene lights still shade the body, so you can see the
+  //     breast, wing undersides, and depth of the flap pose.
   useEffect(() => {
     scene.traverse((obj) => {
       const mesh = obj as THREE.Mesh;
       if (!mesh.isMesh) return;
-      const white = new THREE.MeshBasicMaterial({
-        color: "#f0ebe0",
-        toneMapped: false,
+      const mat = new THREE.MeshStandardMaterial({
+        color: "#d8cdb2",         // slightly warm off-white base
+        emissive: "#f4ecd6",      // cream self-light
+        emissiveIntensity: 1.1,   // overpowers the red ambient
+        roughness: 0.55,
+        metalness: 0.0,
         side: THREE.FrontSide,
       });
-      mesh.material = white;
+      mesh.material = mat;
     });
   }, [scene]);
 
@@ -1377,13 +1380,13 @@ function Bird() {
   const curve = useMemo(
     () =>
       new THREE.CatmullRomCurve3([
-        new THREE.Vector3(3.5, 5.8, -12),
-        new THREE.Vector3(1.6, 4.2, -7),
-        new THREE.Vector3(0.5, 3.0, -2),
-        new THREE.Vector3(0.15, 2.4, 1.5),  // head-on, in camera cone
-        new THREE.Vector3(0.3, 2.1, 3.5),   // still head-on, closer
-        new THREE.Vector3(0.9, 1.9, 5.4),   // last-second swerve right
-        new THREE.Vector3(2.4, 1.7, 8.5),   // gone past camera
+        new THREE.Vector3(3.5, 5.8, -12),   // stage wing, high
+        new THREE.Vector3(1.6, 4.4, -6.5),  // still far, descending
+        new THREE.Vector3(0.4, 3.1, -1),    // committed dive toward camera
+        new THREE.Vector3(0.0, 2.3, 2.5),   // head-on, ~3.5m out
+        new THREE.Vector3(0.05, 1.95, 4.6), // nearly touching lens (1.4m)
+        new THREE.Vector3(0.6, 1.75, 5.8),  // last-frame hard swerve right
+        new THREE.Vector3(2.6, 1.5, 8.8),   // gone past camera
       ]),
     [],
   );
@@ -1397,7 +1400,7 @@ function Bird() {
     flying: false,
     startTime: 0,
     duration: 3.0,
-    nextFlightAt: 18 + Math.random() * 14, // first appearance 18–32s in
+    nextFlightAt: 2 + Math.random() * 3, // first appearance 2–5s in
     mirror: 1 as 1 | -1,
   });
 
@@ -1409,7 +1412,7 @@ function Bird() {
     if (!s.flying && t >= s.nextFlightAt) {
       s.flying = true;
       s.startTime = t;
-      s.duration = 2.6 + Math.random() * 0.8;
+      s.duration = 2.1 + Math.random() * 0.5; // 2.1–2.6s, tight
       s.mirror = (Math.random() > 0.5 ? 1 : -1) as 1 | -1;
     }
 
@@ -1421,15 +1424,22 @@ function Bird() {
     const raw = (t - s.startTime) / s.duration;
     if (raw >= 1) {
       s.flying = false;
-      // Spaced out — this is a rare spectacle, not a loop
-      s.nextFlightAt = t + 55 + Math.random() * 80; // 55–135s between fly-bys
+      s.nextFlightAt = t + 8 + Math.random() * 7; // 8–15s between fly-bys
       groupRef.current.visible = false;
       return;
     }
 
-    // Ease-out-cubic-ish so bird accelerates as it closes on camera —
-    // the perspective blow-up in the final ~0.3s is the spectacle.
-    const p = 1 - Math.pow(1 - raw, 2.4);
+    // Sharp ease-in: bird hangs far-out for most of the flight, then
+    // detonates through the last ~25% of the path straight at the
+    // lens. Exponent 4.0 is much more aggressive than a standard
+    // ease-out — this is where the thriller jump lives.
+    const p = 1 - Math.pow(1 - raw, 4.0);
+
+    // Wingbeat scales with approach — slow, gliding flaps when far,
+    // frantic panic flaps at the moment of near-miss.
+    if (flapAction.current) {
+      flapAction.current.timeScale = 1.3 + 2.2 * p;
+    }
 
     curve.getPoint(p, posVec);
     curve.getTangent(p, tanVec);
