@@ -1560,42 +1560,48 @@ function WallCurtainLights() {
 function Bird() {
   const groupRef = useRef<THREE.Group>(null);
   const { scene, animations } = useGLTF("/Crow.glb");
-  const { actions } = useAnimations(animations, scene);
 
-  // Grab the flap clip so we can drive its timeScale dynamically.
-  //
-  // This Sketchfab crow ships with a single 10.52s clip called
-  // `root|TakeOff`. Takeoff animations start with the bird in a
-  // ground-prep pose (wings tucked, no flapping) for the first ~2s
-  // before transitioning into active wingbeat. If we start the clip
-  // at t=0 on each appearance, every sighting begins in the prep
-  // pose — which reads as an idle glide. Skip past the prep by
-  // starting the action mid-clip, so the wings are always mid-beat
-  // when the crow appears.
+  // Idle-pose fix: the Sketchfab crow ships with a single 10.52s clip
+  // `root|TakeOff` whose first ~2.5s is a ground-prep pose (wings
+  // tucked, no flapping) before active wingbeat kicks in. Previously
+  // we set `action.time = 2.5` on each flight start — but LoopRepeat
+  // wraps time back to 0, not to 2.5, so the prep pose reappeared
+  // every 10.52s mid-flight. Each 18–21s flight therefore showed the
+  // idle pose at least once. Fix: extract a subclip covering only
+  // the flapping range, so the loop only contains beating wings.
+  const FLAP_START_OFFSET = 2.5;
+  const preparedAnimations = useMemo(() => {
+    if (!animations || animations.length === 0) return animations;
+    const src = animations.reduce((a, b) =>
+      b.duration > a.duration ? b : a,
+    );
+    // AnimationUtils.subclip uses frame numbers; fps arg controls the
+    // frame→time conversion for filtering. Value of fps doesn't need
+    // to match the source clip's native rate — only the ratio of
+    // startFrame/fps and endFrame/fps matter (those become seconds).
+    const FPS = 30;
+    const startFrame = Math.round(FLAP_START_OFFSET * FPS);
+    const endFrame = Math.floor(src.duration * FPS);
+    return [
+      THREE.AnimationUtils.subclip(
+        src,
+        "flap-loop",
+        startFrame,
+        endFrame,
+        FPS,
+      ),
+    ];
+  }, [animations]);
+  const { actions } = useAnimations(preparedAnimations, scene);
+
   const flapAction = useRef<THREE.AnimationAction | null>(null);
-  const FLAP_START_OFFSET = 2.5; // seconds into the clip, past prep pose
   useEffect(() => {
-    const entries = Object.entries(actions).filter(
-      ([, a]) => a != null,
-    ) as [string, THREE.AnimationAction][];
-    // Pick the longest clip (on this model there's only one, but be
-    // safe for future model swaps).
-    let chosen: THREE.AnimationAction | null = null;
-    for (const [, action] of entries) {
-      if (
-        !chosen ||
-        action.getClip().duration > chosen.getClip().duration
-      ) {
-        chosen = action;
-      }
-    }
-
-    if (chosen) {
-      chosen.setLoop(THREE.LoopRepeat, Infinity);
-      chosen.clampWhenFinished = false;
-      chosen.time = FLAP_START_OFFSET;
-      chosen.play();
-      flapAction.current = chosen;
+    const action = actions["flap-loop"];
+    if (action) {
+      action.setLoop(THREE.LoopRepeat, Infinity);
+      action.clampWhenFinished = false;
+      action.play();
+      flapAction.current = action;
     }
   }, [actions]);
 
@@ -1630,9 +1636,81 @@ function Bird() {
   // Generate a fresh flight path. Start biased high/far (back wall,
   // near-ceiling), 4 wander waypoints that stay continuous-ish
   // (each near the last + a random hop) so the meander reads as
-  // exploration rather than teleport. Then commit: a near-miss in
-  // front of the camera, then an exit up and behind. Camera is at
-  // (0, 1.65, 6).
+  // exploration rather than teleport. Then commit via a variant-
+  // specific (lead, near, exit) triple — each variant gives the
+  // near-miss a distinct pose (head-on, diagonal, side-sweep, dive).
+  // Camera is at (0, 1.65, 6), fov 55° vertical.
+  //
+  // Near-pass points sit at z=4.5–4.8 → 1.2–1.5m from the lens. At
+  // that distance a 0.7m bird occupies ~47–58% of the frame height,
+  // i.e. roughly half the screen — big enough to feel like impact,
+  // not so close that angular velocity blurs it.
+  //
+  // The `lead` point sits ~1.5–3m upstream of `near` along the
+  // intended approach direction; CatmullRom's tangent at `near` is
+  // roughly (exit - lead)/2, so the bird's lookAt orientation (and
+  // therefore its visible pose at closest approach) is determined
+  // by where we place lead and exit.
+  type Variant = {
+    lead: () => THREE.Vector3;
+    near: () => THREE.Vector3;
+    exit: () => THREE.Vector3;
+  };
+  const variants: Variant[] = [
+    {
+      // HEAD-ON: comes straight out of the stage toward the lens,
+      // last-frame pull-up. Bird faces camera squarely, wings spread.
+      lead: () => new THREE.Vector3(0, 1.9, 0.8),
+      near: () => new THREE.Vector3(
+        (Math.random() - 0.5) * 0.4, 1.8, 4.6,
+      ),
+      exit: () => new THREE.Vector3(
+        (Math.random() - 0.5) * 1.0, 3.2 + Math.random() * 0.6, 8.0,
+      ),
+    },
+    {
+      // DIAG-UP-RIGHT: enters frame at lower-left, exits upper-right
+      // past the camera. Bird banks right-and-up, side-ish profile.
+      lead: () => new THREE.Vector3(-3.5, 0.9, 2.2),
+      near: () => new THREE.Vector3(
+        -1.3 + (Math.random() - 0.5) * 0.3, 1.5, 4.5,
+      ),
+      exit: () => new THREE.Vector3(
+        3.5 + Math.random() * 0.6, 4.8 + Math.random() * 0.6, 8.0,
+      ),
+    },
+    {
+      // DIAG-UP-LEFT: mirror of diag-up-right.
+      lead: () => new THREE.Vector3(3.5, 0.9, 2.2),
+      near: () => new THREE.Vector3(
+        1.3 + (Math.random() - 0.5) * 0.3, 1.5, 4.5,
+      ),
+      exit: () => new THREE.Vector3(
+        -3.5 - Math.random() * 0.6, 4.8 + Math.random() * 0.6, 8.0,
+      ),
+    },
+    {
+      // SIDE-SWEEP-LR: nearly horizontal swoop at eye level, left to
+      // right. Bird shows full side profile at closest approach.
+      lead: () => new THREE.Vector3(-4.2, 2.5, 3.0),
+      near: () => new THREE.Vector3(
+        -1.5, 2.2 + (Math.random() - 0.5) * 0.3, 4.8,
+      ),
+      exit: () => new THREE.Vector3(4.5, 2.8, 7.5),
+    },
+    {
+      // DIVE-DOWN: comes in high, dives past the lens toward the
+      // floor. Bird nose-down, tail up at closest approach.
+      lead: () => new THREE.Vector3(0, 5.2, 2.2),
+      near: () => new THREE.Vector3(
+        (Math.random() - 0.5) * 0.6, 3.4, 4.5,
+      ),
+      exit: () => new THREE.Vector3(
+        (Math.random() - 0.5) * 1.2, 0.5 + Math.random() * 0.4, 8.0,
+      ),
+    },
+  ];
+
   const generatePath = () => {
     const start = new THREE.Vector3(
       (Math.random() - 0.5) * 14, // x ±7, random across back
@@ -1660,22 +1738,12 @@ function Bird() {
       prev.copy(p);
     }
 
-    // Commit: near-miss well in front of camera (lens at z=6, y=1.65),
-    // slight random jitter left/right. Closer than ~2m would make
-    // angular velocity huge at any speed — we want the bird readable
-    // even at its closest point.
-    const near = new THREE.Vector3(
-      (Math.random() - 0.5) * 1.0,
-      2.2 + Math.random() * 0.4,
-      3.5, // ~2.5m in front of camera — close enough to thrill, far enough to see
-    );
-    const exit = new THREE.Vector3(
-      (Math.random() - 0.5) * 1.5,
-      5.0 + Math.random() * 1.5, // rising up and over
-      8.0, // just past the camera
-    );
+    const v = variants[Math.floor(Math.random() * variants.length)];
+    const lead = v.lead();
+    const near = v.near();
+    const exit = v.exit();
 
-    return new THREE.CatmullRomCurve3([start, ...wander, near, exit]);
+    return new THREE.CatmullRomCurve3([start, ...wander, lead, near, exit]);
   };
 
   useFrame(({ clock }) => {
@@ -1688,10 +1756,9 @@ function Bird() {
       s.startTime = t;
       s.duration = 18 + Math.random() * 3; // 18–21s — extremely slow, savor it
       s.curve = generatePath();
-      // Jump the flap cycle past the takeoff prep pose so wings are
-      // unambiguously beating the moment the bird appears.
+      // Subclip removes the prep-pose frames entirely, so the loop
+      // is guaranteed flapping — no need to seek past a prep region.
       if (flapAction.current) {
-        flapAction.current.time = FLAP_START_OFFSET;
         flapAction.current.play();
         flapAction.current.timeScale = 1.0;
       }
