@@ -1713,7 +1713,7 @@ class Boid {
 }
 
 function Flock() {
-  const NUM = 80;
+  const NUM = 40;
 
   const boids = useMemo(() => {
     const list: Boid[] = [];
