@@ -2298,7 +2298,7 @@ export function RedRoom() {
             RGB shift at edges (vintage lens feel), Noise is film grain. */}
         <EffectComposer>
           <ChromaticAberration
-            offset={[0.0008, 0.0008]}
+            offset={new THREE.Vector2(0.0008, 0.0008)}
             radialModulation={false}
             modulationOffset={0}
           />
