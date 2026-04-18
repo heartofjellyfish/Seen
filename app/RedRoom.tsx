@@ -12,8 +12,10 @@ import {
   useTexture,
 } from "@react-three/drei";
 import {
+  BrightnessContrast,
   ChromaticAberration,
   EffectComposer,
+  HueSaturation,
   Noise,
   Vignette,
 } from "@react-three/postprocessing";
@@ -682,15 +684,15 @@ function StageBackLight({ stageH }: { stageH: number }) {
     const t = clock.elapsedTime;
     const breath = 0.85 + Math.sin(t * 0.42) * 0.12;
     const flick = Math.sin(t * 3.1) * 0.10 + Math.sin(t * 7.3 + 0.4) * 0.05;
-    ref.current.intensity = 3.2 * Math.max(0, breath + flick);
+    ref.current.intensity = 4.0 * Math.max(0, breath + flick);
   });
   return (
     <pointLight
       ref={ref}
       position={[0, stageH + 3, -0.3]}
       color="#e6b070"
-      intensity={3.2}
-      distance={7}
+      intensity={4.0}
+      distance={7.5}
       decay={2}
     />
   );
@@ -893,16 +895,16 @@ function CurtainBleedGlow({
       peak: number; // peak opacity
     }> = [
       // Large diffuse halos — slow-breathing atmosphere
-      { x: -4.2, y: 1.8, size: 2.8, color: "#ff5830", peak: 0.28 },
-      { x:  4.0, y: 2.0, size: 2.6, color: "#ff5830", peak: 0.28 },
-      { x:  0.0, y: 2.2, size: 3.0, color: "#ffa040", peak: 0.24 },
+      { x: -4.2, y: 1.8, size: 2.8, color: "#ff5830", peak: 0.36 },
+      { x:  4.0, y: 2.0, size: 2.6, color: "#ff5830", peak: 0.36 },
+      { x:  0.0, y: 2.2, size: 3.0, color: "#ffa040", peak: 0.31 },
       // Medium focal glows — the flicker workhorses
-      { x: -5.3, y: 0.5, size: 1.3, color: "#ffb060", peak: 0.55 },
-      { x: -3.0, y: 1.2, size: 1.6, color: "#ffd890", peak: 0.48 },
-      { x: -1.0, y: 0.4, size: 1.2, color: "#ff8040", peak: 0.52 },
-      { x:  1.2, y: 1.0, size: 1.5, color: "#ffd890", peak: 0.48 },
-      { x:  3.1, y: 0.6, size: 1.3, color: "#ffb060", peak: 0.55 },
-      { x:  5.2, y: 1.4, size: 1.2, color: "#ff8040", peak: 0.50 },
+      { x: -5.3, y: 0.5, size: 1.3, color: "#ffb060", peak: 0.72 },
+      { x: -3.0, y: 1.2, size: 1.6, color: "#ffd890", peak: 0.62 },
+      { x: -1.0, y: 0.4, size: 1.2, color: "#ff8040", peak: 0.68 },
+      { x:  1.2, y: 1.0, size: 1.5, color: "#ffd890", peak: 0.62 },
+      { x:  3.1, y: 0.6, size: 1.3, color: "#ffb060", peak: 0.72 },
+      { x:  5.2, y: 1.4, size: 1.2, color: "#ff8040", peak: 0.65 },
     ];
     return raw.map((p) => ({
       ...p,
@@ -1698,13 +1700,13 @@ function WallCurtainLights() {
   return (
     <group>
       {/* Left wall — near stage */}
-      <rectAreaLight position={[-10.5, 3.2, -11.5]} rotation={[0,  Math.PI / 2, 0]} width={3} height={5} color="#e8960a" intensity={2} />
+      <rectAreaLight position={[-10.5, 3.2, -11.5]} rotation={[0,  Math.PI / 2, 0]} width={3} height={5} color="#e8960a" intensity={2.5} />
       {/* Left wall — second block (higher intensity to offset missing stage spill) */}
-      <rectAreaLight position={[-10.5, 3.2, -7.0]} rotation={[0,  Math.PI / 2, 0]} width={3} height={5} color="#e8960a" intensity={2} />
+      <rectAreaLight position={[-10.5, 3.2, -7.0]} rotation={[0,  Math.PI / 2, 0]} width={3} height={5} color="#e8960a" intensity={2.5} />
       {/* Right wall — near stage */}
-      <rectAreaLight position={[10.5,  3.2, -11.5]} rotation={[0, -Math.PI / 2, 0]} width={3} height={5} color="#e8960a" intensity={2} />
+      <rectAreaLight position={[10.5,  3.2, -11.5]} rotation={[0, -Math.PI / 2, 0]} width={3} height={5} color="#e8960a" intensity={2.5} />
       {/* Right wall — second block (higher intensity to offset missing stage spill) */}
-      <rectAreaLight position={[10.5,  3.2, -7.0]} rotation={[0, -Math.PI / 2, 0]} width={3} height={5} color="#e8960a" intensity={2} />
+      <rectAreaLight position={[10.5,  3.2, -7.0]} rotation={[0, -Math.PI / 2, 0]} width={3} height={5} color="#e8960a" intensity={2.5} />
     </group>
   );
 }
@@ -2472,6 +2474,10 @@ export function RedRoom() {
             radialModulation={false}
             modulationOffset={0}
           />
+          {/* Color grading — lift contrast a hair and push saturation
+              so the reds pop without brightening the darks. */}
+          <BrightnessContrast brightness={0.05} contrast={0.08} />
+          <HueSaturation saturation={0.22} />
           <Noise
             premultiply
             blendFunction={BlendFunction.SOFT_LIGHT}
