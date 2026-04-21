@@ -7,6 +7,7 @@ import {
   Clouds,
   PerspectiveCamera,
   Sparkles,
+  Stats,
   useTexture,
 } from "@react-three/drei";
 import {
@@ -2177,6 +2178,9 @@ export function RedRoom() {
         {/* Atmospheric dynamics */}
         <DustMotes />
         <Flock />
+
+        {/* Dev-only FPS panel (top-left). Remove before prod. */}
+        <Stats />
 
         {/* Post-processing — texture + focus layer. No brightening:
             Vignette darkens corners, ChromaticAberration adds a subtle
