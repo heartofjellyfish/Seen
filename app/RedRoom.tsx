@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useRef } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import {
   Cloud,
@@ -509,6 +509,63 @@ function CurtainPanel({
   );
 }
 
+// ————— Festoon / valance swag —————
+// A flat velvet swag hanging below the pelmet: straight top edge,
+// scalloped bottom edge (semi-circles) giving the classic theatre
+// valance silhouette. Single ShapeGeometry = 1 draw call, cheap.
+
+function Festoon({
+  width,
+  topHeight,
+  scallopDepth,
+  scallops,
+  position,
+}: {
+  width: number;
+  topHeight: number;  // thickness of the straight band above scallops
+  scallopDepth: number; // how far each scallop dips below base
+  scallops: number;
+  position: [number, number, number];
+}) {
+  const geometry = useMemo(() => {
+    const shape = new THREE.Shape();
+    const halfW = width / 2;
+    const topY = topHeight;   // top of the swag (anchored at pelmet's bottom)
+    const baseY = 0;          // base of the straight band
+    const scallopW = width / scallops;
+
+    // Top-left → top-right
+    shape.moveTo(-halfW, topY);
+    shape.lineTo(halfW, topY);
+    // Right edge down to base
+    shape.lineTo(halfW, baseY);
+    // Scalloped bottom — semi-circle dips, right to left
+    for (let i = 0; i < scallops; i++) {
+      const startX = halfW - scallopW * i;
+      const endX = halfW - scallopW * (i + 1);
+      const ctrlX = (startX + endX) / 2;
+      shape.quadraticCurveTo(ctrlX, baseY - scallopDepth, endX, baseY);
+    }
+    // Left edge up to top
+    shape.lineTo(-halfW, topY);
+    shape.closePath();
+    return new THREE.ShapeGeometry(shape, 48);
+  }, [width, topHeight, scallopDepth, scallops]);
+
+  return (
+    <mesh geometry={geometry} position={position} castShadow>
+      <meshStandardMaterial
+        color="#5a0f0f"
+        roughness={0.95}
+        metalness={0}
+        emissive="#1a0202"
+        emissiveIntensity={0.3}
+        side={THREE.DoubleSide}
+      />
+    </mesh>
+  );
+}
+
 function Walls() {
   return (
     <group>
@@ -631,6 +688,17 @@ function Stage() {
           emissiveIntensity={0.3}
         />
       </mesh>
+
+      {/* Festoon — scalloped velvet swag hanging below the pelmet.
+          Adds the "draped classical theatre valance" silhouette over
+          the top edge of the stage curtain. */}
+      <Festoon
+        width={stageW + 0.6}
+        topHeight={0.12}
+        scallopDepth={0.55}
+        scallops={7}
+        position={[0, stageH + curtainHeight + 0.06, stageD / 2 + 0.18]}
+      />
 
       {/* Stage curtain — two pleated panels meeting in the middle */}
       <CurtainPanel
@@ -881,27 +949,37 @@ function CurtainBleedGlow({
 }) {
   const tex = useMemo(() => makeRadialGlowTexture(), []);
   const patches = useMemo(() => {
-    // 9 patches spread across the curtain — mix of sizes (some huge &
-    // diffuse, some small & focused) and 3 warm colors so the backlight
-    // reads as multiple sources of different temperatures.
+    // 16 patches covering the full curtain height (0 → ~5m) with
+    // staggered x-positions so no large empty vertical column shows
+    // through. Three temperature families (cherry / amber / gold)
+    // layered across three height bands.
     const raw: Array<{
       x: number;
       y: number;
       size: number;
       color: string;
-      peak: number; // peak opacity
+      peak: number;
     }> = [
-      // Large diffuse halos — slow-breathing atmosphere
-      { x: -4.2, y: 1.8, size: 2.8, color: "#ff5830", peak: 0.28 },
-      { x:  4.0, y: 2.0, size: 2.6, color: "#ff5830", peak: 0.28 },
-      { x:  0.0, y: 2.2, size: 3.0, color: "#ffa040", peak: 0.24 },
-      // Medium focal glows — the flicker workhorses
+      // Low band (y 0.3–1.5) — candle-flame level, warmest
       { x: -5.3, y: 0.5, size: 1.3, color: "#ffb060", peak: 0.55 },
       { x: -3.0, y: 1.2, size: 1.6, color: "#ffd890", peak: 0.48 },
       { x: -1.0, y: 0.4, size: 1.2, color: "#ff8040", peak: 0.52 },
       { x:  1.2, y: 1.0, size: 1.5, color: "#ffd890", peak: 0.48 },
       { x:  3.1, y: 0.6, size: 1.3, color: "#ffb060", peak: 0.55 },
       { x:  5.2, y: 1.4, size: 1.2, color: "#ff8040", peak: 0.50 },
+      // Mid band (y 1.8–2.8) — broader halos, atmospheric
+      { x: -4.2, y: 1.8, size: 2.8, color: "#ff5830", peak: 0.28 },
+      { x:  4.0, y: 2.0, size: 2.6, color: "#ff5830", peak: 0.28 },
+      { x:  0.0, y: 2.4, size: 3.0, color: "#ffa040", peak: 0.26 },
+      // Upper-mid (y 3.2–3.8) — fill vertical gap that was empty
+      { x: -2.2, y: 3.3, size: 2.0, color: "#ff7030", peak: 0.32 },
+      { x:  2.4, y: 3.5, size: 2.2, color: "#ff8040", peak: 0.30 },
+      { x:  0.0, y: 3.0, size: 1.6, color: "#ffc070", peak: 0.35 },
+      // Upper band (y 4.2–5.0) — top of curtain, faint ceiling glow
+      { x: -3.8, y: 4.4, size: 2.4, color: "#ff6830", peak: 0.22 },
+      { x:  3.6, y: 4.6, size: 2.4, color: "#ff6830", peak: 0.22 },
+      { x: -0.6, y: 4.8, size: 2.0, color: "#ff9050", peak: 0.20 },
+      { x:  1.5, y: 4.2, size: 1.8, color: "#ffa060", peak: 0.24 },
     ];
     return raw.map((p) => ({
       ...p,
@@ -1573,9 +1651,10 @@ function DustMotes() {
   return (
     <Sparkles
       count={40}
-      // [x, y, z] box centred on position — 9m wide, 5m tall, 12m deep
-      scale={[9, 5, 12]}
-      position={[0, 2.8, -3]}
+      // Wider spread — was [9,5,12] (centre-heavy). Now covers most of
+      // the visible room so motes aren't clumped in the middle.
+      scale={[17, 7, 15]}
+      position={[0, 3.2, -4]}
       size={1.4}
       speed={0.18}
       opacity={0.28}
@@ -2369,6 +2448,16 @@ function Flock() {
 // ————— main scene —————
 
 export function RedRoom() {
+  // Show FPS stats only in debug mode: ?debug in URL or env flag set.
+  // Matches the DebugPanel activation pattern in app/page.tsx.
+  const [showStats, setShowStats] = useState(false);
+  useEffect(() => {
+    const urlDebug =
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).has("debug");
+    const envDebug = process.env.NEXT_PUBLIC_SEEN_DEBUG_PANEL === "1";
+    setShowStats(urlDebug || envDebug);
+  }, []);
 
   return (
     <Canvas
@@ -2429,8 +2518,8 @@ export function RedRoom() {
         <Flock />
         <RavenFlyBy />
 
-        {/* Dev-only FPS panel (top-left). Remove before prod. */}
-        <Stats />
+        {/* FPS panel only when ?debug URL flag or env debug is set. */}
+        {showStats && <Stats />}
 
         {/* Post-processing — kept lean for perf: CA for vintage lens
             feel, Vignette for frame darkness. Noise (film grain) was
