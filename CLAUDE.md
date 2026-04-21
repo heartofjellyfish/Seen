@@ -16,33 +16,35 @@ All lengths are world units (≈ meters). Camera is at `(0, 1.65, 6)`, fov 55°,
 |---|---|---|---|
 | `NUM` | Flock component | `60` | Bird count. Density = NUM / (worldHalf volume × 8). |
 | `GROUP_POS` | Flock component | `(0, 5, -3)` | World origin of the flock group — all positions below are relative. |
-| `worldHalf` | `Boid` class | `(14, 5, 16)` | Half-extents of the invisible bounding box. Walls bounce via `avoid()`. |
+| `worldHalf` | `Boid` class | `(10, 4.5, 12)` | Half-extents of the invisible bounding box. Sized to stay inside the curtains (side at ±11, back at z=-16 world). |
 | `maxSpeed` | `Boid` class | `0.12` | Units/frame (≈7 u/s @ 60fps). |
 | `maxSteerForce` | `Boid` class | `0.0024` | Units/frame². **Must stay at ≈maxSpeed/50**; larger = jittery, smaller = floppy. |
-| `neighborhoodRadius` | `Boid` class | `8.0` | Flocking radius. Target 5–10 active neighbors (see formula below). |
-| Wall-avoid constant | `Boid.avoid()` | `0.02 / dsq` | Repulsion from each of 6 walls. Was `0.06` — too strong, birds bounced off invisible walls early. |
-| Goal multiplier | `Boid.doFlock()` | `0.0005` | Pull toward current waypoint. Same order as maxSteerForce so it doesn't dominate flocking. |
+| `neighborhoodRadius` | `Boid` class | `6.0` | Flocking radius. Dropped from 8.0 when the box shrank (volume halved → density doubled). Target 5–10 active neighbors. |
+| Wall-avoid constant | `Boid.avoid()` | `0.02 / dsq` | Soft repulsion from each of 6 walls. Backed up by `clampToRoom()` hard stop. |
+| Stage closed-curtain clamp | `Boid.clampToRoom()` | `z ≥ -7.75 local when in aperture` | Birds cannot cross the closed stage drape (world z=-10.75) within its physical rectangle (world x∈[-6.5, 6.5], y∈[1.5, 7.5]). Can go around: over the pelmet (y>7.5) or around the sides (\|x\|>6.5). |
+| Goal multiplier | `Boid.goalMultiplier` | `0.0005` show / `0.002` hide | Per-Boid field. Flock sets it based on phase — weak pull during shows (flock lingers), strong pull during hides (flock commits to offscreen). |
 | Separation cap | `Boid.separation()` | `maxSteerForce * 2.5` | Caps the anti-collision force. `4×` was too strong → birds spun in place. |
 | Sampling rate | alignment/cohesion/separation | `60%` (`Math.random() > 0.4`) | Matches the reference pen. Reducing = cheaper but looser. |
-| Hideout dwell | `hideouts` entries | `18s` | How long the flock waits at an offscreen waypoint. |
-| Show dwell | `shows` entries | `5s` | How long the flock lingers at an onscreen waypoint. |
+| Hide dwell | picked in `Flock` | `25–35s` (random per visit) | How long the flock stays at an offscreen waypoint. |
+| Show dwell | picked in `Flock` | `2–4s` (random per visit) | How long the flock lingers at an onscreen waypoint. |
+| Hide-after-hide chance | `Flock` phase logic | `0.35` | From a hide, 35% chance to pick another hide (≈60s invisible stretch) instead of 65% returning to a show. Show always transitions to hide. |
 
 ### Calibrated ratios — do not break these without deliberation
 
 1. **maxSpeed : maxSteerForce = 50 : 1.** At this ratio turns look like bird physics. Raising steerForce makes the flock twitchy; lowering makes them overshoot goals.
 2. **Goal multiplier ≈ maxSteerForce.** The reference pen uses `0.005` with `maxSpeed=5`, i.e. also 1/1000 of speed. At our `maxSpeed=0.12` that's `0.00012`; we use `0.0005` to accelerate waypoint transits without drowning out flocking.
-3. **Active-neighbor count.** For radius `r`, neighborhood volume ≈ `(4/3)π r³`. Box volume = `8 · 14 · 5 · 16 = 8960`. Density = `NUM / 8960`. Active neighbors ≈ `(4/3)π r³ · density · 0.6` (the 0.6 is sampling rate). At `r=8`, `NUM=60` → ≈5.7, which is where cohesion/alignment actually produce flocking. Below ~3 the birds scatter; above ~15 they cluster into a blob.
-4. **Hide:show dwell ratio = 18:5.** Tune to shift visibility: more hide = rarer spectacle.
+3. **Active-neighbor count.** For radius `r`, neighborhood volume ≈ `(4/3)π r³`. Box volume = `8 · 10 · 4.5 · 12 = 4320`. Density = `NUM / 4320`. Active neighbors ≈ `(4/3)π r³ · density · 0.6` (the 0.6 is sampling rate). At `r=6`, `NUM=60` → ≈7.5, in the cohesion-produces-flocking range. Below ~3 the birds scatter; above ~15 they cluster into a blob.
+4. **Hide ≫ show.** Target ≥60% offscreen time. Current cadence (25–35s hide, 2–4s show, 35% chance of consecutive hides) produces ≈65% offscreen after transit overhead.
 
 ### Waypoint placement rules
 
-Waypoints are split into two pools (`hideouts`, `shows`) and strictly alternate. The flock starts on `shows[0]` so the opening frame isn't empty.
+Waypoints are split into two pools (`hideouts`, `shows`). Phase logic: show always → hide, but hide → show is only 65% (35% chance of another hide). Opening shows starts on `shows[0]` so the first few seconds have visible birds.
 
 - **Hideouts must be reliably offscreen on both portrait and landscape.** Two safe zones:
   - `z > 7` (behind the camera at z=6) — robust for any aspect ratio.
-  - `|x| ≥ 12` at `z=-3` — lateral half-width at distance 9 from camera at fov 55° is ≈ 8.2 landscape, narrower portrait. 12 is well outside.
-  - **Do not use** `(0, 9, -17)` or similar deep-stage-high points: at `z=-17`, vertical frame half-height ≈ 12, so `y=9` is still in frame. The frustum expands fast.
-- **Shows must be inside the frustum.** The stage area: `y ∈ [2, 8]`, `x ∈ [-5, 5]`, `z ∈ [-16, 2]` is safe. Deep back corners (`|x|=4, z=-16`) are fine — the frustum at z=-16 is very wide.
+  - `|x| ≥ 9.5` at `z=-3` — lateral half-width at distance 9 from camera at fov 55° is ≈ 7.5 landscape, narrower portrait. 9.5 clears the frustum with ~2m margin.
+  - **All hideouts must also be inside the new smaller `worldHalf` box** (x ∈ ±10, y ∈ [0.5, 9.5], z ∈ [-15, 9] world). Previous hideouts at `|x|=12` or `z=10` were past the curtains — that's what was causing visible penetration.
+- **Shows must be inside the frustum AND inside the box.** Stage area `y ∈ [2, 8]`, `x ∈ [-5, 5]`, `z ∈ [-13, 2]` is safe. Deep back shows (`|x|=8, z=-13`) stay off to the *sides* of the stage aperture so the stage drape clamp doesn't fight them.
 
 ### Known failure modes (root causes, not symptoms)
 

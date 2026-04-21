@@ -1980,27 +1980,23 @@ function WallCurtainLights() {
 // sheen) — NOT replaced, because a fresh MeshStandardMaterial lacks
 // the morph-target compile-time uniforms and the wings render wrong.
 //
-// Flight choreography (current design — the third iteration):
+// Flight choreography (current design):
 //   1. Monotonic back-to-front. Z decreases steadily across the
 //      whole curve; the only arc is a gentle one in x and y, never
-//      a reversal. Corvids don't hover, loop, or detour — this was
-//      the user's third round of feedback and is a hard rule now.
+//      a reversal. Corvids don't hover, loop, or detour.
 //   2. Two routes only: LEVEL_GLIDE (most common, eye-level sweep
 //      with a small arc) and DESCENDING_ATTACK (rarer, enters high
-//      and descends onto the lens). Lateral side-to-side was dropped
-//      because it fights the back-to-front axis.
-//   3. Natural easing: near-linear for the first ~60% of the flight,
-//      quadratic acceleration through the last ~40%. The quadratic
-//      tail is what makes the near-pass feel like a strike without
-//      needing an artificial hover beat. Bird grows from small to
-//      huge over the final ~2s and is gone within ~0.6s of closest
-//      approach.
-//   4. Near-pass distances stay tight (≤1m from lens) so the scale
-//      shift reads as a spectacle even without the earlier "pause
-//      to be seen" mechanism.
-//   5. Wingbeat: steady 0.5× throughout the approach (raven cruise),
-//      ramping up to 1.2× during the final commit. No V-shape pause
-//      modulation anymore.
+//      and descends onto the lens).
+//   3. Near-pass at z=5.5 world — 0.5m from the lens. With bird
+//      at 0.7m longest dimension that's ~80° angular size, larger
+//      than the 55° vertical fov; the bird overflows the frame at
+//      peak for a single-frame-window flash, then is gone.
+//   4. Easing: linear cruise for first 55% of flight, then pow-3
+//      acceleration through the final 45%. The cubic tail compresses
+//      post-near-pass time to ≈0.4s — user requirement: "只有一瞬".
+//   5. Duration 5–6.5s total (tight — strike, not tour).
+//   6. Wingbeat: steady 0.5× cruise, ramping cubically to 1.8× during
+//      the commit. Matches the body's acceleration into the lens.
 //
 // Layout reference: camera at (0, 1.65, 6) fov 55° looking at
 // (0, 3, -13). All coordinates are world-space.
@@ -2119,14 +2115,14 @@ function RavenFlyBy() {
           const side = Math.random() < 0.5 ? -1 : 1;
           const entryX = jitter(2.5 * side, 0.6);
           const midX = jitter(1.2 * side, 0.4);   // still biased but tightening
-          const nearX = jitter(0, 0.3);           // centred by the time it's at the lens
-          const exitX = jitter(-0.5 * side, 0.4); // drifts past centre at exit
+          const nearX = jitter(0, 0.25);          // near dead-centre at the lens
+          const exitX = jitter(-0.4 * side, 0.3); // drifts past centre at exit
           return [
             new THREE.Vector3(entryX, jitter(3.0, 0.3), -15), // entry high-back
             new THREE.Vector3(midX, jitter(2.7, 0.2), -9),    // gentle descent
             new THREE.Vector3(midX * 0.5, jitter(2.3, 0.2), -3), // level out
-            new THREE.Vector3(nearX, jitter(1.85, 0.1), 5),   // NEAR PASS (1.0m from lens)
-            new THREE.Vector3(exitX, jitter(2.4, 0.2), 7),    // exit just behind camera
+            new THREE.Vector3(nearX, jitter(1.8, 0.08), 5.5), // NEAR PASS — 0.5m from lens
+            new THREE.Vector3(exitX, jitter(2.3, 0.2), 6.6),  // exit just 0.6m behind camera
           ];
         },
       },
@@ -2144,8 +2140,8 @@ function RavenFlyBy() {
             new THREE.Vector3(entryX, jitter(6.0, 0.4), -14),    // entry high
             new THREE.Vector3(entryX * 0.6, jitter(4.2, 0.3), -8), // descent
             new THREE.Vector3(entryX * 0.2, jitter(2.5, 0.2), -2), // level out low
-            new THREE.Vector3(jitter(0, 0.2), jitter(1.7, 0.1), 5.2), // NEAR PASS — 0.85m from lens
-            new THREE.Vector3(jitter(-0.3 * side, 0.3), jitter(3.2, 0.3), 7), // pulls up past camera
+            new THREE.Vector3(jitter(0, 0.15), jitter(1.65, 0.08), 5.5), // NEAR PASS — 0.5m from lens
+            new THREE.Vector3(jitter(-0.3 * side, 0.25), jitter(3.0, 0.25), 6.6), // exit 0.6m past camera
           ];
         },
       },
@@ -2159,30 +2155,33 @@ function RavenFlyBy() {
     return new THREE.CatmullRomCurve3(chosen.pts());
   };
 
-  // Easing: linear for the first 60% of flight (natural cruise),
-  // then quadratic acceleration for the last 40% so the bird grows
-  // into the lens and is gone within ~0.6s of the near-pass.
+  // Easing: linear for the first 55% of flight (natural cruise),
+  // then cubic (pow-3) acceleration for the last 45% so the bird
+  // grows into the lens and is gone within ~0.4s of the near-pass.
   //
-  //   raw 0..0.60 → curve param 0.00..0.55 (linear cruise)
-  //   raw 0.60..1.00 → curve param 0.55..1.00 (pow-2 accel)
+  //   raw 0..0.55 → curve param 0.00..0.50 (linear cruise)
+  //   raw 0.55..1.00 → curve param 0.50..1.00 (pow-3 accel)
   //
   // With 5 control points (segments of 0.25 curve param each):
   //   - Near-pass sits at curve param 0.75 (point 3 of 4 segments)
-  //   - Under pow-2 accel that's reached at raw ≈ 0.91
-  //   - Exit at raw 1.0 → 0.09 × 7.5s ≈ 0.68s from near-pass to gone.
+  //   - Under pow-3 accel that's reached at raw ≈ 0.92
+  //   - Exit at raw 1.0 → 0.08 × 5.5s ≈ 0.44s from near-pass to gone.
   //
-  // Constants named ACCEL_START / ACCEL_CURVE_AT_START so you can
-  // dial the "when does it commit" moment without rewriting the math.
-  const ACCEL_START = 0.60;
-  const ACCEL_CURVE_AT_START = 0.55;
+  // Tuning pow-3 (vs pow-2 previously) + closer exit (z=6.6 vs 7) +
+  // shorter duration (5–6.5s vs 6.5–8s) all stack to make the "big
+  // on screen" moment briefer and more startling — user wants a
+  // flash, not a reveal.
+  const ACCEL_START = 0.55;
+  const ACCEL_CURVE_AT_START = 0.50;
   const curveParamForTime = (raw: number): number => {
     if (raw < ACCEL_START) {
       // Linear cruise
       return (raw / ACCEL_START) * ACCEL_CURVE_AT_START;
     }
-    // Quadratic accelerate for the commit
+    // Cubic accelerate for the commit — harder than pow-2; more of
+    // the post-pause curve lives in the final sprint.
     const local = (raw - ACCEL_START) / (1 - ACCEL_START);
-    const accel = local * local;
+    const accel = local * local * local;
     return ACCEL_CURVE_AT_START + accel * (1 - ACCEL_CURVE_AT_START);
   };
 
@@ -2194,7 +2193,7 @@ function RavenFlyBy() {
     if (!s.flying && t >= s.nextFlightAt) {
       s.flying = true;
       s.startTime = t;
-      s.duration = 6.5 + Math.random() * 1.5; // 6.5–8s per flight
+      s.duration = 5 + Math.random() * 1.5; // 5–6.5s per flight — strike-like
       s.curve = generatePath();
       if (flapAction.current) {
         flapAction.current.play();
@@ -2221,14 +2220,14 @@ function RavenFlyBy() {
     const p = curveParamForTime(raw);
 
     // Wingbeat: steady cruise at 0.5× through the approach, ramps up
-    // quadratically to 1.2× during the commit. No V-shaped pause
-    // modulation (no hover anymore).
+    // cubically to 1.8× during the commit — urgent downstroke as the
+    // body rockets toward the lens, matches the pow-3 position curve.
     if (flapAction.current) {
       if (raw < ACCEL_START) {
         flapAction.current.timeScale = 0.5;
       } else {
         const local = (raw - ACCEL_START) / (1 - ACCEL_START);
-        flapAction.current.timeScale = 0.5 + 0.7 * local * local;
+        flapAction.current.timeScale = 0.5 + 1.3 * local * local * local;
       }
     }
 
@@ -2342,6 +2341,12 @@ class Boid {
   maxSteerForce = 0.0024;
   goal: THREE.Vector3 | null = null;
   avoidWalls = true;
+  // Per-frame goal pull strength. Default matches the original pen
+  // (0.0005) — gentle enough that cohesion/alignment still shape
+  // flock character. Flock raises this to ~0.002 during hide
+  // transits so the group gets offscreen quickly instead of
+  // meandering across frame.
+  goalMultiplier = 0.0005;
 
   run(flock: Boid[]) {
     if (this.avoidWalls) {
@@ -2445,7 +2450,7 @@ class Boid {
       const steer = new THREE.Vector3()
         .copy(this.goal)
         .sub(this.position)
-        .multiplyScalar(0.0005);
+        .multiplyScalar(this.goalMultiplier);
       this.accel.add(steer);
     }
     this.accel.add(this.alignment(flock));
@@ -2587,10 +2592,16 @@ function Flock() {
   const meshRefs = useRef<(THREE.Mesh | null)[]>([]);
 
   // Roaming goal — a waypoint the whole flock slowly steers toward.
-  // Two pools of waypoints, strictly alternating: the flock hides
-  // off-frame for ~18s, swoops through the visible area for ~5s,
-  // hides again. Hidden time is 70–78% overall, so each visible
-  // pass feels like an event rather than continuous ambient motion.
+  // Two pools of waypoints. Hide dominates — flock is offscreen ~65%
+  // of the time, so each reappearance reads as an event instead of
+  // ambient traffic.
+  //
+  // Cadence:
+  //   hide dwell 25–35s  (randomised per visit)
+  //   show dwell 2–4s    (randomised per visit)
+  //   35% chance hide→hide instead of strict alternation (sometimes
+  //     the flock stays invisible for ~60s — the "something is
+  //     watching" beat without the reveal).
   //
   // Hideouts sit just inside the box edges (wall-avoid prevents
   // reaching them exactly, but d=1–2 from the wall is enough to
@@ -2598,84 +2609,105 @@ function Flock() {
   // the visible stage area — the flock passes THROUGH frame on its
   // way to each show waypoint, then transits back out again.
   //
+  // During hide transits, goalMultiplier is boosted from 0.0005 to
+  // 0.002 — the flock commits to leaving frame instead of meandering
+  // across it. During show, it drops back so the flock lingers in
+  // the visible area rather than rocketing straight through.
+  //
   // Waypoints are in WORLD coords; converted to local by subtracting
   // the <group> position.
   const GROUP_POS = useMemo(() => new THREE.Vector3(0, 5, -3), []);
   const { hideouts, shows } = useMemo(() => {
-    const toLocal = (wx: number, wy: number, wz: number, dwell: number) => ({
+    const toLocal = (wx: number, wy: number, wz: number) => ({
       local: new THREE.Vector3(wx - GROUP_POS.x, wy - GROUP_POS.y, wz - GROUP_POS.z),
-      dwell,
     });
     return {
-      // 6 hideouts, 18s each. All inside the new tighter flock box
-      // (x ∈ [-10, 10], z ∈ [-15, 9] world) AND reliably outside the
-      // fov 55° frustum on BOTH portrait and landscape viewports:
+      // 10 hideouts, varied enough that the flock genuinely feels
+      // like it could be anywhere off-frame. All inside the tighter
+      // flock box (x ∈ [-10, 10], z ∈ [-15, 9] world) AND reliably
+      // outside the fov 55° frustum on BOTH portrait and landscape:
       //   - z > camera.z (=6) puts the bird behind the camera —
       //     the most robust offscreen test, works any aspect.
-      //   - |x| = 10 at z=-3 (distance 9 from camera): landscape
-      //     horizontal half-width ≈ 7.5 → 2.5m margin outside frame.
-      // Previously hideouts lived at |x|=12 z=-3 and z=10–11 which
-      // put them 2–3m beyond the curtains; the flock would settle
-      // there and the box wall-avoid would fight cohesion — ugly,
-      // visibly-clipping behaviour. Pulled inward to |x|=9.5 max and
-      // behind-camera z=7 max so everything stays inside the box.
+      //   - |x| ≥ 9 at z=-3 (distance 9 from camera): landscape
+      //     horizontal half-width ≈ 7.5 → 1.5m margin outside frame.
+      //   - y very low (~1) or high (~8) at mid-z often falls out
+      //     of the vertical frustum too, adding another axis.
+      // Dwell is randomised at pick time (not stored here) — the
+      // same waypoint may be held 25s one visit and 35s the next,
+      // making cadence itself unpredictable.
       hideouts: [
-        toLocal(0, 8, 7, 18),      // behind camera, high center
-        toLocal(0, 1, 7, 18),      // behind camera, low center
-        toLocal(8, 5, 7, 18),      // behind camera, slight right
-        toLocal(-8, 5, 7, 18),     // behind camera, slight left
-        toLocal(9.5, 8, -3, 18),   // far-right, high (beyond lateral frustum)
-        toLocal(-9.5, 8, -3, 18),  // far-left, high
+        toLocal(0, 8, 7),          // behind camera, high center
+        toLocal(0, 1, 7),          // behind camera, low center
+        toLocal(8, 5, 7),          // behind camera, slight right
+        toLocal(-8, 5, 7),         // behind camera, slight left
+        toLocal(4, 8, 7),          // behind camera, upper-right (new)
+        toLocal(-4, 8, 7),         // behind camera, upper-left (new)
+        toLocal(9.5, 8, -3),       // far-right wall, high
+        toLocal(-9.5, 8, -3),      // far-left wall, high
+        toLocal(9.5, 3, 3),        // far-right wall, mid (new)
+        toLocal(-9.5, 3, 3),       // far-left wall, mid (new)
       ],
-      // 5 shows, 5s each — clearly inside the visible area. This is
-      // where the user's eye is rewarded. Transit from any hideout
-      // to any show passes the flock through the camera frame,
-      // which IS the spectacle.
-      //
-      // Previous deep-back shows at (±4, 7, -16) literally sat on
-      // the back curtain surface AND inside the stage aperture
-      // (|x|<6.5, y∈[1.5, 7.5]) — birds would be pulled behind the
-      // closed stage curtain, i.e., into the void. Moved them to
-      // x=±8 (outside the stage aperture, in the side-of-stage
-      // region where back curtain is solid wall not drape) and
-      // z=-13 (3m in front of back curtain).
+      // 6 shows — brief appearances inside the visible stage area.
+      // More variety than before so no two consecutive shows feel
+      // identical. Transit from any hideout to any show passes the
+      // flock through the camera frame, which IS the spectacle.
       shows: [
-        toLocal(-4, 5, 1, 5),      // dive over Venus
-        toLocal(0, 4, -9, 5),      // stage-front sweep (1.75m in front of closed curtain)
-        toLocal(3, 3, -5, 5),      // mid-room center dive
-        toLocal(8, 7, -13, 5),     // deep back-right, side-of-stage
-        toLocal(-8, 7, -13, 5),    // deep back-left, side-of-stage
+        toLocal(-4, 5, 1),         // dive over Venus
+        toLocal(0, 4, -9),         // stage-front sweep (1.75m in front of closed curtain)
+        toLocal(3, 3, -5),         // mid-room center dive
+        toLocal(8, 7, -13),        // deep back-right, side-of-stage
+        toLocal(-8, 7, -13),       // deep back-left, side-of-stage
+        toLocal(-2, 3, -2),        // low mid-left pass (new)
       ],
     };
   }, [GROUP_POS]);
 
-  // Start on a show so the opening 5s rewards the viewer immediately
-  // (an 18s hide-transit at t=0 would look like nothing is happening).
-  // The next cycle flips to hide, then show, then hide — so across
-  // time the ~18:5 hide:show ratio still holds.
+  // Start on a show so the opening few seconds rewards the viewer
+  // immediately. After that, the phase logic below decides when
+  // next to hide/reveal — no strict alternation, so cadence stays
+  // unpredictable.
   const goal = useRef(new THREE.Vector3().copy(shows[0].local));
-  const current = useRef(shows[0]);
+  const currentDwell = useRef(3); // opening show is short
   const phase = useRef<"hide" | "show">("show");
   const waypointStart = useRef(0);
 
   useFrame(({ clock }) => {
     const t = clock.elapsedTime;
-    if (t - waypointStart.current > current.current.dwell) {
+    if (t - waypointStart.current > currentDwell.current) {
       waypointStart.current = t;
-      // Strict alternation: hide → show → hide → show …
-      // so the viewer gets a predictable spectacle cadence.
-      phase.current = phase.current === "hide" ? "show" : "hide";
+      // Non-strict phase selection:
+      //   from show → always hide (flock disappears after reveal)
+      //   from hide → 65% chance show, 35% chance another hide
+      //     (sometimes two hide waypoints in a row, ~60s invisible)
+      // Dwell is randomised per pick: hide 25–35s, show 2–4s.
+      if (phase.current === "show") {
+        phase.current = "hide";
+      } else {
+        phase.current = Math.random() < 0.65 ? "show" : "hide";
+      }
       const pool = phase.current === "hide" ? hideouts : shows;
       const next = pool[Math.floor(Math.random() * pool.length)];
-      current.current = next;
+      currentDwell.current =
+        phase.current === "hide"
+          ? 25 + Math.random() * 10 // 25–35s offscreen
+          : 2 + Math.random() * 2;  // 2–4s onscreen
       goal.current.copy(next.local);
     }
+
+    // Stronger goal pull while hiding so the flock commits to leaving
+    // the frame instead of drifting across it. While showing, drop
+    // back to the original gentle value so the flock lingers in the
+    // visible area rather than missile-ing through it.
+    const hideMul = 0.002;
+    const showMul = 0.0005;
+    const activeMul = phase.current === "hide" ? hideMul : showMul;
 
     for (let i = 0; i < boids.length; i++) {
       const b = boids[i];
       const mesh = meshRefs.current[i];
       if (!mesh) continue;
       b.goal = goal.current;
+      b.goalMultiplier = activeMul;
       b.run(boids);
 
       mesh.position.copy(b.position);
