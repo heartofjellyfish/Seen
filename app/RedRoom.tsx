@@ -509,11 +509,11 @@ function CurtainPanel({
   );
 }
 
-// ————— Festoon — grand drape valance (two-half swag) —————
-// Classical "grand drape" top valance: two symmetric swag panels that
-// meet at a central gold rosette. Each half is a catenary-drooping
-// piece with a scalloped lower lip, so the proscenium reads as an
-// ornamental draped theatre top rather than a flat strip.
+// ————— Festoon — Austrian festoon valance —————
+// Three cascading horizontal rows of scallops stacked so each row sags
+// between vertical tie-points. Gold tassels hang at the bottom-row ties
+// to mark the gathering. Baroque / ornate — the silhouette reads as a
+// gathered Austrian festoon, not a flat strip.
 
 // Procedural velvet pleat map: vertical bands of dark/light to simulate
 // the shading of draped fabric folds. Used as `map` on the swag material
@@ -559,44 +559,34 @@ function makeVelvetPleatTexture(): THREE.CanvasTexture {
   return tex;
 }
 
-function makeSwagHalfGeometry(
-  halfWidth: number,
-  topHeight: number,
-  centerHigh: number,    // how high the inner (center) edge is below top
-  outerDrop: number,     // how far the outer edge hangs
-  subScallops: number,
-  scallopDepth: number,
-  mirror: boolean,
-): THREE.BufferGeometry {
-  // Base coords: x=0 is the inner (center) edge, x=halfWidth is outer.
+// One horizontal row of scallops — straight top edge, scalloped bottom.
+function makeAustrianRowGeometry({
+  halfWidth,
+  topHeight,
+  scallopDepth,
+  nScallops,
+}: {
+  halfWidth: number;
+  topHeight: number;
+  scallopDepth: number;
+  nScallops: number;
+}): THREE.BufferGeometry {
   const shape = new THREE.Shape();
   const topY = topHeight;
-  const innerBottomY = -centerHigh;
-  const outerBottomY = -outerDrop;
+  const baseY = 0;
+  const scallopW = (halfWidth * 2) / nScallops;
 
-  shape.moveTo(0, topY);
+  shape.moveTo(-halfWidth, topY);
   shape.lineTo(halfWidth, topY);
-  shape.lineTo(halfWidth, outerBottomY);
-  // Scalloped bottom sweeping outer → inner, atop a catenary sag
-  const curveY = (t: number) =>
-    outerBottomY + (innerBottomY - outerBottomY) * t +
-    // subtle overall sag in the middle of the half
-    Math.sin(t * Math.PI) * -0.1;
-  const subW = halfWidth / subScallops;
-  for (let i = 0; i < subScallops; i++) {
-    const endX = halfWidth - subW * (i + 1);
-    const startT = i / subScallops;
-    const endT = (i + 1) / subScallops;
-    const ctrlX = halfWidth - subW * (i + 0.5);
-    const ctrlY = (curveY(startT) + curveY(endT)) / 2 - scallopDepth;
-    shape.quadraticCurveTo(ctrlX, ctrlY, endX, curveY(endT));
+  shape.lineTo(halfWidth, baseY);
+  for (let i = 0; i < nScallops; i++) {
+    const endX = halfWidth - scallopW * (i + 1);
+    const ctrlX = halfWidth - scallopW * (i + 0.5);
+    shape.quadraticCurveTo(ctrlX, baseY - scallopDepth, endX, baseY);
   }
-  shape.lineTo(0, topY);
+  shape.lineTo(-halfWidth, topY);
   shape.closePath();
-
-  const geo = new THREE.ShapeGeometry(shape, 64);
-  if (mirror) geo.scale(-1, 1, 1);
-  return geo;
+  return new THREE.ShapeGeometry(shape, 64);
 }
 
 function Festoon({
@@ -607,72 +597,99 @@ function Festoon({
   position: [number, number, number];
 }) {
   const halfW = width / 2;
-  const geoLeft  = useMemo(() => makeSwagHalfGeometry(halfW, 0.15, 0.50, 1.25, 5, 0.20, true),  [halfW]);
-  const geoRight = useMemo(() => makeSwagHalfGeometry(halfW, 0.15, 0.50, 1.25, 5, 0.20, false), [halfW]);
+  const N_SCALLOPS = 7;
 
-  // Shared pleat-shading texture — same instance for both halves.
+  // Three cascading scallop rows — bottom has the biggest dip, top the
+  // smallest. Each row sits higher and slightly closer to camera so
+  // later rows render in front of earlier ones without z-fighting.
+  const rows = useMemo(
+    () => [
+      { y: 0.00, depth: 0.55, topH: 0.18, z: 0.00 }, // bottom (largest)
+      { y: 0.30, depth: 0.45, topH: 0.18, z: 0.02 }, // middle
+      { y: 0.58, depth: 0.35, topH: 0.18, z: 0.04 }, // top (smallest)
+    ],
+    [],
+  );
+
+  const rowGeos = useMemo(
+    () =>
+      rows.map((r) =>
+        makeAustrianRowGeometry({
+          halfWidth: halfW,
+          topHeight: r.topH,
+          scallopDepth: r.depth,
+          nScallops: N_SCALLOPS,
+        }),
+      ),
+    [halfW, rows],
+  );
+
   const pleatTex = useMemo(() => {
     const t = makeVelvetPleatTexture();
-    // Planar UVs from ShapeGeometry map 1:1 to world coords, so we
-    // repeat the pleat pattern a few times across the width.
-    t.wrapS = THREE.RepeatWrapping;
-    t.wrapT = THREE.ClampToEdgeWrapping;
-    t.repeat.set(2, 1);
+    t.repeat.set(4, 1); // finer pleat density across the width
     return t;
   }, []);
 
+  // Tie-point X positions between scallops of the bottom row — 6
+  // interior ties for 7 scallops. Tassels hang here.
+  const scallopW = width / N_SCALLOPS;
+  const tiePositions = useMemo(
+    () =>
+      Array.from(
+        { length: N_SCALLOPS - 1 },
+        (_, i) => -halfW + scallopW * (i + 1),
+      ),
+    [halfW, scallopW],
+  );
+
   return (
     <group position={position}>
-      {/* Left half of the grand drape. Dark wine base. Emissive kept
-          very low so the upper corners stay properly shadowed (nothing
-          really lights this area). The pleat texture gives the tonal
-          variation that reads as folded velvet. */}
-      <mesh geometry={geoLeft} castShadow>
-        <meshStandardMaterial
-          map={pleatTex}
-          color="#5a0e0e"
-          roughness={0.92}
-          metalness={0}
-          emissive="#200303"
-          emissiveIntensity={0.12}
-          side={THREE.DoubleSide}
-        />
-      </mesh>
-      {/* Right half */}
-      <mesh geometry={geoRight} castShadow>
-        <meshStandardMaterial
-          map={pleatTex}
-          color="#5a0e0e"
-          roughness={0.92}
-          metalness={0}
-          emissive="#200303"
-          emissiveIntensity={0.12}
-          side={THREE.DoubleSide}
-        />
-      </mesh>
+      {/* Three scallop rows, back to front. Emissive moderate so rows
+          are visible but still respond to what little light exists. */}
+      {rows.map((r, i) => (
+        <mesh key={i} geometry={rowGeos[i]} position={[0, r.y, r.z]} castShadow>
+          <meshStandardMaterial
+            map={pleatTex}
+            color="#6a1212"
+            roughness={0.90}
+            metalness={0}
+            emissive="#2a0808"
+            emissiveIntensity={0.35}
+            side={THREE.DoubleSide}
+          />
+        </mesh>
+      ))}
 
-      {/* Central gold rosette where the two halves tie together */}
-      <mesh position={[0, -0.42, 0.04]} castShadow>
-        <sphereGeometry args={[0.18, 20, 14]} />
-        <meshStandardMaterial
-          color="#8e6a24"
-          roughness={0.45}
-          metalness={0.8}
-          emissive="#2a1a06"
-          emissiveIntensity={0.18}
-        />
-      </mesh>
-      {/* Tassel hanging below the rosette */}
-      <mesh position={[0, -0.66, 0.04]} castShadow>
-        <coneGeometry args={[0.07, 0.28, 14]} />
-        <meshStandardMaterial
-          color="#7a5018"
-          roughness={0.6}
-          metalness={0.55}
-          emissive="#1a1006"
-          emissiveIntensity={0.15}
-        />
-      </mesh>
+      {/* Gold bead + tassel at each tie-point of the bottom row —
+          the "gathering" markers that give Austrian festoons their
+          name. */}
+      {tiePositions.map((x, i) => (
+        <group
+          key={`tassel-${i}`}
+          position={[x, rows[0].y + 0.02, rows[0].z + 0.02]}
+        >
+          <mesh castShadow>
+            <sphereGeometry args={[0.07, 12, 10]} />
+            <meshStandardMaterial
+              color="#8e6a24"
+              roughness={0.45}
+              metalness={0.8}
+              emissive="#2a1a06"
+              emissiveIntensity={0.28}
+            />
+          </mesh>
+          <mesh position={[0, -0.14, 0]} castShadow>
+            <coneGeometry args={[0.05, 0.22, 12]} />
+            <meshStandardMaterial
+              color="#7a5018"
+              roughness={0.6}
+              metalness={0.55}
+              emissive="#1a1006"
+              emissiveIntensity={0.22}
+            />
+          </mesh>
+        </group>
+      ))}
     </group>
   );
 }
