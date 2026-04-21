@@ -13,10 +13,8 @@ import {
 import {
   ChromaticAberration,
   EffectComposer,
-  Noise,
   Vignette,
 } from "@react-three/postprocessing";
-import { BlendFunction } from "postprocessing";
 import { RectAreaLightUniformsLib } from "three/examples/jsm/lights/RectAreaLightUniformsLib.js";
 import * as THREE from "three";
 
@@ -1157,7 +1155,7 @@ function AltarSpot() {
       decay={1.4}
       color="#f2cc86"
       castShadow
-      shadow-mapSize={[1024, 1024]}
+      shadow-mapSize={[512, 512]}
     >
       <object3D position={[0, 1.5, -13]} attach="target" />
     </spotLight>
@@ -1694,16 +1692,16 @@ function Walker() {
 // no visible fixture geometry — the curtain fabric is the source.
 
 function WallCurtainLights() {
+  // Perf: RectAreaLight is the most expensive light type in Three.js.
+  // Cut from 4 to 2 (dropped the far-stage pair at z=-11.5). Remaining
+  // two are bumped from intensity 2 → 2.8 to roughly match the prior
+  // total brightness on the side wall curtains.
   return (
     <group>
-      {/* Left wall — near stage */}
-      <rectAreaLight position={[-10.5, 3.2, -11.5]} rotation={[0,  Math.PI / 2, 0]} width={3} height={5} color="#e8960a" intensity={2} />
-      {/* Left wall — second block (higher intensity to offset missing stage spill) */}
-      <rectAreaLight position={[-10.5, 3.2, -7.0]} rotation={[0,  Math.PI / 2, 0]} width={3} height={5} color="#e8960a" intensity={2} />
-      {/* Right wall — near stage */}
-      <rectAreaLight position={[10.5,  3.2, -11.5]} rotation={[0, -Math.PI / 2, 0]} width={3} height={5} color="#e8960a" intensity={2} />
-      {/* Right wall — second block (higher intensity to offset missing stage spill) */}
-      <rectAreaLight position={[10.5,  3.2, -7.0]} rotation={[0, -Math.PI / 2, 0]} width={3} height={5} color="#e8960a" intensity={2} />
+      {/* Left wall — front block */}
+      <rectAreaLight position={[-10.5, 3.2, -7.0]} rotation={[0,  Math.PI / 2, 0]} width={3} height={5} color="#e8960a" intensity={2.8} />
+      {/* Right wall — front block */}
+      <rectAreaLight position={[10.5,  3.2, -7.0]} rotation={[0, -Math.PI / 2, 0]} width={3} height={5} color="#e8960a" intensity={2.8} />
     </group>
   );
 }
@@ -2182,19 +2180,14 @@ export function RedRoom() {
         {/* Dev-only FPS panel (top-left). Remove before prod. */}
         <Stats />
 
-        {/* Post-processing — texture + focus layer. No brightening:
-            Vignette darkens corners, ChromaticAberration adds a subtle
-            RGB shift at edges (vintage lens feel), Noise is film grain. */}
+        {/* Post-processing — kept lean for perf: CA for vintage lens
+            feel, Vignette for frame darkness. Noise (film grain) was
+            dropped as part of the perf cut pass. */}
         <EffectComposer>
           <ChromaticAberration
             offset={new THREE.Vector2(0.0008, 0.0008)}
             radialModulation={false}
             modulationOffset={0}
-          />
-          <Noise
-            premultiply
-            blendFunction={BlendFunction.SOFT_LIGHT}
-            opacity={0.35}
           />
           <Vignette offset={0.35} darkness={0.55} eskil={false} />
         </EffectComposer>
