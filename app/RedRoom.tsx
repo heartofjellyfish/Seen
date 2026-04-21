@@ -2687,6 +2687,63 @@ function Flock() {
     };
   }, [GROUP_POS]);
 
+  // Partition the pools by LEFT / RIGHT of centre for alternation.
+  // Hideouts with x=0 go into both pools (neutral — can follow either
+  // side without visually reading as "same side").
+  const showSrcL = useMemo(() => shows.filter((s) => s.local.x < 0), [shows]);
+  const showSrcR = useMemo(() => shows.filter((s) => s.local.x > 0), [shows]);
+  const hideSrcL = useMemo(() => hideouts.filter((h) => h.local.x <= 0), [hideouts]);
+  const hideSrcR = useMemo(() => hideouts.filter((h) => h.local.x >= 0), [hideouts]);
+
+  // Shuffled "bag" queues per (phase, side). Each bag is drained one
+  // pick at a time and refilled with a fresh Fisher-Yates shuffle of
+  // its source when empty. Guarantees every waypoint on a side is
+  // used before any repeat — no more "right-right-right" streaks
+  // that random sampling creates 3% of the time per 5 picks.
+  type WP = { local: THREE.Vector3 };
+  const showBagL = useRef<WP[]>([]);
+  const showBagR = useRef<WP[]>([]);
+  const hideBagL = useRef<WP[]>([]);
+  const hideBagR = useRef<WP[]>([]);
+
+  // Track last side per phase so we can force alternation. Init both
+  // to "R" so the first show pick lands on the LEFT (matches the
+  // opening goal on shows[0] which is a near-left show).
+  const lastShowSide = useRef<"L" | "R">("R");
+  const lastHideSide = useRef<"L" | "R">("R");
+
+  // Fisher-Yates in place.
+  const shuffleAndRefill = (bag: React.MutableRefObject<WP[]>, source: WP[]) => {
+    const copy = [...source];
+    for (let i = copy.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [copy[i], copy[j]] = [copy[j], copy[i]];
+    }
+    bag.current = copy;
+  };
+
+  // Side-alternating bag pick. 85% flips side, 15% stays — the small
+  // chance of same-side preserves a bit of "unpredictable freedom"
+  // (otherwise strict L/R/L/R feels metronomic).
+  const pickAlternating = (
+    bagL: React.MutableRefObject<WP[]>,
+    bagR: React.MutableRefObject<WP[]>,
+    srcL: WP[],
+    srcR: WP[],
+    lastSide: React.MutableRefObject<"L" | "R">,
+  ): WP => {
+    const flip = Math.random() < 0.85;
+    const side: "L" | "R" = flip
+      ? lastSide.current === "L" ? "R" : "L"
+      : lastSide.current;
+    const bag = side === "L" ? bagL : bagR;
+    const source = side === "L" ? srcL : srcR;
+    if (bag.current.length === 0) shuffleAndRefill(bag, source);
+    const next = bag.current.shift()!;
+    lastSide.current = side;
+    return next;
+  };
+
   // Start on a show so the opening few seconds rewards the viewer
   // immediately. After that, the phase logic below decides when
   // next to hide/reveal — no strict alternation, so cadence stays
@@ -2711,8 +2768,14 @@ function Flock() {
       } else {
         phase.current = Math.random() < 0.85 ? "show" : "hide";
       }
-      const pool = phase.current === "hide" ? hideouts : shows;
-      const next = pool[Math.floor(Math.random() * pool.length)];
+      // Waypoint pick uses side-alternating bag (see pickAlternating
+      // above) — guarantees no consecutive same-side streaks, no
+      // immediate repeats of the same waypoint, and a full tour of
+      // every point on a side before any repeats within that side.
+      const next =
+        phase.current === "hide"
+          ? pickAlternating(hideBagL, hideBagR, hideSrcL, hideSrcR, lastHideSide)
+          : pickAlternating(showBagL, showBagR, showSrcL, showSrcR, lastShowSide);
       currentDwell.current =
         phase.current === "hide"
           ? 12 + Math.random() * 6 // 12–18s offscreen
