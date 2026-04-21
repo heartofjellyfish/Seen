@@ -1692,16 +1692,16 @@ function Walker() {
 // no visible fixture geometry — the curtain fabric is the source.
 
 function WallCurtainLights() {
-  // Perf: RectAreaLight is the most expensive light type in Three.js.
-  // Cut from 4 to 2 (dropped the far-stage pair at z=-11.5). Remaining
-  // two are bumped from intensity 2 → 2.8 to roughly match the prior
-  // total brightness on the side wall curtains.
   return (
     <group>
-      {/* Left wall — front block */}
-      <rectAreaLight position={[-10.5, 3.2, -7.0]} rotation={[0,  Math.PI / 2, 0]} width={3} height={5} color="#e8960a" intensity={2.8} />
-      {/* Right wall — front block */}
-      <rectAreaLight position={[10.5,  3.2, -7.0]} rotation={[0, -Math.PI / 2, 0]} width={3} height={5} color="#e8960a" intensity={2.8} />
+      {/* Left wall — near stage */}
+      <rectAreaLight position={[-10.5, 3.2, -11.5]} rotation={[0,  Math.PI / 2, 0]} width={3} height={5} color="#e8960a" intensity={2} />
+      {/* Left wall — second block */}
+      <rectAreaLight position={[-10.5, 3.2, -7.0]} rotation={[0,  Math.PI / 2, 0]} width={3} height={5} color="#e8960a" intensity={2} />
+      {/* Right wall — near stage */}
+      <rectAreaLight position={[10.5,  3.2, -11.5]} rotation={[0, -Math.PI / 2, 0]} width={3} height={5} color="#e8960a" intensity={2} />
+      {/* Right wall — second block */}
+      <rectAreaLight position={[10.5,  3.2, -7.0]} rotation={[0, -Math.PI / 2, 0]} width={3} height={5} color="#e8960a" intensity={2} />
     </group>
   );
 }
