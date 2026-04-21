@@ -1922,34 +1922,30 @@ function WallCurtainLights() {
 // sheen) — NOT replaced, because a fresh MeshStandardMaterial lacks
 // the morph-target compile-time uniforms and the wings render wrong.
 //
-// Flight choreography (this is what earlier versions got wrong):
-//   1. Each flight uses one of three HAND-AUTHORED routes — not
-//      random wander waypoints. Old behaviour used 4 random waypoints
-//      which produced visibly aimless meanders. Every waypoint now
-//      means something.
-//   2. Each route has a built-in HOVER/PAUSE moment ~55% through
-//      where the bird slows to ~15% speed for ~1.5s, wings spread,
-//      visible and still — the "be seen" beat that makes it a
-//      spectacle rather than a bird.
-//   3. After the pause, QUADRATIC acceleration (local²) toward the
-//      near-pass — bird grows huge in the frame inside the last ~1s
-//      and is gone within 0.3s of the closest approach. No lingering
-//      on-camera; impact is the change-of-scale, not the duration.
-//   4. Near-pass distances are tight: 1.0m (EMERGE), 0.85m (DIVE) —
-//      bird covers 70–85% of frame height at the pass, with camera
-//      at fov 55° vertical. LATERAL keeps its distance (~10m) because
-//      it's an "ambient surveillance" pass, not a strike.
-//   5. Wingbeat timeScale modulates with the curve — slow during
-//      approach (0.4×), minimal during pause (0.18×, near-glide),
-//      then quadratic ramp up to 1.8× during commit, peaking at exit.
-//      Reads as the bird "gearing up → striking" not steady flapping.
+// Flight choreography (current design — the third iteration):
+//   1. Monotonic back-to-front. Z decreases steadily across the
+//      whole curve; the only arc is a gentle one in x and y, never
+//      a reversal. Corvids don't hover, loop, or detour — this was
+//      the user's third round of feedback and is a hard rule now.
+//   2. Two routes only: LEVEL_GLIDE (most common, eye-level sweep
+//      with a small arc) and DESCENDING_ATTACK (rarer, enters high
+//      and descends onto the lens). Lateral side-to-side was dropped
+//      because it fights the back-to-front axis.
+//   3. Natural easing: near-linear for the first ~60% of the flight,
+//      quadratic acceleration through the last ~40%. The quadratic
+//      tail is what makes the near-pass feel like a strike without
+//      needing an artificial hover beat. Bird grows from small to
+//      huge over the final ~2s and is gone within ~0.6s of closest
+//      approach.
+//   4. Near-pass distances stay tight (≤1m from lens) so the scale
+//      shift reads as a spectacle even without the earlier "pause
+//      to be seen" mechanism.
+//   5. Wingbeat: steady 0.5× throughout the approach (raven cruise),
+//      ramping up to 1.2× during the final commit. No V-shape pause
+//      modulation anymore.
 //
-// Three routes: stage-curtain emergence (most common), lateral
-// sweep past eye level, overhead dive. Every path was laid out
-// against camera at (0, 1.65, 6) fov 55° looking at (0, 3, -13).
-//
-// Tuning constants are all named ROUTE_*, PAUSE_*, SPEED_* below —
-// grep for those to adjust.
+// Layout reference: camera at (0, 1.65, 6) fov 55° looking at
+// (0, 3, -13). All coordinates are world-space.
 
 function RavenFlyBy() {
   const groupRef = useRef<THREE.Group>(null);
@@ -2024,163 +2020,112 @@ function RavenFlyBy() {
   const posVec = useRef(new THREE.Vector3()).current;
   const tanVec = useRef(new THREE.Vector3()).current;
   const lookVec = useRef(new THREE.Vector3()).current;
-  const lastGoodLook = useRef(new THREE.Vector3(0, 0, 6)); // persists between frames for pause-stability
+  const lastGoodLook = useRef(new THREE.Vector3(0, 0, 6));
 
   const state = useRef({
     flying: false,
     startTime: 0,
-    duration: 10.0, // tight — no aimless wandering
+    duration: 7.5,
     nextFlightAt: 10 + Math.random() * 10, // first appearance 10–20s in
     curve: null as THREE.CatmullRomCurve3 | null,
-    pauseCenter: 0.55, // where on the curve the hover beat sits
   });
 
-  // Three hand-authored routes. Each is a complete list of CatmullRom
-  // control points, placed deliberately so the curve tells a story:
-  //   entry → reveal → HOVER → dive → near-miss → exit past camera.
+  // Two hand-authored routes. Both are strictly back→front (z
+  // monotonically increases from ≈ -15 to ≈ +7) with only gentle
+  // arcs in x and y. Control points are spaced ~4m apart in z so
+  // the CatmullRom curve has enough samples for a smooth path but
+  // no opportunity to loop or reverse.
   //
-  // Slight randomisation on a few points (±0.3m) so repeat flights
+  // Small random jitter on non-critical points so repeat flights
   // aren't bit-identical, but the character of each route is fixed.
   type Route = {
     name: string;
-    pauseAt: number;            // curve parameter at hover point (0..1)
-    pts: () => THREE.Vector3[]; // 6–8 control points, hover included
+    pts: () => THREE.Vector3[];
   };
   const routes: Route[] = useMemo(() => {
-    const jitter = (v: number, amt = 0.3) => v + (Math.random() - 0.5) * 2 * amt;
+    const jitter = (v: number, amt = 0.3) =>
+      v + (Math.random() - 0.5) * 2 * amt;
     return [
       {
-        // ROUTE_EMERGE: appears out of the back curtain at stage level,
-        // crawls forward over the stage (barely moving for dramatic
-        // reveal), pauses in the middle of the carpet, then dives at
-        // the lens. The archetypal "something was behind the curtain
-        // all along" shot. Most common (weight 2× the others).
-        //
-        // Near-pass at z=5.0 is **1.0m from the lens** (camera at z=6).
-        // With the bird at ~0.7m longest dimension, that's ~70% of
-        // frame height at closest approach — dramatic, not subtle.
-        // Exit at z=6.8 is just 0.8m behind the camera so the bird
-        // vanishes within ~0.3s of the close-pass under the pow-2
-        // post-pause easing (see curveParamForTime below). No
-        // lingering.
-        name: "emerge",
-        pauseAt: 0.52,
-        pts: () => [
-          new THREE.Vector3(jitter(-0.8, 0.6), 2.4, -21.5), // behind curtain (invisible)
-          new THREE.Vector3(jitter(-0.3, 0.4), 2.5, -17),   // slipping through the curtain seam
-          new THREE.Vector3(jitter(0, 0.3), 2.6, -11),      // mid-stage, starts to be noticed
-          new THREE.Vector3(jitter(0, 0.2), 2.3, -5.5),     // HOVER: carpet front, wings out
-          new THREE.Vector3(jitter(0.2, 0.3), 2.0, -0.5),   // tips into dive (full commit)
-          new THREE.Vector3(jitter(0, 0.2), 1.75, 5.0),     // NEAR PASS — 1.0m from lens
-          new THREE.Vector3(jitter(0.4, 0.3), 2.2, 6.8),    // exit just behind camera
-        ],
-      },
-      {
-        // ROUTE_LATERAL: enters from one side wall at eye level,
-        // sweeps horizontally across the hall between the chairs and
-        // the stage. Hover happens dead centre. Chooses left→right or
-        // right→left randomly per flight. The "sees the audience"
-        // route — bird drifts across your field of view as if
-        // surveying.
-        name: "lateral",
-        pauseAt: 0.50,
+        // ROUTE_LEVEL_GLIDE: the default. Enters at eye-level from
+        // the back of the hall with a small horizontal offset, glides
+        // forward in a gentle sinuous arc (x drifts by ~1–2m over the
+        // flight, y drops a touch then pulls up at the exit), passes
+        // close to the lens at z=5, exits just behind. Feels like a
+        // raven sailing through on a straight line — no ambition, no
+        // hover, just crossing the room.
+        name: "level-glide",
         pts: () => {
-          const dir = Math.random() < 0.5 ? -1 : 1; // -1 = L→R, +1 = R→L
+          // Pick an entry side so the arc reads as deliberate instead
+          // of random. Enter ±2.5m off-axis, drift toward centre.
+          const side = Math.random() < 0.5 ? -1 : 1;
+          const entryX = jitter(2.5 * side, 0.6);
+          const midX = jitter(1.2 * side, 0.4);   // still biased but tightening
+          const nearX = jitter(0, 0.3);           // centred by the time it's at the lens
+          const exitX = jitter(-0.5 * side, 0.4); // drifts past centre at exit
           return [
-            new THREE.Vector3(-13 * dir, 3.0, jitter(-7, 1)),   // outside side wall (hidden)
-            new THREE.Vector3(-8 * dir, 2.9, jitter(-6, 0.8)),  // through invisible wall
-            new THREE.Vector3(-3 * dir, 2.7, jitter(-5, 0.5)),  // over the chairs
-            new THREE.Vector3(0, 2.5, -4.5),                    // HOVER: dead centre
-            new THREE.Vector3(3 * dir, 2.5, jitter(-3, 0.3)),
-            new THREE.Vector3(6 * dir, 2.7, jitter(-2, 0.4)),
-            new THREE.Vector3(13 * dir, 3.0, jitter(-1, 1)),    // exit through opposite wall
+            new THREE.Vector3(entryX, jitter(3.0, 0.3), -15), // entry high-back
+            new THREE.Vector3(midX, jitter(2.7, 0.2), -9),    // gentle descent
+            new THREE.Vector3(midX * 0.5, jitter(2.3, 0.2), -3), // level out
+            new THREE.Vector3(nearX, jitter(1.85, 0.1), 5),   // NEAR PASS (1.0m from lens)
+            new THREE.Vector3(exitX, jitter(2.4, 0.2), 7),    // exit just behind camera
           ];
         },
       },
       {
-        // ROUTE_DIVE: high emergence from the ceiling area at the
-        // back of the stage, nearly motionless hover at the apex,
-        // then a steep dive to a low pass near the carpet, pulls up
-        // past the lens. The "from on high" route — classic
-        // Hitchcock framing of a hostile bird.
-        // Near-pass at z=5.2, 0.85m from the lens — the closest of the
-        // three routes, since a dive naturally commits harder. Exit
-        // at z=7 is immediately behind camera so the bird snaps out.
-        name: "dive",
-        pauseAt: 0.30,
-        pts: () => [
-          new THREE.Vector3(jitter(0, 2), 7.5, -17),      // high + far back
-          new THREE.Vector3(jitter(0, 1.5), 7.2, -12),    // coasting
-          new THREE.Vector3(jitter(0, 0.6), 6.8, -8),     // HOVER: apex (weight tilts curve here via pauseAt=0.30)
-          new THREE.Vector3(jitter(0.5, 0.5), 4.5, -3),   // mid dive
-          new THREE.Vector3(jitter(0, 0.4), 2.2, 1.5),    // about to flatten out
-          new THREE.Vector3(jitter(0, 0.2), 1.7, 5.2),    // NEAR PASS — 0.85m from lens
-          new THREE.Vector3(jitter(-0.5, 0.4), 3.5, 7.0), // shoots past camera up
-        ],
+        // ROUTE_DESCENDING_ATTACK: rarer. Enters higher (y≈6) and
+        // drops steadily toward the lens. Same monotonic-z structure
+        // as LEVEL_GLIDE but with a bigger altitude delta and a
+        // closer near-pass. Reads as "spotted something, committing
+        // to a stoop" rather than a casual pass.
+        name: "descending",
+        pts: () => {
+          const side = Math.random() < 0.5 ? -1 : 1;
+          const entryX = jitter(2 * side, 0.5);
+          return [
+            new THREE.Vector3(entryX, jitter(6.0, 0.4), -14),    // entry high
+            new THREE.Vector3(entryX * 0.6, jitter(4.2, 0.3), -8), // descent
+            new THREE.Vector3(entryX * 0.2, jitter(2.5, 0.2), -2), // level out low
+            new THREE.Vector3(jitter(0, 0.2), jitter(1.7, 0.1), 5.2), // NEAR PASS — 0.85m from lens
+            new THREE.Vector3(jitter(-0.3 * side, 0.3), jitter(3.2, 0.3), 7), // pulls up past camera
+          ];
+        },
       },
     ];
   }, []);
 
   const generatePath = () => {
-    // Weight ROUTE_EMERGE 2× since it's the signature shot.
-    const roll = Math.random();
-    let chosen: Route;
-    if (roll < 0.5) chosen = routes[0];
-    else if (roll < 0.78) chosen = routes[1];
-    else chosen = routes[2];
-    const curve = new THREE.CatmullRomCurve3(chosen.pts());
-    // Slight tension tuning — default (0.5) gives gentle arcs; lower
-    // values would make corners sharper. Stick with default.
-    state.current.pauseCenter = chosen.pauseAt;
-    return curve;
+    // 70% level glide, 30% descending attack. The glide is the
+    // "signature" pass; the attack is the dramatic variant.
+    const chosen = Math.random() < 0.7 ? routes[0] : routes[1];
+    return new THREE.CatmullRomCurve3(chosen.pts());
   };
 
-  // Speed/easing profile. Maps raw time (0..1) to curve parameter
-  // (0..1), with a flat zone around the hover point.
+  // Easing: linear for the first 60% of flight (natural cruise),
+  // then quadratic acceleration for the last 40% so the bird grows
+  // into the lens and is gone within ~0.6s of the near-pass.
   //
-  //   0 .. pauseStart:  linear approach (covers first ~50% of curve)
-  //   pauseStart .. pauseEnd:  nearly flat — curve param advances ~8%
-  //                            over 18% of time. This is the visible
-  //                            stillness that sells the spectacle.
-  //   pauseEnd .. 1.0:  accelerating dive-and-exit (smoothstep^2)
+  //   raw 0..0.60 → curve param 0.00..0.55 (linear cruise)
+  //   raw 0.60..1.00 → curve param 0.55..1.00 (pow-2 accel)
   //
-  // PAUSE_WIDTH and PAUSE_ADVANCE together decide how much the bird
-  // moves during the hover (smaller = stiller).
-  const PAUSE_WIDTH = 0.18;
-  const PAUSE_ADVANCE = 0.08;
-  const curveParamForTime = (raw: number, center: number): number => {
-    const pauseStart = center - PAUSE_WIDTH / 2;
-    const pauseEnd = center + PAUSE_WIDTH / 2;
-
-    // Curve-param budget split so the whole duration maps to 0..1 end-to-end.
-    // Pre-pause covers [0, center - PAUSE_ADVANCE/2];
-    // pause covers [center - PAUSE_ADVANCE/2, center + PAUSE_ADVANCE/2];
-    // post-pause covers [center + PAUSE_ADVANCE/2, 1].
-    const preEnd = center - PAUSE_ADVANCE / 2;
-    const postStart = center + PAUSE_ADVANCE / 2;
-
-    if (raw < pauseStart) {
-      // Linear through the pre-pause section.
-      return (raw / pauseStart) * preEnd;
-    } else if (raw < pauseEnd) {
-      // Nearly flat — advance only PAUSE_ADVANCE of curve over PAUSE_WIDTH of time.
-      const local = (raw - pauseStart) / PAUSE_WIDTH;
-      // Subtle eased drift so it's not literally frozen.
-      const eased = local * local * (3 - 2 * local); // smoothstep
-      return preEnd + eased * PAUSE_ADVANCE;
-    } else {
-      // Aggressive quadratic acceleration: slow take-off from the
-      // hover, then violently fast through the near-pass and into
-      // exit. Concretely, local^2 means the bird covers only 25% of
-      // the remaining curve at the halfway-time mark, then sprints
-      // the last 75% in the final half. Under an 8s total flight
-      // this puts the near-pass moment around raw≈0.87 (mid-way
-      // through visual acceleration) and the exit at raw=1.0,
-      // collapsing the last 0.3s of flight into a huge→gone whoosh.
-      const local = (raw - pauseEnd) / (1 - pauseEnd);
-      const accel = local * local;
-      return postStart + accel * (1 - postStart);
+  // With 5 control points (segments of 0.25 curve param each):
+  //   - Near-pass sits at curve param 0.75 (point 3 of 4 segments)
+  //   - Under pow-2 accel that's reached at raw ≈ 0.91
+  //   - Exit at raw 1.0 → 0.09 × 7.5s ≈ 0.68s from near-pass to gone.
+  //
+  // Constants named ACCEL_START / ACCEL_CURVE_AT_START so you can
+  // dial the "when does it commit" moment without rewriting the math.
+  const ACCEL_START = 0.60;
+  const ACCEL_CURVE_AT_START = 0.55;
+  const curveParamForTime = (raw: number): number => {
+    if (raw < ACCEL_START) {
+      // Linear cruise
+      return (raw / ACCEL_START) * ACCEL_CURVE_AT_START;
     }
+    // Quadratic accelerate for the commit
+    const local = (raw - ACCEL_START) / (1 - ACCEL_START);
+    const accel = local * local;
+    return ACCEL_CURVE_AT_START + accel * (1 - ACCEL_CURVE_AT_START);
   };
 
   useFrame(({ clock }) => {
@@ -2191,7 +2136,7 @@ function RavenFlyBy() {
     if (!s.flying && t >= s.nextFlightAt) {
       s.flying = true;
       s.startTime = t;
-      s.duration = 7 + Math.random() * 1.5; // 7–8.5s per flight — tight, strike-like
+      s.duration = 6.5 + Math.random() * 1.5; // 6.5–8s per flight
       s.curve = generatePath();
       if (flapAction.current) {
         flapAction.current.play();
@@ -2207,38 +2152,26 @@ function RavenFlyBy() {
     const raw = (t - s.startTime) / s.duration;
     if (raw >= 1) {
       s.flying = false;
-      // Long dwell — flights should feel rare. Combined with 9–11s
-      // per flight, a raven is onscreen ~20% of the time.
+      // Long dwell so each flight feels rare. Combined with 6.5–8s
+      // per flight, a raven is onscreen ~15–20% of the time.
       s.nextFlightAt = t + 30 + Math.random() * 30; // 30–60s dwell
       groupRef.current.visible = false;
       s.curve = null;
       return;
     }
 
-    const p = curveParamForTime(raw, s.pauseCenter);
+    const p = curveParamForTime(raw);
 
-    // Wingbeat: slow during approach (0.4×), minimal during pause
-    // (0.18×, near-glide), then violently fast during commit (up to
-    // 1.8×) so the wings match the body's acceleration into the lens.
+    // Wingbeat: steady cruise at 0.5× through the approach, ramps up
+    // quadratically to 1.2× during the commit. No V-shaped pause
+    // modulation (no hover anymore).
     if (flapAction.current) {
-      const pauseStart = s.pauseCenter - PAUSE_WIDTH / 2;
-      const pauseEnd = s.pauseCenter + PAUSE_WIDTH / 2;
-      let timeScale: number;
-      if (raw < pauseStart) {
-        timeScale = 0.4;
-      } else if (raw < pauseEnd) {
-        // V-shape: 0.4 → 0.18 → 0.4 across the hover
-        const local = (raw - pauseStart) / PAUSE_WIDTH;
-        const v = Math.abs(local - 0.5) * 2;
-        timeScale = 0.18 + 0.22 * v;
+      if (raw < ACCEL_START) {
+        flapAction.current.timeScale = 0.5;
       } else {
-        // Post-pause: quadratic ramp 0.5 → 1.8, matching the pow-2
-        // curve-parameter acceleration. Peaks at exit, where wings
-        // are beating hardest as the body rockets past the camera.
-        const local = (raw - pauseEnd) / (1 - pauseEnd);
-        timeScale = 0.5 + 1.3 * local * local;
+        const local = (raw - ACCEL_START) / (1 - ACCEL_START);
+        flapAction.current.timeScale = 0.5 + 0.7 * local * local;
       }
-      flapAction.current.timeScale = timeScale;
     }
 
     s.curve.getPoint(p, posVec);
@@ -2247,10 +2180,9 @@ function RavenFlyBy() {
     groupRef.current.visible = true;
     groupRef.current.position.copy(posVec);
 
-    // LookAt using tangent direction — but during the hover the
-    // tangent magnitude drops near-zero, which makes lookAt jittery
-    // (it'll keep facing whatever random noise is in the tangent).
-    // Keep the last stable look direction when the tangent is weak.
+    // LookAt via tangent. Keep last stable direction if tangent is
+    // near-zero (belt-and-suspenders — no hover anymore but cheap
+    // insurance).
     if (tanVec.lengthSq() > 1e-4) {
       lastGoodLook.current.copy(tanVec).normalize();
     }
