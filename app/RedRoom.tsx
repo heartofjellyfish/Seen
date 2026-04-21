@@ -2658,75 +2658,92 @@ function Flock() {
     };
   }, [GROUP_POS]);
 
-  // ————— Dramatic routes (multi-point flight paths) —————
-  // A show phase no longer means "fly to one point and hover". Now
-  // it's "visit 2–3 points in sequence with 1.5–2s at each" — so the
-  // flock is always in motion, never still, every show reads as a
-  // sweep/dive/orbit instead of a stationary cluster.
+  // ————— Dramatic routes (continuous curve-driven flight paths) —————
+  // Previous design (multi-point dwell): every 1.5–2s the goal
+  // teleported to a new sub-point. With goalMultiplier=0.0005 during
+  // show, the flock applied only ~2% of maxSpeed toward the target
+  // per frame — nowhere near enough to actually reach a sub-point
+  // before the goal jumped again. Result: flock swirled in a tight
+  // 3-way tug-of-war between nearby sub-points, never escaping that
+  // small zone. User complained (correctly) that the flock was
+  // "circling in a small area".
   //
-  // At each sub-point the flock doesn't actually "arrive" — the
-  // short dwell means it's still chasing that goal when we advance
-  // to the next one. The sub-points define a DIRECTION OF TRAVEL,
-  // not waypoints the flock reaches. This gives a flowing, non-
-  // stopping feel and lets us draw curves the boid system alone
-  // can't produce.
+  // New design: each route is a CatmullRom curve built from 5
+  // control points, and the goal SMOOTHLY TRACKS a point sliding
+  // along that curve. Every frame, `goal = curve.getPoint(elapsed /
+  // duration)`. The goal is always moving — at ~2.5 m/s (curve
+  // length ÷ duration, slower than flock maxSpeed of 7.2 m/s) — so
+  // the flock can and does follow it like a tail behind a kite.
+  // This forces the flock to actually traverse the whole curve over
+  // the show phase, producing long winding paths instead of
+  // stationary clusters.
   //
   // Frame + box constraints (camera at (0, 1.65, 6) fov 55°):
   //   NEAR (z=2–4): |x|≤2, y∈[1.5, 3]
   //   MID  (z=-5 to 0): |x|≤5, y∈[2, 5]
   //   FAR  (z=-10 to -7): |x|≤7, y∈[3, 7]
   //   Stage-aperture (|x|<6.5, y∈[1.5, 7.5], z<-10.75) is forbidden
-  //     by the curtain clamp — keep routes out of it.
-  type RoutePoint = { pos: THREE.Vector3; dwell: number };
-  type Route = { name: string; points: RoutePoint[] };
+  //     by the curtain clamp — keep routes out of it. Using z=-10
+  //     world as the FAR limit avoids this automatically.
+  type Route = {
+    name: string;
+    curve: THREE.CatmullRomCurve3;
+    duration: number; // seconds to traverse the whole curve
+  };
   const routes = useMemo<Route[]>(() => {
-    const P = (wx: number, wy: number, wz: number, dwell: number): RoutePoint => ({
-      pos: new THREE.Vector3(wx - GROUP_POS.x, wy - GROUP_POS.y, wz - GROUP_POS.z),
-      dwell,
+    const mk = (
+      name: string,
+      duration: number,
+      pts: [number, number, number][],
+    ): Route => ({
+      name,
+      duration,
+      curve: new THREE.CatmullRomCurve3(
+        pts.map(
+          ([wx, wy, wz]) =>
+            new THREE.Vector3(
+              wx - GROUP_POS.x,
+              wy - GROUP_POS.y,
+              wz - GROUP_POS.z,
+            ),
+        ),
+        false, // not closed
+        "centripetal",
+      ),
     });
     return [
-      // Attack descents: enter high-far, dive to near the lens.
-      {
-        name: "swoop-L",
-        points: [P(-4, 6, -8, 1.8), P(-2, 3, -2, 1.8), P(1, 2.5, 3, 1.8)],
-      },
-      {
-        name: "swoop-R",
-        points: [P(4, 6, -8, 1.8), P(2, 3, -2, 1.8), P(-1, 2.5, 3, 1.8)],
-      },
-      // Vertical strikes: drop straight down from the top of frame.
-      // The steep y-delta reads as the flock committing to a dive.
-      {
-        name: "dive-strike-C",
-        points: [P(0, 7, -9, 1.5), P(0, 4, -3, 1.5), P(0, 2, 3, 2)],
-      },
-      {
-        name: "dive-strike-L",
-        points: [P(-3, 6.5, -8, 1.5), P(-2, 3.5, -2, 1.5), P(-1, 2, 3, 2)],
-      },
-      // Diagonal crossings: opposite corner to opposite corner,
-      // through the middle. Gives a visible sweep across the frame.
-      {
-        name: "cross-LR",
-        points: [P(-4, 5, -9, 1.5), P(0, 3.5, -2, 1.8), P(2, 3, 3, 1.8)],
-      },
-      {
-        name: "cross-RL",
-        points: [P(4, 5, -9, 1.5), P(0, 3.5, -2, 1.8), P(-2, 3, 3, 1.8)],
-      },
-      // Face-on charge: straight line from deep to near-centre. No
-      // lateral drift — reads as "coming straight for you".
-      {
-        name: "near-charge",
-        points: [P(0, 5, -10, 1.5), P(0, 3.5, -3, 1.8), P(0, 2.5, 4, 2)],
-      },
-      // Venus orbit: arc around the statue on her left side. The
-      // flock swings wide around her and ends near the front, so
-      // you see them pass behind → beside → in front of the bust.
-      {
-        name: "venus-orbit",
-        points: [P(-3, 4.5, -3, 1.8), P(-5, 4, -1, 1.8), P(-3, 3, 2, 1.5)],
-      },
+      // S-sweeps: long winding path across the hall, left→right and
+      // right→left, descending slightly as they approach the lens.
+      mk("s-sweep-LR", 7, [
+        [-7, 5.5, -10], [-3, 4.5, -6], [1, 3.5, -2], [-1, 3, 2], [2, 2.7, 3],
+      ]),
+      mk("s-sweep-RL", 7, [
+        [7, 5.5, -10], [3, 4.5, -6], [-1, 3.5, -2], [1, 3, 2], [-2, 2.7, 3],
+      ]),
+      // Sinuous dive from high-centre to low-near, with lateral wobble.
+      mk("s-dive", 7, [
+        [0, 7, -9], [3, 5, -6], [-2, 4, -2], [1, 3, 2], [-1, 2.5, 3],
+      ]),
+      // Reverse: low-near climbing to high-far, zigzagging.
+      mk("climb-wind", 7, [
+        [2, 2.5, 3], [-1, 3, 0], [1, 4.5, -3], [-2, 5.5, -6], [0, 7, -9],
+      ]),
+      // Centre-axis zigzag — swings x across while marching forward in z.
+      mk("zigzag-z", 7, [
+        [-3, 4, -8], [3, 4, -5], [-2, 3.5, -2], [1, 3, 1], [-1, 2.7, 3],
+      ]),
+      // Low path skimming past Venus's left side (Venus at -3.7, 0, 0.4).
+      mk("under-venus", 7, [
+        [-7, 3, -8], [-5, 2.5, -3], [-4, 2.5, 0], [-2, 2, 3], [1, 2.5, 4],
+      ]),
+      // High arc above the stage pelmet, sweeping down into audience.
+      mk("over-stage", 7, [
+        [-5, 7, -10], [-1, 6.5, -7], [2, 6, -4], [0, 5, -1], [-2, 4, 2],
+      ]),
+      // Deep arc through the back of the hall, wrapping forward-left.
+      mk("deep-arc", 7, [
+        [6, 6, -10], [2, 5.5, -7], [-1, 4.5, -3], [-3, 3.5, 1], [-2, 3, 3],
+      ]),
     ];
   }, [GROUP_POS]);
 
@@ -2780,74 +2797,72 @@ function Flock() {
     return routeBag.current.shift()!;
   };
 
-  // Start on the first point of the first route. currentRoute +
-  // routeIdx track where we are WITHIN the route; when the sub-dwell
-  // expires we either advance to the next point in the route or
-  // (if at the end) transition to hide.
+  // State. During show, currentRoute holds the active CatmullRom
+  // curve and we continuously interpolate `goal` along it each
+  // frame. During hide, goal is static at the hideout.
   const initialRoute = routes[0];
-  const goal = useRef(new THREE.Vector3().copy(initialRoute.points[0].pos));
-  const currentDwell = useRef(initialRoute.points[0].dwell);
+  const goal = useRef(initialRoute.curve.getPoint(0, new THREE.Vector3()));
+  const currentRoute = useRef<Route | null>(initialRoute);
+  const currentDwell = useRef(0); // used only for hide phase now
   const phase = useRef<"hide" | "show">("show");
   const waypointStart = useRef(0);
-  const currentRoute = useRef<Route | null>(initialRoute);
-  const routeIdx = useRef(0);
 
   useFrame(({ clock }) => {
     const t = clock.elapsedTime;
-    if (t - waypointStart.current > currentDwell.current) {
-      waypointStart.current = t;
+    const elapsed = t - waypointStart.current;
+    let shouldTransition = false;
 
-      // First: if mid-route, advance to the next sub-point (no phase
-      // change). Multi-point routes produce the dramatic continuous
-      // sweeps the user asked for.
-      let advancedInRoute = false;
-      if (
-        phase.current === "show" &&
-        currentRoute.current &&
-        routeIdx.current < currentRoute.current.points.length - 1
-      ) {
-        routeIdx.current++;
-        const pt = currentRoute.current.points[routeIdx.current];
-        currentDwell.current = pt.dwell;
-        goal.current.copy(pt.pos);
-        advancedInRoute = true;
+    if (phase.current === "show" && currentRoute.current) {
+      const route = currentRoute.current;
+      if (elapsed < route.duration) {
+        // Slide the goal along the curve, parameterised by elapsed/
+        // duration. The flock chases this moving target — never
+        // reaching it, always trailing behind — which is how we get
+        // long winding travel instead of stationary clusters.
+        route.curve.getPoint(elapsed / route.duration, goal.current);
+      } else {
+        shouldTransition = true;
+      }
+    } else {
+      // Hide phase: goal is static, just wait out the dwell.
+      if (elapsed > currentDwell.current) shouldTransition = true;
+    }
+
+    if (shouldTransition) {
+      waypointStart.current = t;
+      // Phase flip:
+      //   from show → always hide
+      //   from hide → 85% show, 15% another hide
+      if (phase.current === "show") {
+        phase.current = "hide";
+      } else {
+        phase.current = Math.random() < 0.85 ? "show" : "hide";
       }
 
-      if (!advancedInRoute) {
-        // Reached end of route (or was in hide). Flip phase.
-        //   from show → always hide
-        //   from hide → 85% show, 15% another hide
-        if (phase.current === "show") {
-          phase.current = "hide";
-        } else {
-          phase.current = Math.random() < 0.85 ? "show" : "hide";
-        }
-
-        if (phase.current === "hide") {
-          currentRoute.current = null;
-          const next = pickAlternating(
-            hideBagL, hideBagR, hideSrcL, hideSrcR, lastHideSide,
-          );
-          currentDwell.current = 12 + Math.random() * 6; // 12–18s offscreen
-          goal.current.copy(next.local);
-        } else {
-          // Start a new dramatic route.
-          const route = pickRoute();
-          currentRoute.current = route;
-          routeIdx.current = 0;
-          const pt = route.points[0];
-          currentDwell.current = pt.dwell;
-          goal.current.copy(pt.pos);
-        }
+      if (phase.current === "hide") {
+        currentRoute.current = null;
+        const next = pickAlternating(
+          hideBagL, hideBagR, hideSrcL, hideSrcR, lastHideSide,
+        );
+        currentDwell.current = 12 + Math.random() * 6; // 12–18s offscreen
+        goal.current.copy(next.local);
+      } else {
+        // Start a new curve. Goal at s=0.
+        const route = pickRoute();
+        currentRoute.current = route;
+        route.curve.getPoint(0, goal.current);
       }
     }
 
     // Stronger goal pull while hiding so the flock commits to leaving
-    // the frame instead of drifting across it. While showing, drop
-    // back to the original gentle value so the flock lingers in the
-    // visible area rather than missile-ing through it.
+    // the frame instead of drifting across it. During show the goal
+    // is continuously MOVING along a curve at ~2.8 m/s, so the flock
+    // needs a firmer pull to actually follow it (0.0005 was fine for
+    // a static show goal but left the flock too slow to track a
+    // sliding target — it would get lapped by the curve and end up
+    // never reaching the later waypoints).
     const hideMul = 0.002;
-    const showMul = 0.0005;
+    const showMul = 0.001;
     const activeMul = phase.current === "hide" ? hideMul : showMul;
 
     for (let i = 0; i < boids.length; i++) {
