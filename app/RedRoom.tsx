@@ -861,6 +861,64 @@ function Stage() {
       <StageCandleRing stageW={stageW} stageD={stageD} stageH={stageH} />
 
       <CurtainBleedGlow stageD={stageD} stageH={stageH} />
+
+      {/* A dancing cloud standing where the performer would stand.
+          The app is about one person being seen for 15 minutes; the
+          rest of the day, the stage is empty. The cloud fills the
+          absence — slow sway + pirouette + breathing bob. */}
+      <DancingCloud stageH={stageH} stageD={stageD} />
+    </group>
+  );
+}
+
+// ————— Dancing cloud — the stand-in performer —————
+// A single large drei <Cloud> floating centre-stage on the apron.
+// The cloud itself morphs internally (drei's speed prop); the whole
+// group additionally translates and rotates in slow sinusoids so the
+// silhouette reads as a body doing a slow ballet.
+
+function DancingCloud({
+  stageH,
+  stageD,
+}: {
+  stageH: number;
+  stageD: number;
+}) {
+  const groupRef = useRef<THREE.Group>(null);
+  const baseY = stageH + 1.5;          // centre of cloud ~1.5 m above deck
+  const baseZ = stageD / 2 + 0.55;     // on the apron, in front of curtain
+
+  useFrame(({ clock }) => {
+    const g = groupRef.current;
+    if (!g) return;
+    const t = clock.elapsedTime;
+    // Lateral sway — wide slow arc across the centre of the stage
+    g.position.x = Math.sin(t * 0.23) * 1.6;
+    // Gentle vertical breathing
+    g.position.y = baseY + Math.cos(t * 0.37) * 0.18;
+    // Slow pirouette around the vertical axis
+    g.rotation.y = Math.sin(t * 0.17) * 0.45;
+    // Small hip-tilt side to side
+    g.rotation.z = Math.sin(t * 0.29 + 1.1) * 0.10;
+  });
+
+  return (
+    <group ref={groupRef} position={[0, baseY, baseZ]}>
+      <Clouds material={THREE.MeshLambertMaterial} limit={300}>
+        <Cloud
+          seed={7}
+          segments={42}
+          bounds={[3.2, 2.4, 1.8]}
+          volume={4.5}
+          smallestVolume={1.0}
+          growth={3.5}
+          speed={0.10}
+          concentrate="inside"
+          color="#dcc8a8"
+          opacity={0.62}
+          fade={40}
+        />
+      </Clouds>
     </group>
   );
 }
