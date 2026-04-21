@@ -8,6 +8,8 @@ import {
   PerspectiveCamera,
   Sparkles,
   Stats,
+  useAnimations,
+  useGLTF,
   useTexture,
 } from "@react-three/drei";
 import {
@@ -1704,6 +1706,259 @@ function WallCurtainLights() {
   );
 }
 
+// ————— single raven fly-by —————
+// Poe/Twin-Peaks visitation: a lone raven glides out of the back of
+// the hall, wanders briefly, then commits to a near-miss dive past
+// the camera. Not frequent — a rare event, 8–15 seconds between each
+// flight, 18–21 seconds per flight, so it reads as a haunting rather
+// than decoration.
+//
+// Model: three.js official Parrot.glb (mrdoob, CC0) — chosen over
+// the Sketchfab Crow.glb because the Crow's single 10.5s "TakeOff"
+// clip contained only ~3s of actual flapping buried in 7s of idle
+// pose. The Parrot ships with a clean 1.2s seamless flight loop
+// (morph-target animated, not skinned) which is exactly what this
+// scene needs. Every material is replaced with a very-dark
+// MeshStandardMaterial at mount so the tropical red-green plumage
+// reads as corvus corax. Slight metalness + low roughness lets the
+// amber torchieres and red hemisphere catch on the wing edges,
+// giving a subtle iridescence — real ravens do this in sunlight.
+//
+// Flight-path structure: one random entry point near the back-wall
+// ceiling, 4 wander waypoints that drift forward-and-down toward the
+// camera, then a variant-specific (lead, near, exit) triple that
+// determines the pose at closest approach. CatmullRom through all
+// of these gives a meandering curve in phase 1 and a committed
+// straight dive in phase 2. Variants were tuned against camera
+// position (0, 1.65, 6) fov 55°.
+
+function RavenFlyBy() {
+  const groupRef = useRef<THREE.Group>(null);
+  const { scene, animations } = useGLTF("/Parrot.glb");
+
+  // Clone per-instance so our tint + animation state don't bleed
+  // into any other consumer of /Parrot.glb (there is none today, but
+  // this keeps the component self-contained).
+  const cloned = useMemo(() => scene.clone(true), [scene]);
+  const { actions } = useAnimations(animations, cloned);
+
+  // Tint all meshes to raven-black. Slight metalness (0.15) + mid
+  // roughness (0.45) makes the silhouette readable against the dark
+  // Red Room — the amber sconces and red hemisphere pick out the
+  // wing silhouettes as a thin rim highlight without turning the
+  // bird into an identifiable colour. #050505 is near-pure black so
+  // scene lighting, not the texture, drives its apparent warmth.
+  // Mutate existing materials rather than replacing them. Parrot.glb
+  // uses morph-target animation (vertex blend shapes), and three.js
+  // needs the material instance to have been initialised with morph-
+  // target uniforms at compile time. A freshly-minted
+  // MeshStandardMaterial lacks those compile-time setup hooks and
+  // the whole mesh renders at bind pose but with weird wing-scaling
+  // artefacts. Keeping the original material, just zeroing its color
+  // and killing the texture, preserves the morph-target wiring.
+  useEffect(() => {
+    cloned.traverse((obj) => {
+      const m = obj as THREE.Mesh;
+      if (!m.isMesh) return;
+      const mats = Array.isArray(m.material) ? m.material : [m.material];
+      mats.forEach((mat) => {
+        const std = mat as THREE.MeshStandardMaterial;
+        if (!std) return;
+        std.color = new THREE.Color("#050505");
+        std.map = null;
+        std.emissive = new THREE.Color("#000000");
+        std.roughness = 0.45;
+        std.metalness = 0.15;
+        std.needsUpdate = true;
+      });
+    });
+  }, [cloned]);
+
+  // Play the one included clip on loop. Parrot.glb only has
+  // `parrot_A_` (1.2s flight cycle), so we grab whatever key exists.
+  const flapAction = useRef<THREE.AnimationAction | null>(null);
+  useEffect(() => {
+    const key = Object.keys(actions)[0];
+    if (!key) return;
+    const action = actions[key]!;
+    action.setLoop(THREE.LoopRepeat, Infinity);
+    // 0.5× timeScale pulls wingbeat from ~5 Hz to ~2.5 Hz — closer
+    // to a real raven's leisurely wingbeat than the native parrot
+    // speed, without looking like a slow-motion effect.
+    action.timeScale = 0.5;
+    action.play();
+    flapAction.current = action;
+  }, [actions]);
+
+  // Auto-fit longest dimension to 0.7m. Parrot.glb's native bind-pose
+  // bounds are (79.5, 33.7, 100.5) from gltf-transform inspect, so
+  // scale ≈ 0.007. Done at mount once the scene is loaded.
+  useEffect(() => {
+    const box = new THREE.Box3().setFromObject(cloned);
+    const size = box.getSize(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z);
+    if (maxDim > 0) {
+      cloned.scale.setScalar(0.7 / maxDim);
+    }
+  }, [cloned]);
+
+  const posVec = useRef(new THREE.Vector3()).current;
+  const tanVec = useRef(new THREE.Vector3()).current;
+  const lookVec = useRef(new THREE.Vector3()).current;
+
+  const state = useRef({
+    flying: false,
+    startTime: 0,
+    duration: 19.0,
+    nextFlightAt: 3 + Math.random() * 4, // first appearance 3–7s in
+    curve: null as THREE.CatmullRomCurve3 | null,
+  });
+
+  // Five flight variants. Each defines the (lead, near, exit) triple
+  // that shapes the final dive; CatmullRom's tangent at the `near`
+  // point determines the bird's lookAt orientation, and therefore
+  // its visible pose at closest approach.
+  type Variant = {
+    lead: () => THREE.Vector3;
+    near: () => THREE.Vector3;
+    exit: () => THREE.Vector3;
+  };
+  const variants: Variant[] = useMemo(
+    () => [
+      {
+        // HEAD-ON: straight out of the stage toward the lens, last-
+        // frame pull-up. Faces camera squarely.
+        lead: () => new THREE.Vector3(0, 1.9, 0.8),
+        near: () => new THREE.Vector3((Math.random() - 0.5) * 0.4, 1.8, 4.6),
+        exit: () => new THREE.Vector3((Math.random() - 0.5) * 1.0, 3.2 + Math.random() * 0.6, 8.0),
+      },
+      {
+        // DIAG-UP-RIGHT: enters lower-left, exits upper-right.
+        lead: () => new THREE.Vector3(-3.5, 0.9, 2.2),
+        near: () => new THREE.Vector3(-1.3 + (Math.random() - 0.5) * 0.3, 1.5, 4.5),
+        exit: () => new THREE.Vector3(3.5 + Math.random() * 0.6, 4.8 + Math.random() * 0.6, 8.0),
+      },
+      {
+        // DIAG-UP-LEFT: mirror of right.
+        lead: () => new THREE.Vector3(3.5, 0.9, 2.2),
+        near: () => new THREE.Vector3(1.3 + (Math.random() - 0.5) * 0.3, 1.5, 4.5),
+        exit: () => new THREE.Vector3(-3.5 - Math.random() * 0.6, 4.8 + Math.random() * 0.6, 8.0),
+      },
+      {
+        // SIDE-SWEEP-LR: horizontal swoop at eye level, left→right.
+        lead: () => new THREE.Vector3(-4.2, 2.5, 3.0),
+        near: () => new THREE.Vector3(-1.5, 2.2 + (Math.random() - 0.5) * 0.3, 4.8),
+        exit: () => new THREE.Vector3(4.5, 2.8, 7.5),
+      },
+      {
+        // DIVE-DOWN: high entry, floor-bound exit.
+        lead: () => new THREE.Vector3(0, 5.2, 2.2),
+        near: () => new THREE.Vector3((Math.random() - 0.5) * 0.6, 3.4, 4.5),
+        exit: () => new THREE.Vector3((Math.random() - 0.5) * 1.2, 0.5 + Math.random() * 0.4, 8.0),
+      },
+    ],
+    [],
+  );
+
+  const generatePath = () => {
+    const start = new THREE.Vector3(
+      (Math.random() - 0.5) * 14,
+      6.2 + Math.random() * 1.6,
+      -14.5 + Math.random() * 1.5,
+    );
+    const wander: THREE.Vector3[] = [];
+    const prev = start.clone();
+    for (let i = 0; i < 4; i++) {
+      const p = new THREE.Vector3(
+        prev.x + (Math.random() - 0.5) * 7,
+        prev.y + (Math.random() - 0.5) * 3,
+        prev.z + (Math.random() - 0.15) * 4, // +z bias so it drifts forward
+      );
+      p.x = Math.max(-9, Math.min(9, p.x));
+      p.y = Math.max(2.0, Math.min(8.0, p.y));
+      p.z = Math.max(-14, Math.min(2, p.z));
+      wander.push(p);
+      prev.copy(p);
+    }
+    const v = variants[Math.floor(Math.random() * variants.length)];
+    return new THREE.CatmullRomCurve3([
+      start,
+      ...wander,
+      v.lead(),
+      v.near(),
+      v.exit(),
+    ]);
+  };
+
+  useFrame(({ clock }) => {
+    if (!groupRef.current) return;
+    const t = clock.elapsedTime;
+    const s = state.current;
+
+    if (!s.flying && t >= s.nextFlightAt) {
+      s.flying = true;
+      s.startTime = t;
+      s.duration = 18 + Math.random() * 3; // 18–21s per flight
+      s.curve = generatePath();
+      if (flapAction.current) {
+        flapAction.current.play();
+        flapAction.current.timeScale = 0.5;
+      }
+    }
+
+    if (!s.flying || !s.curve) {
+      groupRef.current.visible = false;
+      return;
+    }
+
+    const raw = (t - s.startTime) / s.duration;
+    if (raw >= 1) {
+      s.flying = false;
+      s.nextFlightAt = t + 8 + Math.random() * 7; // 8–15s dwell
+      groupRef.current.visible = false;
+      s.curve = null;
+      return;
+    }
+
+    // Near-linear pacing: tiny ease-in at the very end so the exit
+    // reads as a "commit" without drowning out the earlier meander.
+    const ROAM = 0.8;
+    let p: number;
+    if (raw < ROAM) {
+      p = raw;
+    } else {
+      const p2 = (raw - ROAM) / (1 - ROAM);
+      p = ROAM + Math.pow(p2, 1.4) * (1 - ROAM);
+    }
+
+    // Wingbeat: steady; quicken barely in the final commit phase.
+    if (flapAction.current) {
+      if (raw < ROAM) {
+        flapAction.current.timeScale = 0.5;
+      } else {
+        const sp = (raw - ROAM) / (1 - ROAM);
+        flapAction.current.timeScale = 0.5 + 0.5 * Math.pow(sp, 2);
+      }
+    }
+
+    s.curve.getPoint(p, posVec);
+    s.curve.getTangent(p, tanVec);
+
+    groupRef.current.visible = true;
+    groupRef.current.position.copy(posVec);
+    lookVec.copy(posVec).add(tanVec);
+    groupRef.current.lookAt(lookVec);
+  });
+
+  return (
+    <group ref={groupRef} visible={false}>
+      <primitive object={cloned} />
+    </group>
+  );
+}
+
+useGLTF.preload("/Parrot.glb");
+
 // ————— background flock —————
 // A small, slow drift of cream triangle-birds in the back half of the
 // room — a distant "vision" layer behind the single white stork's
@@ -2172,6 +2427,7 @@ export function RedRoom() {
         {/* Atmospheric dynamics */}
         <DustMotes />
         <Flock />
+        <RavenFlyBy />
 
         {/* Dev-only FPS panel (top-left). Remove before prod. */}
         <Stats />
