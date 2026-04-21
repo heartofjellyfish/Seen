@@ -44,10 +44,16 @@ Waypoints are split into two pools (`hideouts`, `shows`). Phase logic: show alwa
   - `z > 7` (behind the camera at z=6) — robust for any aspect ratio.
   - `|x| ≥ 9.5` at `z=-3` — lateral half-width at distance 9 from camera at fov 55° is ≈ 7.5 landscape, narrower portrait. 9.5 clears the frustum with ~2m margin.
   - **All hideouts must also be inside the new smaller `worldHalf` box** (x ∈ ±10, y ∈ [0.5, 9.5], z ∈ [-15, 9] world). Previous hideouts at `|x|=12` or `z=10` were past the curtains — that's what was causing visible penetration.
-- **Shows must be inside the frustum AND inside the box.** Stage area `y ∈ [2, 8]`, `x ∈ [-5, 5]`, `z ∈ [-13, 2]` is safe.
-- **Show distance spread is deliberate 3×2 grid**: NEAR (≈4m) / MID (≈10m) / FAR (≈16m) × LEFT / RIGHT, one waypoint per cell. Earlier pools had no NEAR shows at all — flock always looked the same size on screen.
-  - NEAR tier horizontal constraint: at z=3 (close to camera z=6), landscape horizontal half-width is ≈2.5m, so NEAR waypoints must keep `|x| ≤ 2` or the flock centre lands off-frame.
-- **Side-alternating shuffled bags** (not uniform random). Uniform sampling gave visible streaks — "flock on the right, right, right, left" about 12% of the time. Fix: per-phase-per-side Fisher-Yates bags + forced side flip 85% of the time. Over any 6 consecutive show picks you see each of the 6 show waypoints exactly once (shuffled order), with L/R strictly alternating except for the rare 15% same-side "freedom" pick. Hide picks use the same machinery independently, so transit directions vary across the four combinations (show_L→hide_L short exit, show_L→hide_R cross, etc.).
+- **Shows are multi-point ROUTES, not single waypoints.** A show phase visits 2–3 sub-points in sequence (each 1.5–2s dwell), so the flock is always in motion — sweeping, diving, crossing — never stationary. The short sub-dwells mean the flock never "arrives" at any sub-point; it's still chasing when we advance to the next. This is how the boid system draws curves without native curve support.
+- **Routes pool (8 routes, picked via shuffled bag)**:
+  - `swoop-L` / `swoop-R`: high-far → mid → near-lens (classic attack descent)
+  - `dive-strike-C` / `dive-strike-L`: straight vertical drop (y=7 → y=2)
+  - `cross-LR` / `cross-RL`: diagonal sweep opposite-corner to opposite-corner
+  - `near-charge`: straight along z axis at x=0 (frontal approach)
+  - `venus-orbit`: arc around Venus's left side
+- **Route sub-points must be inside the frustum AND inside the box** (`x ∈ [-10, 10]`, `y ∈ [0.5, 9.5]`, `z ∈ [-15, 9]` world) AND outside the stage aperture (`|x|<6.5, y∈[1.5, 7.5], z<-10.75`). Frustum guidelines by distance tier: NEAR (z=2-4): `|x|≤2, y∈[1.5, 3]`; MID (z=-5 to 0): `|x|≤5, y∈[2, 5]`; FAR (z=-10 to -7): `|x|≤7, y∈[3, 7]`.
+- **Route bag** (Fisher-Yates). Every 8 picks = full tour of all 8 routes, no repeats. At ~20s per cycle that's ≈2.5 min for a full tour.
+- **Hideouts are still single-point, picked via side-alternating bag**. 85% chance of flipping side, 15% same side. Guarantees transit directions (flock exits left vs right) vary across cycles.
 
 ### Known failure modes (root causes, not symptoms)
 

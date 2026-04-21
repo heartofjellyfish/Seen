@@ -2592,23 +2592,22 @@ function Flock() {
   const meshRefs = useRef<(THREE.Mesh | null)[]>([]);
 
   // Roaming goal — a waypoint the whole flock slowly steers toward.
-  // Two pools of waypoints. Hide dominates — flock is offscreen ~65%
-  // of the time, so each reappearance reads as an event instead of
-  // ambient traffic.
+  // Two structures drive the flock's motion:
+  //   - hideouts: single-point offscreen destinations (10 points,
+  //     picked via side-alternating Fisher-Yates bag below).
+  //   - routes:   multi-point dramatic flight paths (8 routes,
+  //     each 3 sub-points with 1.5–2s dwells; see the routes
+  //     definition further down).
   //
-  // Cadence (recalibrated after a previous version went too far into
-  // hidden mode — avg 46s hide vs 3s show gave only ~6% visible,
-  // which read as "flock disappeared entirely"):
-  //   hide dwell 12–18s  (randomised per visit)
-  //   show dwell  4–6s   (randomised per visit)
-  //   15% chance hide→hide instead of strict alternation. Keeps the
-  //     occasional "extra-long absence" beat without letting it
-  //     dominate the cycle.
+  // Cadence: hide dwell 12–18s (whole hideout), show duration
+  // ≈ 5s (route total = sum of sub-point dwells). 15% chance of
+  // hide→hide instead of strict alternation adds an occasional
+  // extra-long absence without letting it dominate.
   //
   // Math: per ~20s cycle, ~2s of hide dwell is still-visible transit
   // (flock leaving frame under the boosted goal pull), the rest is
-  // truly offscreen. So:
-  //   visible = show_dwell + leaving_transit ≈ 5 + 2 = 7s
+  // truly offscreen:
+  //   visible = route_duration + leaving_transit ≈ 5 + 2 = 7s
   //   hidden  = hide_dwell − leaving_transit ≈ 15 − 2 = 13s
   //   → ~35% visible, ~65% offscreen.
   //
@@ -2626,7 +2625,7 @@ function Flock() {
   // Waypoints are in WORLD coords; converted to local by subtracting
   // the <group> position.
   const GROUP_POS = useMemo(() => new THREE.Vector3(0, 5, -3), []);
-  const { hideouts, shows } = useMemo(() => {
+  const { hideouts } = useMemo(() => {
     const toLocal = (wx: number, wy: number, wz: number) => ({
       local: new THREE.Vector3(wx - GROUP_POS.x, wy - GROUP_POS.y, wz - GROUP_POS.z),
     });
@@ -2656,64 +2655,95 @@ function Flock() {
         toLocal(9.5, 3, 3),        // far-right wall, mid (new)
         toLocal(-9.5, 3, 3),       // far-left wall, mid (new)
       ],
-      // 6 shows arranged as a deliberate 3×2 grid:
-      //   NEAR / MID / FAR  ×  LEFT / RIGHT
-      // Each cell has exactly one waypoint, so random pick gives a
-      // 1/3 chance for each distance tier and 1/2 chance for each
-      // side — matches the user's explicit ask for a spatial mix
-      // instead of the previous everything-is-mid-or-far clumping.
-      //
-      // Distances from camera at (0, 1.65, 6):
-      //   NEAR = 3–5m   (flock fills the frame, reads as charge)
-      //   MID  = 10–11m (classic over-the-hall pass)
-      //   FAR  = 16–17m (deep stage, reads as ambience)
-      //
-      // In-frame constraint: camera fov 55° vertical, ~80° horizontal
-      // on landscape. At z=3 (near tier) horizontal half-width is
-      // only ≈2.5m, so NEAR x must stay within ±2. MID/FAR are
-      // much wider — |x|=5 at z=-3 is well inside, |x|=4 at z=-10
-      // is trivially inside.
-      shows: [
-        // NEAR tier (dist ≈ 4m)
-        toLocal(-2, 2.5, 3),       // near-left: low charge toward Venus side
-        toLocal(2, 3.5, 3),        // near-right: low charge from right (slightly higher y for variety)
-        // MID tier (dist ≈ 10–11m)
-        toLocal(-5, 4, -3),        // mid-left: over the left chairs
-        toLocal(5, 4, -3),         // mid-right: over the right chairs
-        // FAR tier (dist ≈ 16–17m)
-        toLocal(-4, 5.5, -10),     // far-left: high over stage area
-        toLocal(4, 5, -10),        // far-right: high over stage area
-      ],
     };
   }, [GROUP_POS]);
 
-  // Partition the pools by LEFT / RIGHT of centre for alternation.
-  // Hideouts with x=0 go into both pools (neutral — can follow either
-  // side without visually reading as "same side").
-  const showSrcL = useMemo(() => shows.filter((s) => s.local.x < 0), [shows]);
-  const showSrcR = useMemo(() => shows.filter((s) => s.local.x > 0), [shows]);
+  // ————— Dramatic routes (multi-point flight paths) —————
+  // A show phase no longer means "fly to one point and hover". Now
+  // it's "visit 2–3 points in sequence with 1.5–2s at each" — so the
+  // flock is always in motion, never still, every show reads as a
+  // sweep/dive/orbit instead of a stationary cluster.
+  //
+  // At each sub-point the flock doesn't actually "arrive" — the
+  // short dwell means it's still chasing that goal when we advance
+  // to the next one. The sub-points define a DIRECTION OF TRAVEL,
+  // not waypoints the flock reaches. This gives a flowing, non-
+  // stopping feel and lets us draw curves the boid system alone
+  // can't produce.
+  //
+  // Frame + box constraints (camera at (0, 1.65, 6) fov 55°):
+  //   NEAR (z=2–4): |x|≤2, y∈[1.5, 3]
+  //   MID  (z=-5 to 0): |x|≤5, y∈[2, 5]
+  //   FAR  (z=-10 to -7): |x|≤7, y∈[3, 7]
+  //   Stage-aperture (|x|<6.5, y∈[1.5, 7.5], z<-10.75) is forbidden
+  //     by the curtain clamp — keep routes out of it.
+  type RoutePoint = { pos: THREE.Vector3; dwell: number };
+  type Route = { name: string; points: RoutePoint[] };
+  const routes = useMemo<Route[]>(() => {
+    const P = (wx: number, wy: number, wz: number, dwell: number): RoutePoint => ({
+      pos: new THREE.Vector3(wx - GROUP_POS.x, wy - GROUP_POS.y, wz - GROUP_POS.z),
+      dwell,
+    });
+    return [
+      // Attack descents: enter high-far, dive to near the lens.
+      {
+        name: "swoop-L",
+        points: [P(-4, 6, -8, 1.8), P(-2, 3, -2, 1.8), P(1, 2.5, 3, 1.8)],
+      },
+      {
+        name: "swoop-R",
+        points: [P(4, 6, -8, 1.8), P(2, 3, -2, 1.8), P(-1, 2.5, 3, 1.8)],
+      },
+      // Vertical strikes: drop straight down from the top of frame.
+      // The steep y-delta reads as the flock committing to a dive.
+      {
+        name: "dive-strike-C",
+        points: [P(0, 7, -9, 1.5), P(0, 4, -3, 1.5), P(0, 2, 3, 2)],
+      },
+      {
+        name: "dive-strike-L",
+        points: [P(-3, 6.5, -8, 1.5), P(-2, 3.5, -2, 1.5), P(-1, 2, 3, 2)],
+      },
+      // Diagonal crossings: opposite corner to opposite corner,
+      // through the middle. Gives a visible sweep across the frame.
+      {
+        name: "cross-LR",
+        points: [P(-4, 5, -9, 1.5), P(0, 3.5, -2, 1.8), P(2, 3, 3, 1.8)],
+      },
+      {
+        name: "cross-RL",
+        points: [P(4, 5, -9, 1.5), P(0, 3.5, -2, 1.8), P(-2, 3, 3, 1.8)],
+      },
+      // Face-on charge: straight line from deep to near-centre. No
+      // lateral drift — reads as "coming straight for you".
+      {
+        name: "near-charge",
+        points: [P(0, 5, -10, 1.5), P(0, 3.5, -3, 1.8), P(0, 2.5, 4, 2)],
+      },
+      // Venus orbit: arc around the statue on her left side. The
+      // flock swings wide around her and ends near the front, so
+      // you see them pass behind → beside → in front of the bust.
+      {
+        name: "venus-orbit",
+        points: [P(-3, 4.5, -3, 1.8), P(-5, 4, -1, 1.8), P(-3, 3, 2, 1.5)],
+      },
+    ];
+  }, [GROUP_POS]);
+
+  // Hideouts are still single-point with side-alternating bags (the
+  // off-screen exit direction matters for visual variety, and the
+  // bag prevents consecutive-same-hideout streaks that pure random
+  // produced). Shows now use the multi-point route system above.
   const hideSrcL = useMemo(() => hideouts.filter((h) => h.local.x <= 0), [hideouts]);
   const hideSrcR = useMemo(() => hideouts.filter((h) => h.local.x >= 0), [hideouts]);
 
-  // Shuffled "bag" queues per (phase, side). Each bag is drained one
-  // pick at a time and refilled with a fresh Fisher-Yates shuffle of
-  // its source when empty. Guarantees every waypoint on a side is
-  // used before any repeat — no more "right-right-right" streaks
-  // that random sampling creates 3% of the time per 5 picks.
   type WP = { local: THREE.Vector3 };
-  const showBagL = useRef<WP[]>([]);
-  const showBagR = useRef<WP[]>([]);
   const hideBagL = useRef<WP[]>([]);
   const hideBagR = useRef<WP[]>([]);
-
-  // Track last side per phase so we can force alternation. Init both
-  // to "R" so the first show pick lands on the LEFT (matches the
-  // opening goal on shows[0] which is a near-left show).
-  const lastShowSide = useRef<"L" | "R">("R");
   const lastHideSide = useRef<"L" | "R">("R");
 
-  // Fisher-Yates in place.
-  const shuffleAndRefill = (bag: React.MutableRefObject<WP[]>, source: WP[]) => {
+  // Fisher-Yates refill.
+  const shuffleAndRefill = <T,>(bag: React.MutableRefObject<T[]>, source: T[]) => {
     const copy = [...source];
     for (let i = copy.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
@@ -2722,9 +2752,6 @@ function Flock() {
     bag.current = copy;
   };
 
-  // Side-alternating bag pick. 85% flips side, 15% stays — the small
-  // chance of same-side preserves a bit of "unpredictable freedom"
-  // (otherwise strict L/R/L/R feels metronomic).
   const pickAlternating = (
     bagL: React.MutableRefObject<WP[]>,
     bagR: React.MutableRefObject<WP[]>,
@@ -2744,43 +2771,75 @@ function Flock() {
     return next;
   };
 
-  // Start on a show so the opening few seconds rewards the viewer
-  // immediately. After that, the phase logic below decides when
-  // next to hide/reveal — no strict alternation, so cadence stays
-  // unpredictable.
-  const goal = useRef(new THREE.Vector3().copy(shows[0].local));
-  const currentDwell = useRef(3); // opening show is short
+  // Route bag: shuffled queue of all routes, refilled when empty.
+  // With 8 routes, user sees all 8 dramatic paths before any repeat
+  // — over a typical ~20s cycle that's ~2.5 min for a full tour.
+  const routeBag = useRef<Route[]>([]);
+  const pickRoute = (): Route => {
+    if (routeBag.current.length === 0) shuffleAndRefill(routeBag, routes);
+    return routeBag.current.shift()!;
+  };
+
+  // Start on the first point of the first route. currentRoute +
+  // routeIdx track where we are WITHIN the route; when the sub-dwell
+  // expires we either advance to the next point in the route or
+  // (if at the end) transition to hide.
+  const initialRoute = routes[0];
+  const goal = useRef(new THREE.Vector3().copy(initialRoute.points[0].pos));
+  const currentDwell = useRef(initialRoute.points[0].dwell);
   const phase = useRef<"hide" | "show">("show");
   const waypointStart = useRef(0);
+  const currentRoute = useRef<Route | null>(initialRoute);
+  const routeIdx = useRef(0);
 
   useFrame(({ clock }) => {
     const t = clock.elapsedTime;
     if (t - waypointStart.current > currentDwell.current) {
       waypointStart.current = t;
-      // Non-strict phase selection:
-      //   from show → always hide (flock disappears after reveal)
-      //   from hide → 85% chance show, 15% chance another hide
-      //     (occasional extra-long absence, rare enough that the
-      //     user still sees regular reappearances)
-      // Dwell is randomised per pick: hide 12–18s, show 4–6s.
-      if (phase.current === "show") {
-        phase.current = "hide";
-      } else {
-        phase.current = Math.random() < 0.85 ? "show" : "hide";
+
+      // First: if mid-route, advance to the next sub-point (no phase
+      // change). Multi-point routes produce the dramatic continuous
+      // sweeps the user asked for.
+      let advancedInRoute = false;
+      if (
+        phase.current === "show" &&
+        currentRoute.current &&
+        routeIdx.current < currentRoute.current.points.length - 1
+      ) {
+        routeIdx.current++;
+        const pt = currentRoute.current.points[routeIdx.current];
+        currentDwell.current = pt.dwell;
+        goal.current.copy(pt.pos);
+        advancedInRoute = true;
       }
-      // Waypoint pick uses side-alternating bag (see pickAlternating
-      // above) — guarantees no consecutive same-side streaks, no
-      // immediate repeats of the same waypoint, and a full tour of
-      // every point on a side before any repeats within that side.
-      const next =
-        phase.current === "hide"
-          ? pickAlternating(hideBagL, hideBagR, hideSrcL, hideSrcR, lastHideSide)
-          : pickAlternating(showBagL, showBagR, showSrcL, showSrcR, lastShowSide);
-      currentDwell.current =
-        phase.current === "hide"
-          ? 12 + Math.random() * 6 // 12–18s offscreen
-          : 4 + Math.random() * 2; // 4–6s onscreen
-      goal.current.copy(next.local);
+
+      if (!advancedInRoute) {
+        // Reached end of route (or was in hide). Flip phase.
+        //   from show → always hide
+        //   from hide → 85% show, 15% another hide
+        if (phase.current === "show") {
+          phase.current = "hide";
+        } else {
+          phase.current = Math.random() < 0.85 ? "show" : "hide";
+        }
+
+        if (phase.current === "hide") {
+          currentRoute.current = null;
+          const next = pickAlternating(
+            hideBagL, hideBagR, hideSrcL, hideSrcR, lastHideSide,
+          );
+          currentDwell.current = 12 + Math.random() * 6; // 12–18s offscreen
+          goal.current.copy(next.local);
+        } else {
+          // Start a new dramatic route.
+          const route = pickRoute();
+          currentRoute.current = route;
+          routeIdx.current = 0;
+          const pt = route.points[0];
+          currentDwell.current = pt.dwell;
+          goal.current.copy(pt.pos);
+        }
+      }
     }
 
     // Stronger goal pull while hiding so the flock commits to leaving
