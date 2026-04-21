@@ -1991,10 +1991,15 @@ function WallCurtainLights() {
 //      at 0.7m longest dimension that's ~80° angular size, larger
 //      than the 55° vertical fov; the bird overflows the frame at
 //      peak for a single-frame-window flash, then is gone.
-//   4. Easing: linear cruise for first 55% of flight, then pow-3
-//      acceleration through the final 45%. The cubic tail compresses
-//      post-near-pass time to ≈0.4s — user requirement: "只有一瞬".
-//   5. Duration 5–6.5s total (tight — strike, not tour).
+//   4. Easing: linear cruise for first 47.5% of flight, then pow-3
+//      acceleration through the final 52.5%. The cubic tail
+//      compresses post-near-pass time to ≈0.4s — user requirement:
+//      "只有一瞬".
+//   5. Duration 4.3–5.6s total (tight — strike, not tour). The
+//      approach phase is 35% faster than the strike phase would
+//      naturally imply: ACCEL_START pulled back from 0.55 to 0.475
+//      so time-to-commit shortens from ~3.2s to ~2.35s, matching
+//      the user's "faster from far" note.
 //   6. Wingbeat: steady 0.5× cruise, ramping cubically to 1.8× during
 //      the commit. Matches the body's acceleration into the lens.
 //
@@ -2155,23 +2160,29 @@ function RavenFlyBy() {
     return new THREE.CatmullRomCurve3(chosen.pts());
   };
 
-  // Easing: linear for the first 55% of flight (natural cruise),
-  // then cubic (pow-3) acceleration for the last 45% so the bird
+  // Easing: linear for the first 47.5% of flight (natural cruise),
+  // then cubic (pow-3) acceleration for the last 52.5% so the bird
   // grows into the lens and is gone within ~0.4s of the near-pass.
   //
-  //   raw 0..0.55 → curve param 0.00..0.50 (linear cruise)
-  //   raw 0.55..1.00 → curve param 0.50..1.00 (pow-3 accel)
+  //   raw 0..0.475 → curve param 0.00..0.50 (linear cruise)
+  //   raw 0.475..1.00 → curve param 0.50..1.00 (pow-3 accel)
+  //
+  // ACCEL_START moved 0.55 → 0.475 and duration dropped 5–6.5s →
+  // 4.3–5.6s so the APPROACH phase (raw 0..0.475, curve 0..0.5) is
+  // ~35% faster in world-speed while the strike phase stays the same
+  // ~2.6s. Math:
+  //   approach_time = ACCEL_START × duration
+  //     old: 0.55 × 5.75 ≈ 3.16s (mean)
+  //     new: 0.475 × 4.95 ≈ 2.35s (mean), 3.16/2.35 ≈ 1.35×
+  //   strike_time = (1 - ACCEL_START) × duration
+  //     old: 0.45 × 5.75 ≈ 2.59s
+  //     new: 0.525 × 4.95 ≈ 2.60s (unchanged)
   //
   // With 5 control points (segments of 0.25 curve param each):
   //   - Near-pass sits at curve param 0.75 (point 3 of 4 segments)
   //   - Under pow-3 accel that's reached at raw ≈ 0.92
-  //   - Exit at raw 1.0 → 0.08 × 5.5s ≈ 0.44s from near-pass to gone.
-  //
-  // Tuning pow-3 (vs pow-2 previously) + closer exit (z=6.6 vs 7) +
-  // shorter duration (5–6.5s vs 6.5–8s) all stack to make the "big
-  // on screen" moment briefer and more startling — user wants a
-  // flash, not a reveal.
-  const ACCEL_START = 0.55;
+  //   - Exit at raw 1.0 → 0.08 × 5s ≈ 0.4s from near-pass to gone.
+  const ACCEL_START = 0.475;
   const ACCEL_CURVE_AT_START = 0.50;
   const curveParamForTime = (raw: number): number => {
     if (raw < ACCEL_START) {
@@ -2193,7 +2204,7 @@ function RavenFlyBy() {
     if (!s.flying && t >= s.nextFlightAt) {
       s.flying = true;
       s.startTime = t;
-      s.duration = 5 + Math.random() * 1.5; // 5–6.5s per flight — strike-like
+      s.duration = 4.3 + Math.random() * 1.3; // 4.3–5.6s per flight — approach 35% faster, strike unchanged
       s.curve = generatePath();
       if (flapAction.current) {
         flapAction.current.play();
