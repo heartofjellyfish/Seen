@@ -424,7 +424,7 @@ function CurtainPanel({
   sheenColor = "#d42828",
   emissiveColor = "#2a0303",
   emissiveStrength = 0.35,
-  segments = 80,
+  segments = 40,
   breathe = true,
 }: {
   width: number;
@@ -718,7 +718,7 @@ function StageCandleRing({
       seed: number;
       lit: boolean;
     }> = [];
-    const N_FRONT = 7;
+    const N_FRONT = 3;   // perf: only 3 real flickering pointLights now
     const N_BACK = 7;
     const N_SIDE = 3;
     for (let i = 0; i < N_FRONT; i++) {
@@ -1154,8 +1154,6 @@ function AltarSpot() {
       distance={26}
       decay={1.4}
       color="#f2cc86"
-      castShadow
-      shadow-mapSize={[512, 512]}
     >
       <object3D position={[0, 1.5, -13]} attach="target" />
     </spotLight>
@@ -1572,7 +1570,7 @@ function CandleStand({ position }: { position: [number, number, number] }) {
 function DustMotes() {
   return (
     <Sparkles
-      count={80}
+      count={40}
       // [x, y, z] box centred on position — 9m wide, 5m tall, 12m deep
       scale={[9, 5, 12]}
       position={[0, 2.8, -3]}
@@ -1937,7 +1935,7 @@ class Boid {
 }
 
 function Flock() {
-  const NUM = 60;
+  const NUM = 40;
 
   const boids = useMemo(() => {
     const list: Boid[] = [];
@@ -2126,7 +2124,7 @@ export function RedRoom() {
         toneMapping: THREE.ACESFilmicToneMapping,
         toneMappingExposure: 0.72,
       }}
-      dpr={[1, 2]}
+      dpr={[1, 1.5]}
       style={{ position: "absolute", inset: 0 }}
     >
       <color attach="background" args={["#220808"]} />
@@ -2144,8 +2142,6 @@ export function RedRoom() {
 
         <SideSconce position={[-10, 5.5, -4]} />
         <SideSconce position={[10, 5.5, -4]} />
-        <SideSconce position={[-10, 3, -11]} />
-        <SideSconce position={[10, 3, -11]} />
 
         {/* Warm back rim so the foreground floor isn't pitch black */}
         <directionalLight
