@@ -1829,30 +1829,43 @@ function WallCurtainLights() {
 }
 
 // ————— single raven fly-by —————
-// Poe/Twin-Peaks visitation: a lone raven glides out of the back of
-// the hall, wanders briefly, then commits to a near-miss dive past
-// the camera. Not frequent — a rare event, 8–15 seconds between each
-// flight, 18–21 seconds per flight, so it reads as a haunting rather
-// than decoration.
+// Thriller spectacle, not decoration. The raven is a rare event — the
+// room goes quiet, then one bird appears with deliberate intent,
+// pauses briefly to be seen, then commits to a near-miss dive past
+// the lens. Much longer dwell between flights (30–60s) so each
+// appearance feels like an apparition, not a bird feeder.
 //
 // Model: three.js official Parrot.glb (mrdoob, CC0) — chosen over
 // the Sketchfab Crow.glb because the Crow's single 10.5s "TakeOff"
 // clip contained only ~3s of actual flapping buried in 7s of idle
 // pose. The Parrot ships with a clean 1.2s seamless flight loop
 // (morph-target animated, not skinned) which is exactly what this
-// scene needs. Every material is replaced with a very-dark
-// MeshStandardMaterial at mount so the tropical red-green plumage
-// reads as corvus corax. Slight metalness + low roughness lets the
-// amber torchieres and red hemisphere catch on the wing edges,
-// giving a subtle iridescence — real ravens do this in sunlight.
+// scene needs. Every mesh's original material is mutated in place
+// (color → near-black, texture → null, slight metalness for feather
+// sheen) — NOT replaced, because a fresh MeshStandardMaterial lacks
+// the morph-target compile-time uniforms and the wings render wrong.
 //
-// Flight-path structure: one random entry point near the back-wall
-// ceiling, 4 wander waypoints that drift forward-and-down toward the
-// camera, then a variant-specific (lead, near, exit) triple that
-// determines the pose at closest approach. CatmullRom through all
-// of these gives a meandering curve in phase 1 and a committed
-// straight dive in phase 2. Variants were tuned against camera
-// position (0, 1.65, 6) fov 55°.
+// Flight choreography (this is what earlier versions got wrong):
+//   1. Each flight uses one of three HAND-AUTHORED routes — not
+//      random wander waypoints. Old behaviour used 4 random waypoints
+//      which produced visibly aimless meanders. Every waypoint now
+//      means something.
+//   2. Each route has a built-in HOVER/PAUSE moment ~55% through
+//      where the bird slows to ~15% speed for ~1.5s, wings spread,
+//      visible and still — the "be seen" beat that makes it a
+//      spectacle rather than a bird.
+//   3. After the pause, fast committed dive to near-miss, then rapid
+//      exit past the camera.
+//   4. Wingbeat timeScale modulates with the curve — slow during
+//      pause (0.2×), normal during approach (0.5×), quick during
+//      commit (1.0×). Reads as the bird "gearing up" before it dives.
+//
+// Three routes: stage-curtain emergence (most common), lateral
+// sweep past eye level, overhead dive. Every path was laid out
+// against camera at (0, 1.65, 6) fov 55° looking at (0, 3, -13).
+//
+// Tuning constants are all named ROUTE_*, PAUSE_*, SPEED_* below —
+// grep for those to adjust.
 
 function RavenFlyBy() {
   const groupRef = useRef<THREE.Group>(null);
@@ -1927,89 +1940,146 @@ function RavenFlyBy() {
   const posVec = useRef(new THREE.Vector3()).current;
   const tanVec = useRef(new THREE.Vector3()).current;
   const lookVec = useRef(new THREE.Vector3()).current;
+  const lastGoodLook = useRef(new THREE.Vector3(0, 0, 6)); // persists between frames for pause-stability
 
   const state = useRef({
     flying: false,
     startTime: 0,
-    duration: 19.0,
-    nextFlightAt: 3 + Math.random() * 4, // first appearance 3–7s in
+    duration: 10.0, // tight — no aimless wandering
+    nextFlightAt: 10 + Math.random() * 10, // first appearance 10–20s in
     curve: null as THREE.CatmullRomCurve3 | null,
+    pauseCenter: 0.55, // where on the curve the hover beat sits
   });
 
-  // Five flight variants. Each defines the (lead, near, exit) triple
-  // that shapes the final dive; CatmullRom's tangent at the `near`
-  // point determines the bird's lookAt orientation, and therefore
-  // its visible pose at closest approach.
-  type Variant = {
-    lead: () => THREE.Vector3;
-    near: () => THREE.Vector3;
-    exit: () => THREE.Vector3;
+  // Three hand-authored routes. Each is a complete list of CatmullRom
+  // control points, placed deliberately so the curve tells a story:
+  //   entry → reveal → HOVER → dive → near-miss → exit past camera.
+  //
+  // Slight randomisation on a few points (±0.3m) so repeat flights
+  // aren't bit-identical, but the character of each route is fixed.
+  type Route = {
+    name: string;
+    pauseAt: number;            // curve parameter at hover point (0..1)
+    pts: () => THREE.Vector3[]; // 6–8 control points, hover included
   };
-  const variants: Variant[] = useMemo(
-    () => [
+  const routes: Route[] = useMemo(() => {
+    const jitter = (v: number, amt = 0.3) => v + (Math.random() - 0.5) * 2 * amt;
+    return [
       {
-        // HEAD-ON: straight out of the stage toward the lens, last-
-        // frame pull-up. Faces camera squarely.
-        lead: () => new THREE.Vector3(0, 1.9, 0.8),
-        near: () => new THREE.Vector3((Math.random() - 0.5) * 0.4, 1.8, 4.6),
-        exit: () => new THREE.Vector3((Math.random() - 0.5) * 1.0, 3.2 + Math.random() * 0.6, 8.0),
+        // ROUTE_EMERGE: appears out of the back curtain at stage level,
+        // crawls forward over the stage (barely moving for dramatic
+        // reveal), pauses in the middle of the carpet, then dives at
+        // the lens. The archetypal "something was behind the curtain
+        // all along" shot. Most common (weight 2× the others).
+        name: "emerge",
+        pauseAt: 0.52,
+        pts: () => [
+          new THREE.Vector3(jitter(-0.8, 0.6), 2.4, -21.5),  // behind curtain (invisible)
+          new THREE.Vector3(jitter(-0.3, 0.4), 2.5, -17),    // slipping through the curtain seam
+          new THREE.Vector3(jitter(0, 0.3), 2.6, -11),       // mid-stage, starts to be noticed
+          new THREE.Vector3(jitter(0, 0.2), 2.3, -5.5),      // HOVER: carpet front, wings out
+          new THREE.Vector3(jitter(0.3, 0.4), 2.0, -1),      // tips into dive
+          new THREE.Vector3(jitter(0, 0.3), 1.8, 4.3),       // NEAR PASS
+          new THREE.Vector3(jitter(-1.5, 1), 3.5, 8),        // past-camera exit
+        ],
       },
       {
-        // DIAG-UP-RIGHT: enters lower-left, exits upper-right.
-        lead: () => new THREE.Vector3(-3.5, 0.9, 2.2),
-        near: () => new THREE.Vector3(-1.3 + (Math.random() - 0.5) * 0.3, 1.5, 4.5),
-        exit: () => new THREE.Vector3(3.5 + Math.random() * 0.6, 4.8 + Math.random() * 0.6, 8.0),
+        // ROUTE_LATERAL: enters from one side wall at eye level,
+        // sweeps horizontally across the hall between the chairs and
+        // the stage. Hover happens dead centre. Chooses left→right or
+        // right→left randomly per flight. The "sees the audience"
+        // route — bird drifts across your field of view as if
+        // surveying.
+        name: "lateral",
+        pauseAt: 0.50,
+        pts: () => {
+          const dir = Math.random() < 0.5 ? -1 : 1; // -1 = L→R, +1 = R→L
+          return [
+            new THREE.Vector3(-13 * dir, 3.0, jitter(-7, 1)),   // outside side wall (hidden)
+            new THREE.Vector3(-8 * dir, 2.9, jitter(-6, 0.8)),  // through invisible wall
+            new THREE.Vector3(-3 * dir, 2.7, jitter(-5, 0.5)),  // over the chairs
+            new THREE.Vector3(0, 2.5, -4.5),                    // HOVER: dead centre
+            new THREE.Vector3(3 * dir, 2.5, jitter(-3, 0.3)),
+            new THREE.Vector3(6 * dir, 2.7, jitter(-2, 0.4)),
+            new THREE.Vector3(13 * dir, 3.0, jitter(-1, 1)),    // exit through opposite wall
+          ];
+        },
       },
       {
-        // DIAG-UP-LEFT: mirror of right.
-        lead: () => new THREE.Vector3(3.5, 0.9, 2.2),
-        near: () => new THREE.Vector3(1.3 + (Math.random() - 0.5) * 0.3, 1.5, 4.5),
-        exit: () => new THREE.Vector3(-3.5 - Math.random() * 0.6, 4.8 + Math.random() * 0.6, 8.0),
+        // ROUTE_DIVE: high emergence from the ceiling area at the
+        // back of the stage, nearly motionless hover at the apex,
+        // then a steep dive to a low pass near the carpet, pulls up
+        // past the lens. The "from on high" route — classic
+        // Hitchcock framing of a hostile bird.
+        name: "dive",
+        pauseAt: 0.30,
+        pts: () => [
+          new THREE.Vector3(jitter(0, 2), 7.5, -17),        // high + far back
+          new THREE.Vector3(jitter(0, 1.5), 7.2, -12),      // coasting
+          new THREE.Vector3(jitter(0, 0.6), 6.8, -8),       // HOVER: apex (weight tilts curve here via pauseAt=0.30)
+          new THREE.Vector3(jitter(0.5, 0.5), 4.5, -3),     // mid dive
+          new THREE.Vector3(jitter(0, 0.4), 2.0, 1),        // almost at the carpet
+          new THREE.Vector3(jitter(0, 0.3), 1.7, 4.5),      // NEAR PASS, pulling up
+          new THREE.Vector3(jitter(-1, 0.8), 4.5, 8),       // shoots past camera up-and-left-ish
+        ],
       },
-      {
-        // SIDE-SWEEP-LR: horizontal swoop at eye level, left→right.
-        lead: () => new THREE.Vector3(-4.2, 2.5, 3.0),
-        near: () => new THREE.Vector3(-1.5, 2.2 + (Math.random() - 0.5) * 0.3, 4.8),
-        exit: () => new THREE.Vector3(4.5, 2.8, 7.5),
-      },
-      {
-        // DIVE-DOWN: high entry, floor-bound exit.
-        lead: () => new THREE.Vector3(0, 5.2, 2.2),
-        near: () => new THREE.Vector3((Math.random() - 0.5) * 0.6, 3.4, 4.5),
-        exit: () => new THREE.Vector3((Math.random() - 0.5) * 1.2, 0.5 + Math.random() * 0.4, 8.0),
-      },
-    ],
-    [],
-  );
+    ];
+  }, []);
 
   const generatePath = () => {
-    const start = new THREE.Vector3(
-      (Math.random() - 0.5) * 14,
-      6.2 + Math.random() * 1.6,
-      -14.5 + Math.random() * 1.5,
-    );
-    const wander: THREE.Vector3[] = [];
-    const prev = start.clone();
-    for (let i = 0; i < 4; i++) {
-      const p = new THREE.Vector3(
-        prev.x + (Math.random() - 0.5) * 7,
-        prev.y + (Math.random() - 0.5) * 3,
-        prev.z + (Math.random() - 0.15) * 4, // +z bias so it drifts forward
-      );
-      p.x = Math.max(-9, Math.min(9, p.x));
-      p.y = Math.max(2.0, Math.min(8.0, p.y));
-      p.z = Math.max(-14, Math.min(2, p.z));
-      wander.push(p);
-      prev.copy(p);
+    // Weight ROUTE_EMERGE 2× since it's the signature shot.
+    const roll = Math.random();
+    let chosen: Route;
+    if (roll < 0.5) chosen = routes[0];
+    else if (roll < 0.78) chosen = routes[1];
+    else chosen = routes[2];
+    const curve = new THREE.CatmullRomCurve3(chosen.pts());
+    // Slight tension tuning — default (0.5) gives gentle arcs; lower
+    // values would make corners sharper. Stick with default.
+    state.current.pauseCenter = chosen.pauseAt;
+    return curve;
+  };
+
+  // Speed/easing profile. Maps raw time (0..1) to curve parameter
+  // (0..1), with a flat zone around the hover point.
+  //
+  //   0 .. pauseStart:  linear approach (covers first ~50% of curve)
+  //   pauseStart .. pauseEnd:  nearly flat — curve param advances ~8%
+  //                            over 18% of time. This is the visible
+  //                            stillness that sells the spectacle.
+  //   pauseEnd .. 1.0:  accelerating dive-and-exit (smoothstep^2)
+  //
+  // PAUSE_WIDTH and PAUSE_ADVANCE together decide how much the bird
+  // moves during the hover (smaller = stiller).
+  const PAUSE_WIDTH = 0.18;
+  const PAUSE_ADVANCE = 0.08;
+  const curveParamForTime = (raw: number, center: number): number => {
+    const pauseStart = center - PAUSE_WIDTH / 2;
+    const pauseEnd = center + PAUSE_WIDTH / 2;
+
+    // Curve-param budget split so the whole duration maps to 0..1 end-to-end.
+    // Pre-pause covers [0, center - PAUSE_ADVANCE/2];
+    // pause covers [center - PAUSE_ADVANCE/2, center + PAUSE_ADVANCE/2];
+    // post-pause covers [center + PAUSE_ADVANCE/2, 1].
+    const preEnd = center - PAUSE_ADVANCE / 2;
+    const postStart = center + PAUSE_ADVANCE / 2;
+
+    if (raw < pauseStart) {
+      // Linear through the pre-pause section.
+      return (raw / pauseStart) * preEnd;
+    } else if (raw < pauseEnd) {
+      // Nearly flat — advance only PAUSE_ADVANCE of curve over PAUSE_WIDTH of time.
+      const local = (raw - pauseStart) / PAUSE_WIDTH;
+      // Subtle eased drift so it's not literally frozen.
+      const eased = local * local * (3 - 2 * local); // smoothstep
+      return preEnd + eased * PAUSE_ADVANCE;
+    } else {
+      // Smoothstep-squared accelerate into exit.
+      const local = (raw - pauseEnd) / (1 - pauseEnd);
+      const s = local * local * (3 - 2 * local);
+      const accel = s * s; // extra bite near the end
+      return postStart + accel * (1 - postStart);
     }
-    const v = variants[Math.floor(Math.random() * variants.length)];
-    return new THREE.CatmullRomCurve3([
-      start,
-      ...wander,
-      v.lead(),
-      v.near(),
-      v.exit(),
-    ]);
   };
 
   useFrame(({ clock }) => {
@@ -2020,7 +2090,7 @@ function RavenFlyBy() {
     if (!s.flying && t >= s.nextFlightAt) {
       s.flying = true;
       s.startTime = t;
-      s.duration = 18 + Math.random() * 3; // 18–21s per flight
+      s.duration = 9 + Math.random() * 2.5; // 9–11.5s per flight — tight
       s.curve = generatePath();
       if (flapAction.current) {
         flapAction.current.play();
@@ -2036,31 +2106,36 @@ function RavenFlyBy() {
     const raw = (t - s.startTime) / s.duration;
     if (raw >= 1) {
       s.flying = false;
-      s.nextFlightAt = t + 8 + Math.random() * 7; // 8–15s dwell
+      // Long dwell — flights should feel rare. Combined with 9–11s
+      // per flight, a raven is onscreen ~20% of the time.
+      s.nextFlightAt = t + 30 + Math.random() * 30; // 30–60s dwell
       groupRef.current.visible = false;
       s.curve = null;
       return;
     }
 
-    // Near-linear pacing: tiny ease-in at the very end so the exit
-    // reads as a "commit" without drowning out the earlier meander.
-    const ROAM = 0.8;
-    let p: number;
-    if (raw < ROAM) {
-      p = raw;
-    } else {
-      const p2 = (raw - ROAM) / (1 - ROAM);
-      p = ROAM + Math.pow(p2, 1.4) * (1 - ROAM);
-    }
+    const p = curveParamForTime(raw, s.pauseCenter);
 
-    // Wingbeat: steady; quicken barely in the final commit phase.
+    // Wingbeat: slow during approach (0.4×), minimal during pause
+    // (0.18×, near-glide), fast during commit/exit (1.1×).
     if (flapAction.current) {
-      if (raw < ROAM) {
-        flapAction.current.timeScale = 0.5;
+      const pauseStart = s.pauseCenter - PAUSE_WIDTH / 2;
+      const pauseEnd = s.pauseCenter + PAUSE_WIDTH / 2;
+      let timeScale: number;
+      if (raw < pauseStart) {
+        timeScale = 0.4;
+      } else if (raw < pauseEnd) {
+        // Ramp down into pause, then back up
+        const local = (raw - pauseStart) / PAUSE_WIDTH;
+        // V-shape: 0.4 → 0.18 → 0.4
+        const v = Math.abs(local - 0.5) * 2;
+        timeScale = 0.18 + 0.22 * v;
       } else {
-        const sp = (raw - ROAM) / (1 - ROAM);
-        flapAction.current.timeScale = 0.5 + 0.5 * Math.pow(sp, 2);
+        // Post-pause: 0.5 ramping to 1.1 by the end
+        const local = (raw - pauseEnd) / (1 - pauseEnd);
+        timeScale = 0.5 + 0.6 * local;
       }
+      flapAction.current.timeScale = timeScale;
     }
 
     s.curve.getPoint(p, posVec);
@@ -2068,7 +2143,15 @@ function RavenFlyBy() {
 
     groupRef.current.visible = true;
     groupRef.current.position.copy(posVec);
-    lookVec.copy(posVec).add(tanVec);
+
+    // LookAt using tangent direction — but during the hover the
+    // tangent magnitude drops near-zero, which makes lookAt jittery
+    // (it'll keep facing whatever random noise is in the tangent).
+    // Keep the last stable look direction when the tangent is weak.
+    if (tanVec.lengthSq() > 1e-4) {
+      lastGoodLook.current.copy(tanVec).normalize();
+    }
+    lookVec.copy(posVec).add(lastGoodLook.current);
     groupRef.current.lookAt(lookVec);
   });
 
