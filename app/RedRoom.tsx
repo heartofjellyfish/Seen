@@ -515,6 +515,50 @@ function CurtainPanel({
 // piece with a scalloped lower lip, so the proscenium reads as an
 // ornamental draped theatre top rather than a flat strip.
 
+// Procedural velvet pleat map: vertical bands of dark/light to simulate
+// the shading of draped fabric folds. Used as `map` on the swag material
+// so the surface has pleat-pattern tonal variation even without 3-D geom.
+function makeVelvetPleatTexture(): THREE.CanvasTexture {
+  const W = 512;
+  const H = 256;
+  const c = document.createElement("canvas");
+  c.width = W;
+  c.height = H;
+  const ctx = c.getContext("2d")!;
+  // Base velvet tone
+  ctx.fillStyle = "#ffffff"; // neutral, material.color multiplies against this
+  ctx.fillRect(0, 0, W, H);
+  // Vertical pleat bands — each pleat has a dark fold line + gradient
+  const PLEATS = 22;
+  for (let i = 0; i < PLEATS; i++) {
+    const x = (i / PLEATS) * W;
+    const w = W / PLEATS;
+    // Per-pleat left-to-right gradient: lit face → fold (dark) → lit face
+    const g = ctx.createLinearGradient(x, 0, x + w, 0);
+    g.addColorStop(0.00, "rgba(120, 120, 120, 1)"); // edge of pleat (shadowed)
+    g.addColorStop(0.20, "rgba(235, 235, 235, 1)"); // peak of pleat (lit)
+    g.addColorStop(0.50, "rgba(60,  60,  60,  1)"); // fold valley (deepest dark)
+    g.addColorStop(0.80, "rgba(225, 225, 225, 1)"); // peak again
+    g.addColorStop(1.00, "rgba(120, 120, 120, 1)"); // back to edge
+    ctx.fillStyle = g;
+    ctx.fillRect(x, 0, w, H);
+  }
+  // Overlay subtle vertical noise streaks so pleats aren't perfectly uniform
+  for (let n = 0; n < 400; n++) {
+    const nx = Math.random() * W;
+    const ny = Math.random() * H;
+    const nw = 2 + Math.random() * 3;
+    const nh = 8 + Math.random() * 20;
+    ctx.fillStyle = `rgba(0, 0, 0, ${0.05 + Math.random() * 0.08})`;
+    ctx.fillRect(nx, ny, nw, nh);
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = THREE.ClampToEdgeWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.needsUpdate = true;
+  return tex;
+}
+
 function makeSwagHalfGeometry(
   halfWidth: number,
   topHeight: number,
@@ -566,27 +610,43 @@ function Festoon({
   const geoLeft  = useMemo(() => makeSwagHalfGeometry(halfW, 0.15, 0.50, 1.25, 5, 0.20, true),  [halfW]);
   const geoRight = useMemo(() => makeSwagHalfGeometry(halfW, 0.15, 0.50, 1.25, 5, 0.20, false), [halfW]);
 
+  // Shared pleat-shading texture — same instance for both halves.
+  const pleatTex = useMemo(() => {
+    const t = makeVelvetPleatTexture();
+    // Planar UVs from ShapeGeometry map 1:1 to world coords, so we
+    // repeat the pleat pattern a few times across the width.
+    t.wrapS = THREE.RepeatWrapping;
+    t.wrapT = THREE.ClampToEdgeWrapping;
+    t.repeat.set(2, 1);
+    return t;
+  }, []);
+
   return (
     <group position={position}>
-      {/* Left half of the grand drape */}
+      {/* Left half of the grand drape. Dark wine base. Emissive kept
+          very low so the upper corners stay properly shadowed (nothing
+          really lights this area). The pleat texture gives the tonal
+          variation that reads as folded velvet. */}
       <mesh geometry={geoLeft} castShadow>
         <meshStandardMaterial
-          color="#8a1818"
-          roughness={0.88}
+          map={pleatTex}
+          color="#5a0e0e"
+          roughness={0.92}
           metalness={0}
-          emissive="#4a0808"
-          emissiveIntensity={0.6}
+          emissive="#200303"
+          emissiveIntensity={0.12}
           side={THREE.DoubleSide}
         />
       </mesh>
       {/* Right half */}
       <mesh geometry={geoRight} castShadow>
         <meshStandardMaterial
-          color="#8a1818"
-          roughness={0.88}
+          map={pleatTex}
+          color="#5a0e0e"
+          roughness={0.92}
           metalness={0}
-          emissive="#4a0808"
-          emissiveIntensity={0.6}
+          emissive="#200303"
+          emissiveIntensity={0.12}
           side={THREE.DoubleSide}
         />
       </mesh>
@@ -595,22 +655,22 @@ function Festoon({
       <mesh position={[0, -0.42, 0.04]} castShadow>
         <sphereGeometry args={[0.18, 20, 14]} />
         <meshStandardMaterial
-          color="#c49538"
-          roughness={0.38}
-          metalness={0.85}
-          emissive="#5a3d10"
-          emissiveIntensity={0.45}
+          color="#8e6a24"
+          roughness={0.45}
+          metalness={0.8}
+          emissive="#2a1a06"
+          emissiveIntensity={0.18}
         />
       </mesh>
       {/* Tassel hanging below the rosette */}
       <mesh position={[0, -0.66, 0.04]} castShadow>
         <coneGeometry args={[0.07, 0.28, 14]} />
         <meshStandardMaterial
-          color="#b07828"
-          roughness={0.55}
-          metalness={0.7}
-          emissive="#402a10"
-          emissiveIntensity={0.35}
+          color="#7a5018"
+          roughness={0.6}
+          metalness={0.55}
+          emissive="#1a1006"
+          emissiveIntensity={0.15}
         />
       </mesh>
     </group>
