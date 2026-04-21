@@ -2316,22 +2316,25 @@ class Boid {
   private accel = new THREE.Vector3();
   private tmp = new THREE.Vector3();
 
-  // Room is x=±11, y=0–9, z=-16 to +8. Box tuned so 40 birds produce
-  // demo-like density.
-  //   worldHalf (14, 5, 16) → volume 8960
-  //   density 60/8960 = 0.0067 per unit³
-  //   neighbors at radius 8: 0.0067 * (4/3 π 512) = 14.4 → ~5.7
-  //   after 40% sampling. Enough for each bird's cohesion average
-  //   to actually reflect the flock, producing real group motion.
-  worldHalf = new THREE.Vector3(14, 5, 16);
-  // Wider neighborhood so each bird actually sees the flock when
-  // computing cohesion/alignment averages. At radius 5 and our low
-  // density, only ~1.4 neighbors were active per call (after 40%
-  // sampling) — too few to produce statistical coherence, which is
-  // why the flock felt like a loose scatter of independents. At
-  // radius 8 active neighbors become ~5.7 and real group behavior
-  // emerges.
-  neighborhoodRadius = 8.0;
+  // Room (world): side curtains at x=±11, back curtain at z=-16,
+  // ceiling ~y=9, floor y=0. Flock renders inside a group at
+  // GROUP_POS (0, 5, -3), so the box below is LOCAL to that group.
+  //
+  // Sized to stay fully INSIDE the curtains (1m margin) so the soft
+  // wall-avoid force never has to overcome momentum across a curtain
+  // plane. Previous values (14, 5, 16) put the box 3m past the side
+  // and back curtains — birds visibly penetrated them.
+  //
+  //   worldHalf (10, 4.5, 12) → volume 4320 (down from 8960)
+  //   density 60/4320 = 0.0139 per unit³ (2× old)
+  //   neighbors at radius 6: 0.0139 × (4/3 π 216) × 0.6 ≈ 7.5
+  //   active — close to the previous 5.7, keeps flocking quality.
+  worldHalf = new THREE.Vector3(10, 4.5, 12);
+  // Radius dropped from 8.0 → 6.0 to keep active-neighbor count in
+  // the flocking sweet spot (5–10) after the density doubled from
+  // the box shrink. Above 15 birds cluster into a blob; below 3 they
+  // scatter independently. 6.0 puts us around 7.5.
+  neighborhoodRadius = 6.0;
   maxSpeed = 0.12;
   // 50:1 ratio of maxSpeed:maxSteerForce matches the pen and gives
   // the gentle-arc feel — steering takes many frames to redirect
@@ -2351,6 +2354,65 @@ class Boid {
     }
     if (Math.random() > 0.5) this.doFlock(flock);
     this.move();
+    // Hard-clamp as a safety net AFTER the physics step. The soft
+    // addAvoid forces handle 99% of cases, but cohesion can pull a
+    // bird slightly past a wall before avoid catches up, and the
+    // avoid's sign is wrong for birds already outside the box (it
+    // pushes them further out). The clamp guarantees no curtain can
+    // ever be penetrated, no matter how the flocking forces align.
+    this.clampToRoom();
+  }
+
+  // Enforce the room as a hard boundary. Called every frame after
+  // move(). In addition to the axis-aligned bounds encoded in
+  // worldHalf, a second forbidden region is carved out for the stage
+  // enclosure — birds shouldn't enter the volume behind the closed
+  // stage curtain (the red pleated drape on the proscenium).
+  //
+  // All coordinates here are LOCAL to the flock group (GROUP_POS at
+  // (0, 5, -3) world). World→local offsets for the stage geometry:
+  //   world back curtain z=-16 → local -13 (covered by worldHalf.z=12)
+  //   world side curtains x=±11 → local ±11 (covered by worldHalf.x=10)
+  //   world stage closed curtain z=-10.75 → local -7.75
+  //   world stage aperture x∈[-6.5, 6.5], y∈[1.5, 7.5]
+  //     → local x∈[-6.5, 6.5], y∈[-3.5, 2.5]
+  private clampToRoom() {
+    // Axis-aligned room bounds
+    if (this.position.x > this.worldHalf.x) {
+      this.position.x = this.worldHalf.x;
+      if (this.velocity.x > 0) this.velocity.x = 0;
+    } else if (this.position.x < -this.worldHalf.x) {
+      this.position.x = -this.worldHalf.x;
+      if (this.velocity.x < 0) this.velocity.x = 0;
+    }
+    if (this.position.y > this.worldHalf.y) {
+      this.position.y = this.worldHalf.y;
+      if (this.velocity.y > 0) this.velocity.y = 0;
+    } else if (this.position.y < -this.worldHalf.y) {
+      this.position.y = -this.worldHalf.y;
+      if (this.velocity.y < 0) this.velocity.y = 0;
+    }
+    if (this.position.z > this.worldHalf.z) {
+      this.position.z = this.worldHalf.z;
+      if (this.velocity.z > 0) this.velocity.z = 0;
+    } else if (this.position.z < -this.worldHalf.z) {
+      this.position.z = -this.worldHalf.z;
+      if (this.velocity.z < 0) this.velocity.z = 0;
+    }
+
+    // Stage closed curtain: the pleated drape at world z=-10.75 is
+    // only a wall within the stage aperture. Birds flying above it
+    // (y > 2.5 local / 7.5 world) pass safely over; birds flying off
+    // to the sides of it pass around. But if a bird is in the
+    // aperture, it cannot cross z < -7.75 local.
+    const inStageAperture =
+      Math.abs(this.position.x) < 6.5 &&
+      this.position.y > -3.5 &&
+      this.position.y < 2.5;
+    if (inStageAperture && this.position.z < -7.75) {
+      this.position.z = -7.75;
+      if (this.velocity.z < 0) this.velocity.z = 0;
+    }
   }
 
   private addAvoid(x: number, y: number, z: number) {
@@ -2545,36 +2607,44 @@ function Flock() {
       dwell,
     });
     return {
-      // 6 hideouts, 18s each. All reliably outside the fov 55°
-      // frustum on BOTH portrait and landscape viewports:
+      // 6 hideouts, 18s each. All inside the new tighter flock box
+      // (x ∈ [-10, 10], z ∈ [-15, 9] world) AND reliably outside the
+      // fov 55° frustum on BOTH portrait and landscape viewports:
       //   - z > camera.z (=6) puts the bird behind the camera —
       //     the most robust offscreen test, works any aspect.
-      //   - |x| ≥ 12 at z=-3 (distance 9 from camera): landscape
-      //     horizontal half-width ≈ 8.2 → outside. Portrait narrower
-      //     still. Safe.
-      // Previously had (0, 9, -17) listed as a hideout but at z=-17
-      // frame-center-y is 3.28 and frame half-height is 11.96, so
-      // y=9 sits only 48% up from center — fully in frame. Removed.
+      //   - |x| = 10 at z=-3 (distance 9 from camera): landscape
+      //     horizontal half-width ≈ 7.5 → 2.5m margin outside frame.
+      // Previously hideouts lived at |x|=12 z=-3 and z=10–11 which
+      // put them 2–3m beyond the curtains; the flock would settle
+      // there and the box wall-avoid would fight cohesion — ugly,
+      // visibly-clipping behaviour. Pulled inward to |x|=9.5 max and
+      // behind-camera z=7 max so everything stays inside the box.
       hideouts: [
-        toLocal(0, 8, 10, 18),     // behind camera, high center
-        toLocal(0, 1, 11, 18),     // behind camera, low center
-        toLocal(9, 5, 10, 18),     // behind camera, slight right
-        toLocal(-9, 5, 10, 18),    // behind camera, slight left
-        toLocal(12, 8, -3, 18),    // far-right, high (beyond lateral frustum)
-        toLocal(-12, 8, -3, 18),   // far-left, high
+        toLocal(0, 8, 7, 18),      // behind camera, high center
+        toLocal(0, 1, 7, 18),      // behind camera, low center
+        toLocal(8, 5, 7, 18),      // behind camera, slight right
+        toLocal(-8, 5, 7, 18),     // behind camera, slight left
+        toLocal(9.5, 8, -3, 18),   // far-right, high (beyond lateral frustum)
+        toLocal(-9.5, 8, -3, 18),  // far-left, high
       ],
       // 5 shows, 5s each — clearly inside the visible area. This is
-      // where the user's eye is rewarded. Includes the deep-back
-      // corners (|x|=4 at z=-16 is inside the frustum even on
-      // portrait aspect) so the flock does visit the back-stage.
-      // Transit from any hideout to any show passes the flock
-      // through the camera frame, which IS the spectacle.
+      // where the user's eye is rewarded. Transit from any hideout
+      // to any show passes the flock through the camera frame,
+      // which IS the spectacle.
+      //
+      // Previous deep-back shows at (±4, 7, -16) literally sat on
+      // the back curtain surface AND inside the stage aperture
+      // (|x|<6.5, y∈[1.5, 7.5]) — birds would be pulled behind the
+      // closed stage curtain, i.e., into the void. Moved them to
+      // x=±8 (outside the stage aperture, in the side-of-stage
+      // region where back curtain is solid wall not drape) and
+      // z=-13 (3m in front of back curtain).
       shows: [
         toLocal(-4, 5, 1, 5),      // dive over Venus
-        toLocal(0, 4, -10, 5),     // sweep through upper stage
+        toLocal(0, 4, -9, 5),      // stage-front sweep (1.75m in front of closed curtain)
         toLocal(3, 3, -5, 5),      // mid-room center dive
-        toLocal(4, 7, -16, 5),     // deep back-right corner
-        toLocal(-4, 7, -16, 5),    // deep back-left corner
+        toLocal(8, 7, -13, 5),     // deep back-right, side-of-stage
+        toLocal(-8, 7, -13, 5),    // deep back-left, side-of-stage
       ],
     };
   }, [GROUP_POS]);
