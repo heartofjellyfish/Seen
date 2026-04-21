@@ -7,6 +7,7 @@ import {
   Clouds,
   PerspectiveCamera,
   Sparkles,
+  Stats,
   useAnimations,
   useGLTF,
   useTexture,
@@ -2462,6 +2463,9 @@ export function RedRoom() {
         <DustMotes />
         <Flock />
         <Bird />
+
+        {/* Dev-only FPS panel (top-left). Remove before prod. */}
+        <Stats />
 
         {/* Post-processing — texture + focus layer. No brightening:
             Vignette darkens corners, ChromaticAberration adds a subtle
