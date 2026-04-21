@@ -2596,12 +2596,21 @@ function Flock() {
   // of the time, so each reappearance reads as an event instead of
   // ambient traffic.
   //
-  // Cadence:
-  //   hide dwell 25–35s  (randomised per visit)
-  //   show dwell 2–4s    (randomised per visit)
-  //   35% chance hide→hide instead of strict alternation (sometimes
-  //     the flock stays invisible for ~60s — the "something is
-  //     watching" beat without the reveal).
+  // Cadence (recalibrated after a previous version went too far into
+  // hidden mode — avg 46s hide vs 3s show gave only ~6% visible,
+  // which read as "flock disappeared entirely"):
+  //   hide dwell 12–18s  (randomised per visit)
+  //   show dwell  4–6s   (randomised per visit)
+  //   15% chance hide→hide instead of strict alternation. Keeps the
+  //     occasional "extra-long absence" beat without letting it
+  //     dominate the cycle.
+  //
+  // Math: per ~20s cycle, ~2s of hide dwell is still-visible transit
+  // (flock leaving frame under the boosted goal pull), the rest is
+  // truly offscreen. So:
+  //   visible = show_dwell + leaving_transit ≈ 5 + 2 = 7s
+  //   hidden  = hide_dwell − leaving_transit ≈ 15 − 2 = 13s
+  //   → ~35% visible, ~65% offscreen.
   //
   // Hideouts sit just inside the box edges (wall-avoid prevents
   // reaching them exactly, but d=1–2 from the wall is enough to
@@ -2677,20 +2686,21 @@ function Flock() {
       waypointStart.current = t;
       // Non-strict phase selection:
       //   from show → always hide (flock disappears after reveal)
-      //   from hide → 65% chance show, 35% chance another hide
-      //     (sometimes two hide waypoints in a row, ~60s invisible)
-      // Dwell is randomised per pick: hide 25–35s, show 2–4s.
+      //   from hide → 85% chance show, 15% chance another hide
+      //     (occasional extra-long absence, rare enough that the
+      //     user still sees regular reappearances)
+      // Dwell is randomised per pick: hide 12–18s, show 4–6s.
       if (phase.current === "show") {
         phase.current = "hide";
       } else {
-        phase.current = Math.random() < 0.65 ? "show" : "hide";
+        phase.current = Math.random() < 0.85 ? "show" : "hide";
       }
       const pool = phase.current === "hide" ? hideouts : shows;
       const next = pool[Math.floor(Math.random() * pool.length)];
       currentDwell.current =
         phase.current === "hide"
-          ? 25 + Math.random() * 10 // 25–35s offscreen
-          : 2 + Math.random() * 2;  // 2–4s onscreen
+          ? 12 + Math.random() * 6 // 12–18s offscreen
+          : 4 + Math.random() * 2; // 4–6s onscreen
       goal.current.copy(next.local);
     }
 

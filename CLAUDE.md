@@ -25,16 +25,16 @@ All lengths are world units (≈ meters). Camera is at `(0, 1.65, 6)`, fov 55°,
 | Goal multiplier | `Boid.goalMultiplier` | `0.0005` show / `0.002` hide | Per-Boid field. Flock sets it based on phase — weak pull during shows (flock lingers), strong pull during hides (flock commits to offscreen). |
 | Separation cap | `Boid.separation()` | `maxSteerForce * 2.5` | Caps the anti-collision force. `4×` was too strong → birds spun in place. |
 | Sampling rate | alignment/cohesion/separation | `60%` (`Math.random() > 0.4`) | Matches the reference pen. Reducing = cheaper but looser. |
-| Hide dwell | picked in `Flock` | `25–35s` (random per visit) | How long the flock stays at an offscreen waypoint. |
-| Show dwell | picked in `Flock` | `2–4s` (random per visit) | How long the flock lingers at an onscreen waypoint. |
-| Hide-after-hide chance | `Flock` phase logic | `0.35` | From a hide, 35% chance to pick another hide (≈60s invisible stretch) instead of 65% returning to a show. Show always transitions to hide. |
+| Hide dwell | picked in `Flock` | `12–18s` (random per visit) | How long the flock stays at an offscreen waypoint. |
+| Show dwell | picked in `Flock` | `4–6s` (random per visit) | How long the flock lingers at an onscreen waypoint. |
+| Hide-after-hide chance | `Flock` phase logic | `0.15` | From a hide, 15% chance to pick another hide (occasional extra-long absence) instead of the default 85% returning to a show. Show always transitions to hide. |
 
 ### Calibrated ratios — do not break these without deliberation
 
 1. **maxSpeed : maxSteerForce = 50 : 1.** At this ratio turns look like bird physics. Raising steerForce makes the flock twitchy; lowering makes them overshoot goals.
 2. **Goal multiplier ≈ maxSteerForce.** The reference pen uses `0.005` with `maxSpeed=5`, i.e. also 1/1000 of speed. At our `maxSpeed=0.12` that's `0.00012`; we use `0.0005` to accelerate waypoint transits without drowning out flocking.
 3. **Active-neighbor count.** For radius `r`, neighborhood volume ≈ `(4/3)π r³`. Box volume = `8 · 10 · 4.5 · 12 = 4320`. Density = `NUM / 4320`. Active neighbors ≈ `(4/3)π r³ · density · 0.6` (the 0.6 is sampling rate). At `r=6`, `NUM=60` → ≈7.5, in the cohesion-produces-flocking range. Below ~3 the birds scatter; above ~15 they cluster into a blob.
-4. **Hide ≫ show.** Target ≥60% offscreen time. Current cadence (25–35s hide, 2–4s show, 35% chance of consecutive hides) produces ≈65% offscreen after transit overhead.
+4. **Hide ≫ show, but not by infinity.** Target 60–70% offscreen. **Math**: visible = show_dwell + leaving_transit (flock is still visible while transiting TO a hideout under the boosted goal pull — about 2s of the hide dwell). Hidden = hide_dwell − leaving_transit. With current values (12–18s hide, 4–6s show, 15% consecutive hide), the ≈20s cycle averages ~7s visible / ~13s hidden = **~35% visible**. Earlier tuning at 25–35s hide + 2–4s show + 35% consecutive hides dropped visibility to ~6% — almost entirely invisible — which was too much.
 
 ### Waypoint placement rules
 
