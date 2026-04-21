@@ -1914,11 +1914,18 @@ function WallCurtainLights() {
 //      where the bird slows to ~15% speed for ~1.5s, wings spread,
 //      visible and still — the "be seen" beat that makes it a
 //      spectacle rather than a bird.
-//   3. After the pause, fast committed dive to near-miss, then rapid
-//      exit past the camera.
-//   4. Wingbeat timeScale modulates with the curve — slow during
-//      pause (0.2×), normal during approach (0.5×), quick during
-//      commit (1.0×). Reads as the bird "gearing up" before it dives.
+//   3. After the pause, QUADRATIC acceleration (local²) toward the
+//      near-pass — bird grows huge in the frame inside the last ~1s
+//      and is gone within 0.3s of the closest approach. No lingering
+//      on-camera; impact is the change-of-scale, not the duration.
+//   4. Near-pass distances are tight: 1.0m (EMERGE), 0.85m (DIVE) —
+//      bird covers 70–85% of frame height at the pass, with camera
+//      at fov 55° vertical. LATERAL keeps its distance (~10m) because
+//      it's an "ambient surveillance" pass, not a strike.
+//   5. Wingbeat timeScale modulates with the curve — slow during
+//      approach (0.4×), minimal during pause (0.18×, near-glide),
+//      then quadratic ramp up to 1.8× during commit, peaking at exit.
+//      Reads as the bird "gearing up → striking" not steady flapping.
 //
 // Three routes: stage-curtain emergence (most common), lateral
 // sweep past eye level, overhead dive. Every path was laid out
@@ -2031,16 +2038,24 @@ function RavenFlyBy() {
         // reveal), pauses in the middle of the carpet, then dives at
         // the lens. The archetypal "something was behind the curtain
         // all along" shot. Most common (weight 2× the others).
+        //
+        // Near-pass at z=5.0 is **1.0m from the lens** (camera at z=6).
+        // With the bird at ~0.7m longest dimension, that's ~70% of
+        // frame height at closest approach — dramatic, not subtle.
+        // Exit at z=6.8 is just 0.8m behind the camera so the bird
+        // vanishes within ~0.3s of the close-pass under the pow-2
+        // post-pause easing (see curveParamForTime below). No
+        // lingering.
         name: "emerge",
         pauseAt: 0.52,
         pts: () => [
-          new THREE.Vector3(jitter(-0.8, 0.6), 2.4, -21.5),  // behind curtain (invisible)
-          new THREE.Vector3(jitter(-0.3, 0.4), 2.5, -17),    // slipping through the curtain seam
-          new THREE.Vector3(jitter(0, 0.3), 2.6, -11),       // mid-stage, starts to be noticed
-          new THREE.Vector3(jitter(0, 0.2), 2.3, -5.5),      // HOVER: carpet front, wings out
-          new THREE.Vector3(jitter(0.3, 0.4), 2.0, -1),      // tips into dive
-          new THREE.Vector3(jitter(0, 0.3), 1.8, 4.3),       // NEAR PASS
-          new THREE.Vector3(jitter(-1.5, 1), 3.5, 8),        // past-camera exit
+          new THREE.Vector3(jitter(-0.8, 0.6), 2.4, -21.5), // behind curtain (invisible)
+          new THREE.Vector3(jitter(-0.3, 0.4), 2.5, -17),   // slipping through the curtain seam
+          new THREE.Vector3(jitter(0, 0.3), 2.6, -11),      // mid-stage, starts to be noticed
+          new THREE.Vector3(jitter(0, 0.2), 2.3, -5.5),     // HOVER: carpet front, wings out
+          new THREE.Vector3(jitter(0.2, 0.3), 2.0, -0.5),   // tips into dive (full commit)
+          new THREE.Vector3(jitter(0, 0.2), 1.75, 5.0),     // NEAR PASS — 1.0m from lens
+          new THREE.Vector3(jitter(0.4, 0.3), 2.2, 6.8),    // exit just behind camera
         ],
       },
       {
@@ -2071,16 +2086,19 @@ function RavenFlyBy() {
         // then a steep dive to a low pass near the carpet, pulls up
         // past the lens. The "from on high" route — classic
         // Hitchcock framing of a hostile bird.
+        // Near-pass at z=5.2, 0.85m from the lens — the closest of the
+        // three routes, since a dive naturally commits harder. Exit
+        // at z=7 is immediately behind camera so the bird snaps out.
         name: "dive",
         pauseAt: 0.30,
         pts: () => [
-          new THREE.Vector3(jitter(0, 2), 7.5, -17),        // high + far back
-          new THREE.Vector3(jitter(0, 1.5), 7.2, -12),      // coasting
-          new THREE.Vector3(jitter(0, 0.6), 6.8, -8),       // HOVER: apex (weight tilts curve here via pauseAt=0.30)
-          new THREE.Vector3(jitter(0.5, 0.5), 4.5, -3),     // mid dive
-          new THREE.Vector3(jitter(0, 0.4), 2.0, 1),        // almost at the carpet
-          new THREE.Vector3(jitter(0, 0.3), 1.7, 4.5),      // NEAR PASS, pulling up
-          new THREE.Vector3(jitter(-1, 0.8), 4.5, 8),       // shoots past camera up-and-left-ish
+          new THREE.Vector3(jitter(0, 2), 7.5, -17),      // high + far back
+          new THREE.Vector3(jitter(0, 1.5), 7.2, -12),    // coasting
+          new THREE.Vector3(jitter(0, 0.6), 6.8, -8),     // HOVER: apex (weight tilts curve here via pauseAt=0.30)
+          new THREE.Vector3(jitter(0.5, 0.5), 4.5, -3),   // mid dive
+          new THREE.Vector3(jitter(0, 0.4), 2.2, 1.5),    // about to flatten out
+          new THREE.Vector3(jitter(0, 0.2), 1.7, 5.2),    // NEAR PASS — 0.85m from lens
+          new THREE.Vector3(jitter(-0.5, 0.4), 3.5, 7.0), // shoots past camera up
         ],
       },
     ];
@@ -2134,10 +2152,16 @@ function RavenFlyBy() {
       const eased = local * local * (3 - 2 * local); // smoothstep
       return preEnd + eased * PAUSE_ADVANCE;
     } else {
-      // Smoothstep-squared accelerate into exit.
+      // Aggressive quadratic acceleration: slow take-off from the
+      // hover, then violently fast through the near-pass and into
+      // exit. Concretely, local^2 means the bird covers only 25% of
+      // the remaining curve at the halfway-time mark, then sprints
+      // the last 75% in the final half. Under an 8s total flight
+      // this puts the near-pass moment around raw≈0.87 (mid-way
+      // through visual acceleration) and the exit at raw=1.0,
+      // collapsing the last 0.3s of flight into a huge→gone whoosh.
       const local = (raw - pauseEnd) / (1 - pauseEnd);
-      const s = local * local * (3 - 2 * local);
-      const accel = s * s; // extra bite near the end
+      const accel = local * local;
       return postStart + accel * (1 - postStart);
     }
   };
@@ -2150,7 +2174,7 @@ function RavenFlyBy() {
     if (!s.flying && t >= s.nextFlightAt) {
       s.flying = true;
       s.startTime = t;
-      s.duration = 9 + Math.random() * 2.5; // 9–11.5s per flight — tight
+      s.duration = 7 + Math.random() * 1.5; // 7–8.5s per flight — tight, strike-like
       s.curve = generatePath();
       if (flapAction.current) {
         flapAction.current.play();
@@ -2177,7 +2201,8 @@ function RavenFlyBy() {
     const p = curveParamForTime(raw, s.pauseCenter);
 
     // Wingbeat: slow during approach (0.4×), minimal during pause
-    // (0.18×, near-glide), fast during commit/exit (1.1×).
+    // (0.18×, near-glide), then violently fast during commit (up to
+    // 1.8×) so the wings match the body's acceleration into the lens.
     if (flapAction.current) {
       const pauseStart = s.pauseCenter - PAUSE_WIDTH / 2;
       const pauseEnd = s.pauseCenter + PAUSE_WIDTH / 2;
@@ -2185,15 +2210,16 @@ function RavenFlyBy() {
       if (raw < pauseStart) {
         timeScale = 0.4;
       } else if (raw < pauseEnd) {
-        // Ramp down into pause, then back up
+        // V-shape: 0.4 → 0.18 → 0.4 across the hover
         const local = (raw - pauseStart) / PAUSE_WIDTH;
-        // V-shape: 0.4 → 0.18 → 0.4
         const v = Math.abs(local - 0.5) * 2;
         timeScale = 0.18 + 0.22 * v;
       } else {
-        // Post-pause: 0.5 ramping to 1.1 by the end
+        // Post-pause: quadratic ramp 0.5 → 1.8, matching the pow-2
+        // curve-parameter acceleration. Peaks at exit, where wings
+        // are beating hardest as the body rockets past the camera.
         const local = (raw - pauseEnd) / (1 - pauseEnd);
-        timeScale = 0.5 + 0.6 * local;
+        timeScale = 0.5 + 1.3 * local * local;
       }
       flapAction.current.timeScale = timeScale;
     }
