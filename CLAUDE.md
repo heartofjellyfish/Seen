@@ -44,7 +44,9 @@ Waypoints are split into two pools (`hideouts`, `shows`). Phase logic: show alwa
   - `z > 7` (behind the camera at z=6) — robust for any aspect ratio.
   - `|x| ≥ 9.5` at `z=-3` — lateral half-width at distance 9 from camera at fov 55° is ≈ 7.5 landscape, narrower portrait. 9.5 clears the frustum with ~2m margin.
   - **All hideouts must also be inside the new smaller `worldHalf` box** (x ∈ ±10, y ∈ [0.5, 9.5], z ∈ [-15, 9] world). Previous hideouts at `|x|=12` or `z=10` were past the curtains — that's what was causing visible penetration.
-- **Shows must be inside the frustum AND inside the box.** Stage area `y ∈ [2, 8]`, `x ∈ [-5, 5]`, `z ∈ [-13, 2]` is safe. Deep back shows (`|x|=8, z=-13`) stay off to the *sides* of the stage aperture so the stage drape clamp doesn't fight them.
+- **Shows must be inside the frustum AND inside the box.** Stage area `y ∈ [2, 8]`, `x ∈ [-5, 5]`, `z ∈ [-13, 2]` is safe.
+- **Show distance spread is deliberate 3×2 grid**: NEAR (≈4m) / MID (≈10m) / FAR (≈16m) × LEFT / RIGHT, one waypoint per cell. Uniform random pick gives 1/3 each distance tier and 1/2 each side. Earlier pools had no NEAR shows at all — flock always looked the same size on screen.
+  - NEAR tier horizontal constraint: at z=3 (close to camera z=6), landscape horizontal half-width is ≈2.5m, so NEAR waypoints must keep `|x| ≤ 2` or the flock centre lands off-frame.
 
 ### Known failure modes (root causes, not symptoms)
 

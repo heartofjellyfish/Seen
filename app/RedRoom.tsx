@@ -2656,17 +2656,33 @@ function Flock() {
         toLocal(9.5, 3, 3),        // far-right wall, mid (new)
         toLocal(-9.5, 3, 3),       // far-left wall, mid (new)
       ],
-      // 6 shows — brief appearances inside the visible stage area.
-      // More variety than before so no two consecutive shows feel
-      // identical. Transit from any hideout to any show passes the
-      // flock through the camera frame, which IS the spectacle.
+      // 6 shows arranged as a deliberate 3×2 grid:
+      //   NEAR / MID / FAR  ×  LEFT / RIGHT
+      // Each cell has exactly one waypoint, so random pick gives a
+      // 1/3 chance for each distance tier and 1/2 chance for each
+      // side — matches the user's explicit ask for a spatial mix
+      // instead of the previous everything-is-mid-or-far clumping.
+      //
+      // Distances from camera at (0, 1.65, 6):
+      //   NEAR = 3–5m   (flock fills the frame, reads as charge)
+      //   MID  = 10–11m (classic over-the-hall pass)
+      //   FAR  = 16–17m (deep stage, reads as ambience)
+      //
+      // In-frame constraint: camera fov 55° vertical, ~80° horizontal
+      // on landscape. At z=3 (near tier) horizontal half-width is
+      // only ≈2.5m, so NEAR x must stay within ±2. MID/FAR are
+      // much wider — |x|=5 at z=-3 is well inside, |x|=4 at z=-10
+      // is trivially inside.
       shows: [
-        toLocal(-4, 5, 1),         // dive over Venus
-        toLocal(0, 4, -9),         // stage-front sweep (1.75m in front of closed curtain)
-        toLocal(3, 3, -5),         // mid-room center dive
-        toLocal(8, 7, -13),        // deep back-right, side-of-stage
-        toLocal(-8, 7, -13),       // deep back-left, side-of-stage
-        toLocal(-2, 3, -2),        // low mid-left pass (new)
+        // NEAR tier (dist ≈ 4m)
+        toLocal(-2, 2.5, 3),       // near-left: low charge toward Venus side
+        toLocal(2, 3.5, 3),        // near-right: low charge from right (slightly higher y for variety)
+        // MID tier (dist ≈ 10–11m)
+        toLocal(-5, 4, -3),        // mid-left: over the left chairs
+        toLocal(5, 4, -3),         // mid-right: over the right chairs
+        // FAR tier (dist ≈ 16–17m)
+        toLocal(-4, 5.5, -10),     // far-left: high over stage area
+        toLocal(4, 5, -10),        // far-right: high over stage area
       ],
     };
   }, [GROUP_POS]);
