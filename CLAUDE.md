@@ -45,18 +45,16 @@ Waypoints are split into two pools (`hideouts`, `shows`). Phase logic: show alwa
   - `|x| ≥ 9.5` at `z=-3` — lateral half-width at distance 9 from camera at fov 55° is ≈ 7.5 landscape, narrower portrait. 9.5 clears the frustum with ~2m margin.
   - **All hideouts must also be inside the new smaller `worldHalf` box** (x ∈ ±10, y ∈ [0.5, 9.5], z ∈ [-15, 9] world). Previous hideouts at `|x|=12` or `z=10` were past the curtains — that's what was causing visible penetration.
 - **Shows are CONTINUOUSLY-TRACKED CatmullRom curves.** Each route is a 5-point spline. Every frame, `goal = curve.getPoint(elapsed / duration)` — the goal slides smoothly along the curve over ~7s. The flock chases this moving target, trailing behind it like a tail. **This is the fix for the earlier "flock circles in a small area" problem**: with static sub-waypoints that changed every 1.5s + weak `goalMultiplier=0.0005`, the flock never reached any sub-point before the goal teleported elsewhere, so it just swirled in tug-of-war between nearby points. Continuous goal motion forces the flock to actually traverse the whole curve.
-- **Routes pool (8 routes, picked via shuffled bag)**:
-  - `s-sweep-LR` / `s-sweep-RL`: long S-curves across the hall
-  - `s-dive`: sinuous descent from high-centre
-  - `climb-wind`: reverse — near-low zigzagging to high-far
-  - `zigzag-z`: centre-axis x-swings while marching forward in z
-  - `under-venus`: low skim past Venus's left
-  - `over-stage`: high arc above pelmet, sweeping down into audience
-  - `deep-arc`: long wrap through back-right to near-left
+- **Routes pool (10 routes, deliberately spread across 5 motion categories)**. Earlier 8-route pool had 7 routes that all started "far-back" and ended "near-front-low" — different middles but same start+end zones — and the user (rightly) read them as the same trajectory played over and over. New categories force distinct screen-motion shapes:
+  - **PURE LATERAL** (no depth change): `deep-cross-LR`, `deep-cross-RL`, `mid-cross-LR`
+  - **PURE VERTICAL** (no x or z change): `dive-from-high`
+  - **RECEDING into depth** (near → far): `rise-to-back`, `descend-to-back`
+  - **APPROACHING the lens** (far → near): `near-charge` (just one — was 7 of 8 before)
+  - **LOCAL ORBITS** (loops in one zone): `near-skim`, `side-orbit-L`, `high-arc`
 - **Route control points must be inside the frustum AND inside the box** (`x ∈ [-10, 10]`, `y ∈ [0.5, 9.5]`, `z ∈ [-15, 9]` world) AND outside the stage aperture (`|x|<6.5, y∈[1.5, 7.5], z<-10.75`). Frustum guidelines by distance tier: NEAR (z=2-4): `|x|≤2, y∈[1.5, 3]`; MID (z=-5 to 0): `|x|≤5, y∈[2, 5]`; FAR (z=-10 to -7): `|x|≤7, y∈[3, 7]`. Using `z=-10` as the FAR limit keeps points out of the stage aperture automatically.
 - **Curve speed vs flock maxSpeed**: each 7s-duration route is ≈20m long, giving curve speed ≈2.8 m/s. Flock maxSpeed is 7.2 m/s, so the flock CAN follow the moving goal. If curve were faster than the flock could chase, the flock would be left at the start.
 - **`goalMultiplier` during show = 0.001** (not 0.0005 like a static goal would use). The moving curve-goal requires firmer pull to actually track it — 0.0005 left the flock permanently trailing the curve by ~10m. During hide `goalMultiplier = 0.002`.
-- **Route bag** (Fisher-Yates). Every 8 picks = full tour of all 8 routes, no repeats. At ~20s per cycle that's ≈2.5 min for a full tour.
+- **Route bag** (Fisher-Yates) **+ bag-boundary protection**. Every 10 picks = full tour of all 10 routes, no repeats. Bag-boundary protection: when refilling, if the freshly-shuffled bag's first item equals the last picked from the previous bag, swap it with the next item — eliminates the 1/N chance of a back-to-back repeat across bag boundaries. At ~20s per cycle that's ≈3 min for a full tour.
 - **Hideouts are still single-point, picked via side-alternating bag**. 85% chance of flipping side, 15% same side. Guarantees transit directions (flock exits left vs right) vary across cycles.
 
 ### Known failure modes (root causes, not symptoms)

@@ -2872,38 +2872,59 @@ function Flock() {
         "centripetal",
       ),
     });
+    // Routes are deliberately placed in 5 different MOTION CATEGORIES
+    // so the visible flight character changes between picks. Earlier
+    // tuning had 7 of 8 routes starting "far-back" and ending "near-
+    // front-low" — different middles but same start+end zones — and
+    // the user (rightly) read them as the same trajectory played
+    // over and over. The categories below force distinct screen-
+    // motion shapes.
     return [
-      // S-sweeps: long winding path across the hall, left→right and
-      // right→left, descending slightly as they approach the lens.
-      mk("s-sweep-LR", 7, [
-        [-7, 5.5, -10], [-3, 4.5, -6], [1, 3.5, -2], [-1, 3, 2], [2, 2.7, 3],
+      // Category 1: PURE LATERAL (no depth change) — flock crosses
+      // the room horizontally without coming any closer. Reads as
+      // "passing through".
+      mk("deep-cross-LR", 8, [
+        [-9, 5.5, -10], [-4, 6, -10], [0, 6, -10], [4, 5.5, -10], [9, 5, -10],
       ]),
-      mk("s-sweep-RL", 7, [
-        [7, 5.5, -10], [3, 4.5, -6], [-1, 3.5, -2], [1, 3, 2], [-2, 2.7, 3],
+      mk("deep-cross-RL", 8, [
+        [9, 5.5, -10], [4, 6, -10], [0, 6, -10], [-4, 5.5, -10], [-9, 5, -10],
       ]),
-      // Sinuous dive from high-centre to low-near, with lateral wobble.
-      mk("s-dive", 7, [
-        [0, 7, -9], [3, 5, -6], [-2, 4, -2], [1, 3, 2], [-1, 2.5, 3],
+      mk("mid-cross-LR", 7, [
+        [-7, 4, -3], [-3, 4, -3], [0, 4, -3], [3, 4, -3], [7, 4, -3],
       ]),
-      // Reverse: low-near climbing to high-far, zigzagging.
-      mk("climb-wind", 7, [
-        [2, 2.5, 3], [-1, 3, 0], [1, 4.5, -3], [-2, 5.5, -6], [0, 7, -9],
+
+      // Category 2: PURE VERTICAL — flock falls or climbs in place.
+      // No lateral motion, no depth change. Reads as a "column".
+      mk("dive-from-high", 6, [
+        [0, 8, -7], [0, 6, -7], [0, 4, -7], [0, 2.5, -7], [0, 1.5, -7],
       ]),
-      // Centre-axis zigzag — swings x across while marching forward in z.
-      mk("zigzag-z", 7, [
-        [-3, 4, -8], [3, 4, -5], [-2, 3.5, -2], [1, 3, 1], [-1, 2.7, 3],
+
+      // Category 3: RECEDING into depth (near → far). Flock starts
+      // close-ish and disappears into the back of the hall. Opposite
+      // direction of the classic "swooping at lens" motion.
+      mk("rise-to-back", 7, [
+        [-2, 2.5, 2], [-2, 4, -1], [-2, 5.5, -4], [-3, 6.5, -7], [-3, 7, -10],
       ]),
-      // Low path skimming past Venus's left side (Venus at -3.7, 0, 0.4).
-      mk("under-venus", 7, [
-        [-7, 3, -8], [-5, 2.5, -3], [-4, 2.5, 0], [-2, 2, 3], [1, 2.5, 4],
+      mk("descend-to-back", 7, [
+        [3, 6, 0], [3, 5, -2], [3, 4, -4], [3, 3, -6], [3, 2.5, -8],
       ]),
-      // High arc above the stage pelmet, sweeping down into audience.
-      mk("over-stage", 7, [
-        [-5, 7, -10], [-1, 6.5, -7], [2, 6, -4], [0, 5, -1], [-2, 4, 2],
+
+      // Category 4: APPROACHING the lens — flock comes from far to
+      // near. Only ONE route in this category now (was 7 of 8 before).
+      mk("near-charge", 5, [
+        [0, 6, -10], [0, 5, -6], [0, 4, -3], [0, 3, 0], [0, 2.5, 3.5],
       ]),
-      // Deep arc through the back of the hall, wrapping forward-left.
-      mk("deep-arc", 7, [
-        [6, 6, -10], [2, 5.5, -7], [-1, 4.5, -3], [-3, 3.5, 1], [-2, 3, 3],
+
+      // Category 5: LOCAL ORBITS — short loops in one zone of the
+      // room. Flock circles, doesn't traverse the whole space.
+      mk("near-skim", 4, [
+        [-1.5, 2.5, 3.5], [-0.5, 3, 3.5], [0.5, 3.5, 3.5], [1.5, 3, 3.5], [1.5, 2.5, 3.5],
+      ]),
+      mk("side-orbit-L", 7, [
+        [-7, 5, -8], [-6, 3.5, -5], [-5, 3, -2], [-6, 4, 0], [-7, 5.5, -3],
+      ]),
+      mk("high-arc", 7, [
+        [5, 6, -10], [3, 7, -7], [0, 7.5, -5], [-3, 7, -7], [-5, 6, -10],
       ]),
     ];
   }, [GROUP_POS]);
@@ -2950,12 +2971,33 @@ function Flock() {
   };
 
   // Route bag: shuffled queue of all routes, refilled when empty.
-  // With 8 routes, user sees all 8 dramatic paths before any repeat
-  // — over a typical ~20s cycle that's ~2.5 min for a full tour.
+  // With 10 routes, user sees all 10 dramatic paths before any
+  // repeat — over a typical ~20s cycle that's ~3 min for a full
+  // tour. lastPickedRoute is used to prevent the bag-boundary
+  // repeat (last pick of old bag = first pick of fresh shuffle,
+  // which would otherwise happen 1/N of the time).
   const routeBag = useRef<Route[]>([]);
+  const lastPickedRoute = useRef<Route | null>(null);
   const pickRoute = (): Route => {
-    if (routeBag.current.length === 0) shuffleAndRefill(routeBag, routes);
-    return routeBag.current.shift()!;
+    if (routeBag.current.length === 0) {
+      shuffleAndRefill(routeBag, routes);
+      // Defend against the bag-boundary repeat: if the freshly-shuffled
+      // bag's first item equals the last item we picked from the
+      // PREVIOUS bag, swap it with the next item.
+      if (
+        lastPickedRoute.current &&
+        routeBag.current[0] === lastPickedRoute.current &&
+        routeBag.current.length > 1
+      ) {
+        [routeBag.current[0], routeBag.current[1]] = [
+          routeBag.current[1],
+          routeBag.current[0],
+        ];
+      }
+    }
+    const next = routeBag.current.shift()!;
+    lastPickedRoute.current = next;
+    return next;
   };
 
   // State. During show, currentRoute holds the active CatmullRom
