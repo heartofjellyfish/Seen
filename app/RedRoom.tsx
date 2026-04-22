@@ -4487,8 +4487,6 @@ function Flock() {
   // which would otherwise happen 1/N of the time).
   const routeBag = useRef<Route[]>([]);
   const lastPickedRoute = useRef<Route | null>(null);
-  // Frame counter for throttled per-boid wing-geometry updates.
-  const tickRef = useRef(0);
   const pickRoute = (): Route => {
     if (routeBag.current.length === 0) {
       shuffleAndRefill(routeBag, routes);
@@ -4579,15 +4577,6 @@ function Flock() {
     const showMul = 0.001;
     const activeMul = phase.current === "hide" ? hideMul : showMul;
 
-    // Throttle the wing-flap geometry write to every 3rd frame.
-    // The per-boid `pos.needsUpdate = true` triggers a separate
-    // GPU buffer upload PER BOID (40 separate gl.bufferSubData
-    // calls per frame is real overhead). At 20Hz wing animation
-    // (60fps / 3) the flap still reads as motion, but the upload
-    // bandwidth drops by 3×. tickRef increments on every frame.
-    tickRef.current = (tickRef.current + 1) % 3;
-    const writeWings = tickRef.current === 0;
-
     for (let i = 0; i < boids.length; i++) {
       const b = boids[i];
       const mesh = meshRefs.current[i];
@@ -4601,17 +4590,14 @@ function Flock() {
       const speed = b.velocity.length();
       mesh.rotation.z = speed > 1e-6 ? Math.asin(b.velocity.y / speed) : 0;
 
-      // Phase still advances every frame (so motion stays smooth)
-      // but we only push the flap to GPU when writeWings is true.
+      // Flap: wingtip y oscillates sin(phase) * scale.
       b.phase =
         (b.phase + Math.max(0, mesh.rotation.z) + 0.1) % 62.83;
-      if (writeWings) {
-        const pos = mesh.geometry.attributes.position as THREE.BufferAttribute;
-        const flap = Math.sin(b.phase) * BIRD_WING_SCALE;
-        pos.setY(4, flap);
-        pos.setY(5, flap);
-        pos.needsUpdate = true;
-      }
+      const pos = mesh.geometry.attributes.position as THREE.BufferAttribute;
+      const flap = Math.sin(b.phase) * BIRD_WING_SCALE;
+      pos.setY(4, flap);
+      pos.setY(5, flap);
+      pos.needsUpdate = true;
     }
   });
 
@@ -4636,17 +4622,19 @@ function Flock() {
             meshRefs.current[i] = m;
           }}
         >
-          {/* Lambert instead of Standard for the boid body — much
-              cheaper fragment shader (no PBR specular term, no
-              metalness/roughness IBL math). With 40 boids each
-              doing per-fragment lighting against ~10 scene lights
-              + scattering fog injection, Standard was a measurable
-              FPS hit. Lambert keeps diffuse colour-tinting from
-              the warm zones (which is what the bird-against-red-
-              room reading needs) at a fraction of the cost.
-              FrontSide instead of DoubleSide halves boid fragment
-              work — birds are seen from one side at a time anyway. */}
-          <meshLambertMaterial color="#1a0d08" />
+          {/* Dark warm-brown body (not pure black): under PBR
+              diffuse ≈ baseColor × lightColor, so a near-black
+              body can't reflect much red no matter how strong the
+              lights. #1a0d08 keeps the silhouette dark but has
+              enough red in the base that passes through red zones
+              visibly warm up. Slight metalness adds a subtle sheen
+              when catching the warm spots. */}
+          <meshStandardMaterial
+            color="#1a0d08"
+            side={THREE.DoubleSide}
+            roughness={0.5}
+            metalness={0.1}
+          />
         </mesh>
       ))}
     </group>
