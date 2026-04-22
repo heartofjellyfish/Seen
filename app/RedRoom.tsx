@@ -490,8 +490,7 @@ function CurtainPanel({
       rotation={rotation}
       geometry={geometry}
       receiveShadow
-      castShadow
-    >
+         >
       <meshPhysicalMaterial
         color={color}
         roughness={0.92}
@@ -645,7 +644,7 @@ function Festoon({
       {/* Three scallop rows, back to front. Emissive moderate so rows
           are visible but still respond to what little light exists. */}
       {rows.map((r, i) => (
-        <mesh key={i} geometry={rowGeos[i]} position={[0, r.y, r.z]} castShadow>
+        <mesh key={i} geometry={rowGeos[i]} position={[0, r.y, r.z]} >
           <meshStandardMaterial
             map={pleatTex}
             color="#6a1212"
@@ -666,7 +665,7 @@ function Festoon({
           key={`tassel-${i}`}
           position={[x, rows[0].y + 0.02, rows[0].z + 0.02]}
         >
-          <mesh castShadow>
+          <mesh >
             <sphereGeometry args={[0.07, 12, 10]} />
             <meshStandardMaterial
               color="#8e6a24"
@@ -676,7 +675,7 @@ function Festoon({
               emissiveIntensity={0.28}
             />
           </mesh>
-          <mesh position={[0, -0.14, 0]} castShadow>
+          <mesh position={[0, -0.14, 0]} >
             <coneGeometry args={[0.05, 0.22, 12]} />
             <meshStandardMaterial
               color="#7a5018"
@@ -781,14 +780,13 @@ function Stage() {
           has a surface to stand on. Matches the deck material. */}
       <mesh
         position={[0, stageH / 2, stageD / 2 + 0.3]}
-        castShadow
-        receiveShadow
+               receiveShadow
       >
         <boxGeometry args={[stageW, stageH, 0.6]} />
         <meshStandardMaterial color="#1a0505" roughness={0.88} />
       </mesh>
       {/* Stage floor trim — a thin brass strip at the APRON front */}
-      <mesh position={[0, stageH + 0.03, stageD / 2 + 0.6]} castShadow>
+      <mesh position={[0, stageH + 0.03, stageD / 2 + 0.6]} >
         <boxGeometry args={[stageW, 0.06, 0.06]} />
         <meshStandardMaterial
           color="#8b6a34"
@@ -800,8 +798,7 @@ function Stage() {
       {/* Pelmet above stage curtain (valance) */}
       <mesh
         position={[0, stageH + curtainHeight + pelmetHeight / 2, stageD / 2]}
-        castShadow
-      >
+             >
         <boxGeometry args={[stageW + 0.6, pelmetHeight, 0.35]} />
         <meshPhysicalMaterial
           color="#5a0f0f"
@@ -1190,7 +1187,7 @@ function Venus() {
         />
       </mesh>
       {/* Thin darker base line where pedestal meets floor */}
-      <mesh position={[0, 0.005, 0]} castShadow>
+      <mesh position={[0, 0.005, 0]} >
         <boxGeometry args={[0.95, 0.01, 0.6]} />
         <meshStandardMaterial color="#1a0f06" roughness={0.95} />
       </mesh>
@@ -1255,7 +1252,1184 @@ function VenusBody({
   }, [tex]);
 
   // No breathing — a stone statue should be stone.
-  return <mesh position={[0, 1.51, 0]} geometry={geometry} material={material} />;
+  return <mesh position={[0, 1.51, 0]} geometry={geometry} material={material} castShadow />;
+}
+
+// ————————————————————————————————————————————————
+// Old CRT TV — the "waiting room broadcast".
+//
+// Thematic opposite of Venus: classical sculpture vs. fame-machine.
+// Every submitter gets pushed through the same 1-bit green-phosphor
+// grammar. Warhol's "15 minutes" is the project's literal mechanic;
+// this TV is the chyron that counts you down toward your turn.
+//
+// Placed at +x mirror of Venus (-3.7, 0, 0.4 → +3.7, 0, 0.4), rotated
+// symmetrically. Reads state from the module-level `showtimeLive` so
+// ON-AIR / LIVE modes fire during the noon LA window.
+// ————————————————————————————————————————————————
+
+type Submitter = {
+  id: string;
+  name: string;
+  location: string;
+  quote: string;
+  avatarSeed: number;
+};
+
+// Placeholder queue. Real submissions will replace this — shape is
+// { id, name, location, quote, avatarSeed }. Keep this order: [0] is
+// currently ON AIR / next up.
+const TV_QUEUE: Submitter[] = [
+  { id: "p01", name: "JANE M. WHITFIELD",  location: "BROOKLYN, NY",    quote: "I built the thing nobody asked for.",       avatarSeed: 1 },
+  { id: "p02", name: "MIGUEL ROSA",        location: "EL PASO, TX",     quote: "My mother called it a waste of time.",      avatarSeed: 2 },
+  { id: "p03", name: "DEVON T. OKAFOR",    location: "DETROIT, MI",     quote: "I've been rehearsing this since 1994.",     avatarSeed: 3 },
+  { id: "p04", name: "SARAH L. KIM",       location: "PORTLAND, OR",    quote: "Somebody has to go first.",                  avatarSeed: 4 },
+  { id: "p05", name: "RAY HARLOW",         location: "ORLANDO, FL",     quote: "Don't tell my boss.",                        avatarSeed: 5 },
+  { id: "p06", name: "ANNIE-MAE COLE",     location: "KANSAS CITY, MO", quote: "I didn't think anybody was watching.",       avatarSeed: 6 },
+  { id: "p07", name: "TOMAS VALLEJO",      location: "TUCSON, AZ",      quote: "It only took twenty years.",                  avatarSeed: 7 },
+  { id: "p08", name: "PATIENCE O'NEILL",   location: "BUTTE, MT",       quote: "Love you, Ma.",                               avatarSeed: 8 },
+  { id: "p09", name: "HARRISON LEE",       location: "OAKLAND, CA",     quote: "I stopped apologizing.",                      avatarSeed: 9 },
+  { id: "p10", name: "MARGIE STAHL",       location: "MILWAUKEE, WI",   quote: "Forty-one years in the same cubicle.",        avatarSeed: 10 },
+];
+
+// Seeded pseudo-random draw of an abstract head-and-shoulders portrait.
+// Drawn in grayscale; the final CRT pass greens the whole frame.
+function drawAvatar(
+  ctx: CanvasRenderingContext2D,
+  x: number, y: number, w: number, h: number,
+  seed: number,
+) {
+  let s = (seed * 9301 + 49297) % 233280;
+  const rnd = () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x, y, w, h);
+  ctx.clip();
+
+  // Studio backdrop gradient
+  const bgTop = 60 + Math.floor(rnd() * 40);
+  const bgBot = 25 + Math.floor(rnd() * 20);
+  const bg = ctx.createLinearGradient(x, y, x, y + h);
+  bg.addColorStop(0, `rgb(${bgTop},${bgTop},${bgTop})`);
+  bg.addColorStop(1, `rgb(${bgBot},${bgBot},${bgBot})`);
+  ctx.fillStyle = bg;
+  ctx.fillRect(x, y, w, h);
+
+  // Key light wash
+  const keyX = x + w * (0.25 + rnd() * 0.2);
+  const keyY = y + h * 0.1;
+  const key = ctx.createRadialGradient(keyX, keyY, 0, keyX, keyY, Math.max(w, h) * 0.9);
+  key.addColorStop(0, "rgba(255,255,255,0.28)");
+  key.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = key;
+  ctx.fillRect(x, y, w, h);
+
+  const cx = x + w / 2 + (rnd() - 0.5) * w * 0.04;
+
+  // Shoulders (suit/coat)
+  const suitTone = 30 + Math.floor(rnd() * 25);
+  ctx.fillStyle = `rgb(${suitTone},${suitTone},${suitTone})`;
+  ctx.beginPath();
+  ctx.ellipse(cx, y + h * 1.08, w * 0.58, h * 0.45, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Collar slash — hints at a shirt collar
+  ctx.fillStyle = `rgb(${suitTone + 80},${suitTone + 80},${suitTone + 75})`;
+  ctx.beginPath();
+  ctx.moveTo(cx - w * 0.12, y + h * 0.78);
+  ctx.lineTo(cx, y + h * 0.92);
+  ctx.lineTo(cx + w * 0.12, y + h * 0.78);
+  ctx.lineTo(cx + w * 0.05, y + h * 0.78);
+  ctx.lineTo(cx, y + h * 0.86);
+  ctx.lineTo(cx - w * 0.05, y + h * 0.78);
+  ctx.closePath();
+  ctx.fill();
+
+  // Neck
+  const skin = 140 + Math.floor(rnd() * 70);
+  ctx.fillStyle = `rgb(${skin},${skin - 10},${skin - 25})`;
+  ctx.fillRect(cx - w * 0.085, y + h * 0.58, w * 0.17, h * 0.22);
+
+  // Head
+  const headRx = w * (0.165 + rnd() * 0.035);
+  const headRy = h * (0.215 + rnd() * 0.04);
+  const headCy = y + h * 0.4;
+  ctx.fillStyle = `rgb(${skin},${skin - 10},${skin - 25})`;
+  ctx.beginPath();
+  ctx.ellipse(cx, headCy, headRx, headRy, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Ear hint
+  ctx.fillStyle = `rgb(${skin - 30},${skin - 40},${skin - 50})`;
+  ctx.beginPath();
+  ctx.ellipse(cx + headRx * 0.95, headCy + headRy * 0.05, headRx * 0.12, headRy * 0.18, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(cx - headRx * 0.95, headCy + headRy * 0.05, headRx * 0.12, headRy * 0.18, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Hair — one of several silhouettes
+  const hairTone = 15 + Math.floor(rnd() * 45);
+  ctx.fillStyle = `rgb(${hairTone},${Math.floor(hairTone * 0.85)},${Math.floor(hairTone * 0.7)})`;
+  const hairStyle = Math.floor(rnd() * 5);
+  ctx.beginPath();
+  if (hairStyle === 0) {
+    ctx.ellipse(cx, headCy - headRy * 0.45, headRx * 1.05, headRy * 0.6, 0, Math.PI, Math.PI * 2);
+  } else if (hairStyle === 1) {
+    ctx.ellipse(cx, headCy - headRy * 0.15, headRx * 1.18, headRy * 0.9, 0, Math.PI, Math.PI * 2);
+  } else if (hairStyle === 2) {
+    ctx.ellipse(cx, headCy - headRy * 0.55, headRx * 1.25, headRy * 0.55, 0, 0, Math.PI * 2);
+  } else if (hairStyle === 3) {
+    ctx.ellipse(cx, headCy - headRy * 0.7, headRx * 0.75, headRy * 0.3, 0, Math.PI, Math.PI * 2);
+  } else {
+    ctx.ellipse(cx - headRx * 0.2, headCy - headRy * 0.35, headRx * 1.05, headRy * 0.7, -0.2, Math.PI, Math.PI * 2);
+  }
+  ctx.fill();
+
+  // Shadow under jaw
+  ctx.fillStyle = `rgba(0,0,0,0.28)`;
+  ctx.beginPath();
+  ctx.ellipse(cx, headCy + headRy * 0.85, headRx * 0.85, headRy * 0.18, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Features
+  ctx.fillStyle = `rgba(15,15,15,0.85)`;
+  // eyes
+  ctx.fillRect(cx - headRx * 0.52, headCy - headRy * 0.12, headRx * 0.28, headRy * 0.09);
+  ctx.fillRect(cx + headRx * 0.24, headCy - headRy * 0.12, headRx * 0.28, headRy * 0.09);
+  // brow
+  ctx.fillRect(cx - headRx * 0.55, headCy - headRy * 0.28, headRx * 0.35, headRy * 0.04);
+  ctx.fillRect(cx + headRx * 0.20, headCy - headRy * 0.28, headRx * 0.35, headRy * 0.04);
+  // mouth
+  ctx.fillStyle = `rgba(40,15,15,0.7)`;
+  ctx.fillRect(cx - headRx * 0.3, headCy + headRy * 0.38, headRx * 0.6, headRy * 0.06);
+  // nose shadow
+  ctx.fillStyle = `rgba(0,0,0,0.18)`;
+  ctx.beginPath();
+  ctx.ellipse(cx + headRx * 0.05, headCy + headRy * 0.15, headRx * 0.12, headRy * 0.2, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+// Draw grayscale horizontal-bar "test pattern" — stand-in for SMPTE
+// bars on a B&W set. Used as a channel-change flash.
+function drawTestPattern(ctx: CanvasRenderingContext2D, W: number, H: number) {
+  const tones = [230, 200, 170, 140, 110, 80, 50, 20];
+  const colW = W / tones.length;
+  for (let i = 0; i < tones.length; i++) {
+    const v = tones[i];
+    ctx.fillStyle = `rgb(${v},${v},${v})`;
+    ctx.fillRect(i * colW, 0, colW + 1, H * 0.78);
+  }
+  // Circle + crosshair overlay
+  ctx.strokeStyle = "rgba(255,255,255,0.9)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(W / 2, H * 0.42, Math.min(W, H) * 0.3, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(W / 2, 0); ctx.lineTo(W / 2, H * 0.78);
+  ctx.moveTo(0, H * 0.42); ctx.lineTo(W, H * 0.42);
+  ctx.stroke();
+  // Bottom strip
+  ctx.fillStyle = "rgb(30,30,30)";
+  ctx.fillRect(0, H * 0.78, W, H * 0.22);
+  ctx.fillStyle = "rgb(220,220,220)";
+  ctx.font = "bold 26px ui-monospace, 'Courier New', monospace";
+  ctx.textAlign = "center";
+  ctx.fillText("PLEASE STAND BY", W / 2, H * 0.91);
+  ctx.font = "16px ui-monospace, monospace";
+  ctx.fillText("CH 15 · WARHOL TV", W / 2, H * 0.97);
+}
+
+// Format seconds as HH:MM:SS (always positive, zero-padded)
+function formatHMS(secs: number): string {
+  const s = Math.max(0, Math.floor(secs));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const r = s % 60;
+  const p = (n: number) => n.toString().padStart(2, "0");
+  return `${p(h)}:${p(m)}:${p(r)}`;
+}
+
+function formatMS(secs: number): string {
+  const s = Math.max(0, Math.floor(secs));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  const p = (n: number) => n.toString().padStart(2, "0");
+  return `${p(m)}:${p(r)}`;
+}
+
+// Seconds remaining until the next noon LA show.
+function secondsUntilShow(): number {
+  const secs = laSecondsSinceMidnight(new Date());
+  return secs < NOON_SEC ? NOON_SEC - secs : NOON_SEC + DAY_SEC - secs;
+}
+
+// Pre-rendered overlay tiles — built once, reused every frame.
+function makeCRTNoiseTile(size = 128): HTMLCanvasElement {
+  const c = document.createElement("canvas");
+  c.width = c.height = size;
+  const ctx = c.getContext("2d")!;
+  const img = ctx.createImageData(size, size);
+  const d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const v = Math.floor(Math.random() * 255);
+    d[i] = v; d[i + 1] = v; d[i + 2] = v; d[i + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  return c;
+}
+
+function makeScanlineTile(W: number, H: number): HTMLCanvasElement {
+  const c = document.createElement("canvas");
+  c.width = W; c.height = H;
+  const ctx = c.getContext("2d")!;
+  ctx.fillStyle = "rgba(0,0,0,0.32)";
+  for (let y = 0; y < H; y += 3) {
+    ctx.fillRect(0, y, W, 1);
+  }
+  return c;
+}
+
+// Mount / composition variants — URL ?tv=d|e|b|a|c|1|2|3|s
+//   d = black A/V cart, mirror Venus (DEFAULT — institutional rolling stand)
+//   e = 4-leg wooden easel stand
+//   b = velvet altar
+//   a = walnut credenza
+//   c = hanging chains
+//   1 = TV on armchair, 2 = side table, 3 = tall pedestal, s = loveseat
+type TVMount = "e" | "s" | "a" | "b" | "c" | "d" | "1" | "2" | "3";
+function getTVMount(): TVMount {
+  if (typeof window === "undefined") return "d";
+  const v = new URLSearchParams(window.location.search).get("tv");
+  const valid: TVMount[] = ["e", "s", "a", "b", "c", "d", "1", "2", "3"];
+  if ((valid as string[]).includes(v ?? "")) return v as TVMount;
+  return "d";
+}
+
+function TVSet() {
+  const mount = getTVMount();
+
+  // Per-variant placement, scale and mount height. The numeric
+  // variants (1/2/3) move the TV OUT of the aisle and relate it to
+  // the audience chairs / Venus composition.
+  const layout = (() => {
+    switch (mount) {
+      case "s":
+        // TV sitting on the LONE oversize armchair at (2.0, -1).
+        // Chair faces camera (rotY=π), cushions face +z. Big chair's
+        // seat cushion top is at y≈0.56; TV lift 0.52 gives a slight
+        // sink into the plush cushion.
+        return { x: 2.0, z: -1, rotY: 0, scale: 0.92, lift: 0.52 };
+      case "1":
+        // TV perched on the front-right armchair seat (chair at 3.9,-3).
+        return { x: 3.9, z: -3, rotY: -Math.PI / 7, scale: 0.62, lift: 0.42 };
+      case "2":
+        // TV on a small side table beside the same chair.
+        return { x: 2.6, z: -3, rotY: -Math.PI / 9, scale: 0.65, lift: 0.52 };
+      case "e":
+        // Easel stand — TV as "art on display", mirroring Venus.
+        // Easel legs converge at the TV base (~0.95m). TV screen
+        // centre ends up at ~1.43m (eye level when standing).
+        return { x: 3.7, z: 0.4, rotY: -Math.PI / 7, scale: 1.0, lift: 0.95 };
+      case "3":
+        // TV mirrored opposite Venus, lifted on a tall column
+        return { x: 3.7, z: 0.4, rotY: -Math.PI / 7, scale: 1.0, lift: 1.48 };
+      case "b":
+        // Velvet altar — mirror Venus position. Altar ~52cm tall,
+        // TV on top faces camera (mirror of Venus's slight inward tilt).
+        return { x: 3.7, z: 0.4, rotY: -Math.PI / 7, scale: 1.0, lift: 0.55 };
+      case "c":
+        return { x: 0.9, z: 1.2, rotY: -Math.PI / 9, scale: 1.0, lift: 0.88 };
+      case "d":
+        // A/V cart — pulled in toward the centre aisle (x=1.5) and
+        // scaled down a touch (1.05) so it doesn't block the right
+        // chair pairs. Shorter cart (lift 0.60 vs 0.74) makes the
+        // whole TV sit lower and read less dominant.
+        return { x: 1.1, z: 1.8, rotY: -Math.PI / 8, scale: 1.05, lift: 0.60 };
+      default: // a (credenza, still on carpet)
+        return { x: 0.9, z: 1.2, rotY: -Math.PI / 9, scale: 1.0, lift: 0.54 };
+    }
+  })();
+  const tvLift = layout.lift;
+  const glowLightRef = useRef<THREE.PointLight | null>(null);
+  // Throttle canvas redraw to ~30fps. Content changes slowly, so
+  // full 60fps raster + texture re-upload is wasted work. Big CPU
+  // savings without any visible quality loss.
+  const lastDrawRef = useRef(0);
+
+  // Canvas width chosen to match the screen plane's aspect ratio
+  // (plane 0.74×0.45 → ratio 1.644; canvas 640×384 → ratio 1.667,
+  // close enough that content maps without horizontal stretching).
+  const W = 640;
+  const H = 384;
+
+  // Eager init — canvas + texture must exist before the first JSX render
+  // so <meshBasicMaterial map={...}> receives a real texture.
+  const { canvas, texture, noiseTile, scanlineTile } = useMemo(() => {
+    const c = document.createElement("canvas");
+    c.width = W; c.height = H;
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.magFilter = THREE.LinearFilter;
+    tex.minFilter = THREE.LinearFilter;
+    return {
+      canvas: c,
+      texture: tex,
+      noiseTile: makeCRTNoiseTile(128),
+      scanlineTile: makeScanlineTile(W, H),
+    };
+  }, []);
+
+  // Screen curvature: subtle convex plane — only ~12mm of bulge so
+  // the edges don't recede and the content stays rectangular.
+  // Sized so the bezel+screen fit INSIDE the cabinet face
+  // (cabinet top y=0.97, speaker top y=0.43 → 54cm vertical window).
+  const screenGeom = useMemo(() => {
+    const SW = 0.74;
+    const SH = 0.45;
+    const g = new THREE.PlaneGeometry(SW, SH, 16, 12);
+    const pos = g.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i);
+      const y = pos.getY(i);
+      const nx = x / (SW / 2);
+      const ny = y / (SH / 2);
+      const r2 = nx * nx + ny * ny;
+      pos.setZ(i, 0.012 * (1 - r2));
+    }
+    pos.needsUpdate = true;
+    g.computeVertexNormals();
+    return g;
+  }, []);
+
+  // Contact shadow texture, hoisted out of JSX to keep hook order stable.
+  const shadowTex = useMemo(() => makeContactShadowTexture(), []);
+
+  // Wood-grain procedural texture for the cabinet.
+  const woodTex = useMemo(() => {
+    const size = 256;
+    const c = document.createElement("canvas");
+    c.width = size; c.height = size;
+    const ctx = c.getContext("2d")!;
+    // Walnut base
+    ctx.fillStyle = "#3a1f10";
+    ctx.fillRect(0, 0, size, size);
+    // Grain streaks
+    for (let i = 0; i < 80; i++) {
+      const y = Math.random() * size;
+      const alpha = 0.06 + Math.random() * 0.12;
+      ctx.strokeStyle = `rgba(${90 + Math.random() * 40},${45 + Math.random() * 25},${20 + Math.random() * 15},${alpha})`;
+      ctx.lineWidth = 0.5 + Math.random() * 1.5;
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      for (let x = 0; x < size; x += 8) {
+        ctx.lineTo(x, y + Math.sin(x * 0.07 + i) * 2.5);
+      }
+      ctx.stroke();
+    }
+    // Darker knots
+    for (let i = 0; i < 5; i++) {
+      ctx.fillStyle = "rgba(15,8,3,0.55)";
+      ctx.beginPath();
+      ctx.ellipse(Math.random() * size, Math.random() * size, 6 + Math.random() * 6, 3 + Math.random() * 3, Math.random(), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.anisotropy = 4;
+    return tex;
+  }, []);
+
+  useFrame(({ clock }) => {
+    const t = clock.elapsedTime;
+    // 30fps throttle — skip redraw if last draw was <33ms ago.
+    if (t - lastDrawRef.current < 1 / 30) return;
+    lastDrawRef.current = t;
+
+    const ctx = canvas.getContext("2d")!;
+    const secsToShow = secondsUntilShow();
+    const onAir = showtimeLive.showtime > 0.5;
+
+    // ——— Background (deep blue-black, not green)
+    ctx.fillStyle = "#060a12";
+    ctx.fillRect(0, 0, W, H);
+
+    // ——— Pick screen mode
+    // Waiting: station → next → lineup → next → test → loop
+    // Showtime: on air (full photo)
+    if (onAir) {
+      drawOnAir(ctx, W, H, TV_QUEUE[0], Math.max(0, SHOW_DURATION_SEC - (laSecondsSinceMidnight(new Date()) - NOON_SEC)), t);
+    } else {
+      const script: Array<{ mode: string; dur: number }> = [
+        { mode: "station", dur: 4.0 },
+        { mode: "next", dur: 7.0 },
+        { mode: "lineup", dur: 5.5 },
+        { mode: "next2", dur: 7.0 },
+        { mode: "test", dur: 1.4 },
+      ];
+      const total = script.reduce((a, b) => a + b.dur, 0);
+      const tt = t % total;
+      let acc = 0;
+      let mode = script[0].mode;
+      let phaseT = 0;
+      for (const seg of script) {
+        if (tt < acc + seg.dur) { mode = seg.mode; phaseT = (tt - acc) / seg.dur; break; }
+        acc += seg.dur;
+      }
+      if (mode === "station") drawStationID(ctx, W, H, t);
+      else if (mode === "next") drawNextUp(ctx, W, H, TV_QUEUE[0], secsToShow, t);
+      else if (mode === "next2") drawNextUp(ctx, W, H, TV_QUEUE[1 % TV_QUEUE.length], secsToShow, t);
+      else if (mode === "lineup") drawLineup(ctx, W, H, TV_QUEUE, secsToShow, t);
+      else if (mode === "test") drawTestPattern(ctx, W, H);
+      // channel-change wipe between segments
+      const edge = 0.08;
+      if (phaseT < edge) {
+        const a = 1 - phaseT / edge;
+        ctx.fillStyle = `rgba(0,0,0,${a * 0.85})`;
+        ctx.fillRect(0, 0, W, H);
+      }
+    }
+
+    // ——— Bottom chyron (always, except during on-air which has own layout)
+    if (!onAir) drawChyron(ctx, W, H, t, secsToShow);
+
+    // ——— CRT post-process stack
+    // Scanlines
+    ctx.drawImage(scanlineTile, 0, 0);
+    // Cool blue-white B&W-CRT tint via multiply (vs saturated green
+    // phosphor). Matches the Lynch-living-room reference — slight
+    // chemical cool cast, not "oscilloscope green".
+    ctx.globalCompositeOperation = "multiply";
+    ctx.fillStyle = "rgb(180, 205, 230)";
+    ctx.fillRect(0, 0, W, H);
+    ctx.globalCompositeOperation = "source-over";
+    // Edge vignette — very soft; corners stay readable so content
+    // reads as "fully on the screen", not squeezed into a central disk.
+    const vg = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.6, W / 2, H / 2, Math.max(W, H) * 0.85);
+    vg.addColorStop(0, "rgba(0,0,0,0)");
+    vg.addColorStop(1, "rgba(0,0,0,0.30)");
+    ctx.fillStyle = vg;
+    ctx.fillRect(0, 0, W, H);
+    // Persistent grain
+    ctx.globalAlpha = 0.07;
+    const n = noiseTile;
+    const ox = Math.floor(Math.random() * 64);
+    const oy = Math.floor(Math.random() * 64);
+    for (let yy = -oy; yy < H; yy += n.height) {
+      for (let xx = -ox; xx < W; xx += n.width) {
+        ctx.drawImage(n, xx, yy);
+      }
+    }
+    ctx.globalAlpha = 1;
+    // Occasional static burst (~every 9s)
+    const burstPhase = (t % 9) / 9;
+    if (burstPhase < 0.04) {
+      ctx.globalAlpha = 0.55;
+      for (let yy = -oy; yy < H; yy += n.height) {
+        for (let xx = -ox; xx < W; xx += n.width) {
+          ctx.drawImage(n, xx, yy);
+        }
+      }
+      ctx.globalAlpha = 1;
+    }
+    // Occasional V-hold roll (~every 14s). Previously used
+    // getImageData/putImageData which is expensive (CPU→GPU round
+    // trip per frame). Replaced with a simple dark band overlay +
+    // thin highlight line — reads as "the picture jumped" without
+    // moving pixel data.
+    const rollPhase = (t % 14) / 14;
+    if (rollPhase < 0.05) {
+      const tearY = Math.floor((rollPhase / 0.05) * H);
+      ctx.fillStyle = "rgba(0,0,0,0.55)";
+      ctx.fillRect(0, tearY - 12, W, 18);
+      ctx.fillStyle = "rgba(220,235,255,0.35)";
+      ctx.fillRect(0, tearY - 1, W, 2);
+    }
+
+    texture.needsUpdate = true;
+
+    // Flicker the emissive glow light subtly with content brightness
+    if (glowLightRef.current) {
+      const flicker = 0.85 + Math.sin(t * 23) * 0.04 + Math.sin(t * 7.3) * 0.06;
+      const bump = burstPhase < 0.04 ? 1.35 : 1;
+      glowLightRef.current.intensity = 0.9 * flicker * bump;
+    }
+
+    // (Antenna jitter removed — antennas no longer rendered.)
+  });
+
+  return (
+    <group
+      position={[layout.x, 0, layout.z]}
+      rotation={[0, layout.rotY, 0]}
+    >
+      {/* Ground shadow (fade out for hanging / elevated variants).
+          Scaled so the shadow area tracks the TV footprint. */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.012, 0]}>
+        <planeGeometry args={[2.2 * layout.scale, 1.4 * layout.scale]} />
+        <meshBasicMaterial
+          map={shadowTex}
+          transparent
+          depthWrite={false}
+          opacity={mount === "c" ? 0.55 : mount === "1" || mount === "3" ? 0.4 : 0.9}
+        />
+      </mesh>
+
+      {/* ——— Mount variants (at world scale, NOT affected by TV scale) ——— */}
+      {mount === "a" && <MountCredenza woodTex={woodTex} />}
+      {mount === "b" && <MountAltar />}
+      {mount === "c" && <MountChains tvLift={tvLift} />}
+      {mount === "d" && <MountCart tvLift={tvLift} />}
+      {mount === "e" && <MountEasel woodTex={woodTex} tvLift={tvLift} />}
+      {mount === "2" && <MountSideTable woodTex={woodTex} tvLift={tvLift} />}
+      {mount === "3" && <MountTallPedestal woodTex={woodTex} tvLift={tvLift} />}
+      {/* variant 1 = no mount, TV rides on the existing armchair seat */}
+
+      {/* ——— TV body: lifted by world-space tvLift, then scaled.
+           Keeping scale INSIDE the lift-group means tvLift is always
+           in real meters regardless of the variant's scale factor. */}
+      <group position={[0, tvLift, 0]} scale={layout.scale}>
+        {/* Four splayed wooden legs — skipped when hanging (c). */}
+        {mount !== "c" &&
+          [
+            [-0.45, 0, -0.22],
+            [0.45, 0, -0.22],
+            [-0.45, 0, 0.22],
+            [0.45, 0, 0.22],
+          ].map(([x, , z], i) => (
+            <mesh key={i} position={[x as number, 0.09, z as number]} rotation={[0, 0, ((x as number) > 0 ? -1 : 1) * 0.08]} >
+              <cylinderGeometry args={[0.018, 0.028, 0.18, 10]} />
+              <meshStandardMaterial color="#1c0e06" roughness={0.85} metalness={0.05} />
+            </mesh>
+          ))}
+
+        {/* Main cabinet body (walnut console) */}
+        <mesh position={[0, 0.58, 0]} castShadow receiveShadow>
+          <boxGeometry args={[1.08, 0.78, 0.48]} />
+          <meshStandardMaterial map={woodTex} color="#5a3018" roughness={0.55} metalness={0.08} />
+        </mesh>
+
+        {/* Darker top trim */}
+        <mesh position={[0, 0.99, 0]} >
+          <boxGeometry args={[1.1, 0.04, 0.5]} />
+          <meshStandardMaterial color="#2a140a" roughness={0.7} />
+        </mesh>
+
+        {/* Black screen bezel */}
+        <mesh position={[0, 0.70, 0.241]}>
+          <planeGeometry args={[0.78, 0.49]} />
+          <meshStandardMaterial color="#0b0603" roughness={0.9} metalness={0.1} />
+        </mesh>
+
+        {/* CRT glass */}
+        <mesh position={[0, 0.70, 0.247]} geometry={screenGeom}>
+          <meshBasicMaterial map={texture} toneMapped={false} />
+        </mesh>
+
+        {/* Speaker grille panel */}
+        <mesh position={[0, 0.32, 0.241]}>
+          <planeGeometry args={[0.88, 0.22]} />
+          <meshStandardMaterial color="#1a1008" roughness={0.95} metalness={0} />
+        </mesh>
+        {Array.from({ length: 9 }).map((_, i) => (
+          <mesh key={i} position={[0, 0.32 - 0.09 + i * 0.022, 0.2415]}>
+            <planeGeometry args={[0.86, 0.004]} />
+            <meshBasicMaterial color="#352414" />
+          </mesh>
+        ))}
+
+        {/* Brand plate */}
+        <mesh position={[-0.34, 0.18, 0.2412]}>
+          <planeGeometry args={[0.14, 0.025]} />
+          <meshStandardMaterial color="#a08448" roughness={0.4} metalness={0.6} />
+        </mesh>
+
+        {/* Two knobs */}
+        <mesh position={[0.38, 0.34, 0.246]} rotation={[Math.PI / 2, 0, 0]}>
+          <cylinderGeometry args={[0.028, 0.032, 0.022, 16]} />
+          <meshStandardMaterial color="#d3bf7a" roughness={0.35} metalness={0.75} />
+        </mesh>
+        <mesh position={[0.38, 0.25, 0.246]} rotation={[Math.PI / 2, 0, 0]}>
+          <cylinderGeometry args={[0.022, 0.025, 0.018, 16]} />
+          <meshStandardMaterial color="#d3bf7a" roughness={0.35} metalness={0.75} />
+        </mesh>
+
+        {/* Channel indicator LED */}
+        <mesh position={[0.38, 0.42, 0.247]}>
+          <circleGeometry args={[0.006, 12]} />
+          <meshBasicMaterial color="#ffb040" toneMapped={false} />
+        </mesh>
+
+        {/* Antennas removed — TV reads cleaner as "broadcast monitor"
+            without the bunny ears. */}
+
+        {/* Screen glow point light */}
+        <pointLight
+          ref={glowLightRef}
+          position={[0, 0.70, 0.8]}
+          color="#b8d0f0"
+          intensity={1.35}
+          distance={4}
+          decay={2.1}
+        />
+      </group>
+    </group>
+  );
+}
+
+// ————— Mount variants —————
+
+// Variant A: Walnut credenza — low cabinet matching the TV wood.
+function MountCredenza({ woodTex }: { woodTex: THREE.Texture }) {
+  return (
+    <group>
+      {/* Top surface (TV sits on this) */}
+      <mesh position={[0, 0.52, 0]}  receiveShadow>
+        <boxGeometry args={[1.22, 0.04, 0.62]} />
+        <meshStandardMaterial map={woodTex} color="#4a2814" roughness={0.55} metalness={0.08} />
+      </mesh>
+      {/* Body */}
+      <mesh position={[0, 0.28, 0]}  receiveShadow>
+        <boxGeometry args={[1.14, 0.48, 0.56]} />
+        <meshStandardMaterial map={woodTex} color="#4a2814" roughness={0.55} metalness={0.08} />
+      </mesh>
+      {/* Scalloped apron detail — thin strip below body */}
+      <mesh position={[0, 0.035, 0.281]}>
+        <planeGeometry args={[1.1, 0.06]} />
+        <meshStandardMaterial color="#2a140a" roughness={0.85} />
+      </mesh>
+      {/* Four tapered legs */}
+      {[
+        [-0.5, -0.24],
+        [0.5, -0.24],
+        [-0.5, 0.24],
+        [0.5, 0.24],
+      ].map(([x, z], i) => (
+        <mesh key={i} position={[x, 0.04, z]} >
+          <cylinderGeometry args={[0.018, 0.024, 0.08, 10]} />
+          <meshStandardMaterial color="#1c0e06" roughness={0.85} />
+        </mesh>
+      ))}
+      {/* Two brass pulls on the front, at cabinet mid-height */}
+      <mesh position={[-0.22, 0.30, 0.281]}>
+        <sphereGeometry args={[0.014, 12, 10]} />
+        <meshStandardMaterial color="#caa860" metalness={0.85} roughness={0.3} />
+      </mesh>
+      <mesh position={[0.22, 0.30, 0.281]}>
+        <sphereGeometry args={[0.014, 12, 10]} />
+        <meshStandardMaterial color="#caa860" metalness={0.85} roughness={0.3} />
+      </mesh>
+      {/* Faint door seam down the middle */}
+      <mesh position={[0, 0.30, 0.2812]}>
+        <planeGeometry args={[0.004, 0.42]} />
+        <meshBasicMaterial color="#1a0a04" />
+      </mesh>
+    </group>
+  );
+}
+
+// Variant B: Velvet-draped altar — mirrors Venus's pedestal in
+// material language (crimson velvet + gilt trim).
+function MountAltar() {
+  return (
+    <group>
+      {/* Velvet body */}
+      <mesh position={[0, 0.27, 0]}  receiveShadow>
+        <boxGeometry args={[1.04, 0.52, 0.60]} />
+        <meshPhysicalMaterial
+          color="#4a0812"
+          roughness={0.96}
+          metalness={0}
+          sheen={1}
+          sheenColor="#a01822"
+          sheenRoughness={0.35}
+          emissive="#1a0208"
+          emissiveIntensity={0.15}
+        />
+      </mesh>
+      {/* Gilt top trim */}
+      <mesh position={[0, 0.535, 0]}>
+        <boxGeometry args={[1.06, 0.015, 0.62]} />
+        <meshStandardMaterial color="#b8934a" metalness={0.75} roughness={0.35} />
+      </mesh>
+      {/* Gilt bottom trim */}
+      <mesh position={[0, 0.01, 0]}>
+        <boxGeometry args={[1.06, 0.015, 0.62]} />
+        <meshStandardMaterial color="#b8934a" metalness={0.75} roughness={0.35} />
+      </mesh>
+      {/* Two gold tassels dangling from front corners */}
+      {[-0.48, 0.48].map((x, i) => (
+        <group key={i} position={[x, 0, 0.31]}>
+          <mesh position={[0, 0.12, 0]}>
+            <cylinderGeometry args={[0.004, 0.004, 0.18, 6]} />
+            <meshStandardMaterial color="#b8934a" metalness={0.4} roughness={0.55} />
+          </mesh>
+          <mesh position={[0, 0.04, 0]}>
+            <coneGeometry args={[0.024, 0.07, 10]} />
+            <meshStandardMaterial color="#d0a858" metalness={0.55} roughness={0.45} />
+          </mesh>
+        </group>
+      ))}
+    </group>
+  );
+}
+
+// Variant C: Suspended by two dark iron "chains" (simplified as thin
+// cylinders) going up into the unlit ceiling above.
+function MountChains({ tvLift }: { tvLift: number }) {
+  // TV body top (in TV-local coords after lift) is at ~y=1.0. World
+  // top after lift = tvLift + 1.0. Chains reach up to y=5.0.
+  const TOP = 5.0;
+  const CHAIN_TOP_Y = tvLift + 1.0;
+  const chainLen = TOP - CHAIN_TOP_Y;
+  const chainCenterY = CHAIN_TOP_Y + chainLen / 2;
+  return (
+    <group>
+      {[-0.32, 0.32].map((x, i) => (
+        <mesh key={i} position={[x, chainCenterY, 0]}>
+          <cylinderGeometry args={[0.012, 0.012, chainLen, 8]} />
+          <meshStandardMaterial color="#1a120a" metalness={0.85} roughness={0.45} />
+        </mesh>
+      ))}
+      {/* Eye-hook mounts on top of the TV cabinet */}
+      {[-0.32, 0.32].map((x, i) => (
+        <mesh key={i} position={[x, tvLift + 1.02, 0]}>
+          <torusGeometry args={[0.025, 0.005, 8, 16]} />
+          <meshStandardMaterial color="#1a120a" metalness={0.8} roughness={0.4} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+// Variant E: Easel-style 4-leg stand — like a FITUEYES art easel
+// that elevates a painting. The TV sits as "art on display" paralleling
+// Venus on her pedestal.
+function MountEasel({ woodTex, tvLift }: { woodTex: THREE.Texture; tvLift: number }) {
+  // Leg tops meet just under the TV base. tvLift = cabinet-bottom y.
+  // The central hub sits at hubY (just below tvLift). Feet splay to
+  // footR radius at floor level.
+  const hubY = tvLift - 0.02; // hub right under TV
+  const footR = 0.42; // radius of splay at floor
+  const hubR = 0.06; // narrow at the top where legs meet
+  // 4 legs going from (±footR, 0, ±footR) up to (0, hubY, 0).
+  const legPositions: Array<[number, number]> = [
+    [-footR, -footR * 0.75],
+    [footR, -footR * 0.75],
+    [-footR, footR * 0.75],
+    [footR, footR * 0.75],
+  ];
+  return (
+    <group>
+      {/* 4 tapered legs (dark walnut). Each leg is a long box whose
+          top end is near the hub and bottom end is at the foot. */}
+      {legPositions.map(([fx, fz], i) => {
+        const dx = fx;
+        const dz = fz;
+        const len = Math.sqrt(dx * dx + hubY * hubY + dz * dz);
+        // Midpoint between hub and foot
+        const mx = dx / 2;
+        const mz = dz / 2;
+        const my = hubY / 2;
+        // Orientation — rotate a vertical box so its axis points from foot to hub
+        // Easiest: use a Group with lookAt-like rotation.
+        const phi = Math.atan2(dx, dz); // rotation around y
+        const theta = Math.atan2(Math.sqrt(dx * dx + dz * dz), hubY); // tilt
+        return (
+          <group key={i} position={[mx, my, mz]} rotation={[0, phi, 0]}>
+            <mesh rotation={[theta, 0, 0]} >
+              {/* box: small square cross-section, length = distance */}
+              <boxGeometry args={[0.035, 0.035, len]} />
+              <meshStandardMaterial map={woodTex} color="#3a1f10" roughness={0.55} metalness={0.12} />
+            </mesh>
+          </group>
+        );
+      })}
+      {/* Tiny foot pads (rubber-ish) at each leg base */}
+      {legPositions.map(([fx, fz], i) => (
+        <mesh key={i} position={[fx, 0.012, fz]}>
+          <cylinderGeometry args={[0.022, 0.026, 0.024, 10]} />
+          <meshStandardMaterial color="#14120e" roughness={0.9} />
+        </mesh>
+      ))}
+      {/* Central hub — a short matte-black block at the top where the
+          legs meet, like the FITUEYES junction block in the reference. */}
+      <mesh position={[0, hubY, 0]} >
+        <boxGeometry args={[hubR * 2.2, 0.08, hubR * 2.0]} />
+        <meshStandardMaterial color="#161412" roughness={0.45} metalness={0.55} />
+      </mesh>
+      {/* Short vertical neck from the hub up to the TV back */}
+      <mesh position={[0, hubY + 0.06, 0]}>
+        <cylinderGeometry args={[0.014, 0.014, 0.08, 8]} />
+        <meshStandardMaterial color="#161412" roughness={0.5} metalness={0.55} />
+      </mesh>
+    </group>
+  );
+}
+
+// Variant 2: Small wood side table beside an armchair.
+function MountSideTable({ woodTex, tvLift }: { woodTex: THREE.Texture; tvLift: number }) {
+  const tableTop = tvLift;
+  return (
+    <group>
+      {/* Top */}
+      <mesh position={[0, tableTop - 0.015, 0]}  receiveShadow>
+        <cylinderGeometry args={[0.3, 0.3, 0.03, 24]} />
+        <meshStandardMaterial map={woodTex} color="#4a2814" roughness={0.55} metalness={0.08} />
+      </mesh>
+      {/* Central column */}
+      <mesh position={[0, tableTop / 2, 0]} >
+        <cylinderGeometry args={[0.04, 0.045, tableTop - 0.03, 12]} />
+        <meshStandardMaterial map={woodTex} color="#3a1f10" roughness={0.6} metalness={0.05} />
+      </mesh>
+      {/* Tripod feet */}
+      {[0, (2 * Math.PI) / 3, (4 * Math.PI) / 3].map((a, i) => (
+        <mesh
+          key={i}
+          position={[Math.cos(a) * 0.18, 0.02, Math.sin(a) * 0.18]}
+          rotation={[0, -a, 0]}
+                 >
+          <boxGeometry args={[0.2, 0.04, 0.04]} />
+          <meshStandardMaterial map={woodTex} color="#3a1f10" roughness={0.7} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+// Variant 3: Tall dark-wood pedestal mirroring Venus's stone base.
+// Raises the TV so its silhouette matches Venus's height (~2.7m).
+function MountTallPedestal({ woodTex, tvLift }: { woodTex: THREE.Texture; tvLift: number }) {
+  return (
+    <group>
+      {/* Wide low plinth — base of the column */}
+      <mesh position={[0, 0.06, 0]}  receiveShadow>
+        <boxGeometry args={[0.75, 0.12, 0.55]} />
+        <meshStandardMaterial color="#1a0f06" roughness={0.92} metalness={0.02} />
+      </mesh>
+      {/* Column shaft — tall, slim, subtly tapered */}
+      <mesh position={[0, (tvLift - 0.12) / 2 + 0.12, 0]}  receiveShadow>
+        <boxGeometry args={[0.55, tvLift - 0.24, 0.42]} />
+        <meshStandardMaterial map={woodTex} color="#2a1a0e" roughness={0.82} metalness={0.05} />
+      </mesh>
+      {/* Cap — echoes Venus's pedestal shape, slightly wider than shaft */}
+      <mesh position={[0, tvLift - 0.06, 0]}  receiveShadow>
+        <boxGeometry args={[0.72, 0.12, 0.5]} />
+        <meshStandardMaterial color="#1a0f06" roughness={0.9} metalness={0.02} />
+      </mesh>
+    </group>
+  );
+}
+
+// Variant D: School / hospital AV cart — black steel frame + casters.
+function MountCart({ tvLift }: { tvLift: number }) {
+  const postH = tvLift - 0.05;
+  return (
+    <group>
+      {/* Top shelf (TV sits here) */}
+      <mesh position={[0, tvLift - 0.015, 0]} castShadow receiveShadow>
+        <boxGeometry args={[1.2, 0.025, 0.58]} />
+        <meshStandardMaterial color="#1a1a1a" roughness={0.45} metalness={0.55} />
+      </mesh>
+      {/* Mid shelf */}
+      <mesh position={[0, 0.32, 0]} >
+        <boxGeometry args={[1.18, 0.02, 0.56]} />
+        <meshStandardMaterial color="#1a1a1a" roughness={0.5} metalness={0.5} />
+      </mesh>
+      {/* Bottom shelf */}
+      <mesh position={[0, 0.12, 0]} >
+        <boxGeometry args={[1.18, 0.02, 0.56]} />
+        <meshStandardMaterial color="#1a1a1a" roughness={0.5} metalness={0.5} />
+      </mesh>
+      {/* Four vertical posts */}
+      {[
+        [-0.54, -0.26],
+        [0.54, -0.26],
+        [-0.54, 0.26],
+        [0.54, 0.26],
+      ].map(([x, z], i) => (
+        <mesh key={i} position={[x, (postH + 0.08) / 2 + 0.04, z]}>
+          <cylinderGeometry args={[0.014, 0.014, postH, 10]} />
+          <meshStandardMaterial color="#2a2a2a" metalness={0.8} roughness={0.35} />
+        </mesh>
+      ))}
+      {/* Four caster wheels */}
+      {[
+        [-0.52, -0.24],
+        [0.52, -0.24],
+        [-0.52, 0.24],
+        [0.52, 0.24],
+      ].map(([x, z], i) => (
+        <group key={i} position={[x, 0.04, z]}>
+          <mesh rotation={[Math.PI / 2, 0, 0]}>
+            <cylinderGeometry args={[0.035, 0.035, 0.02, 14]} />
+            <meshStandardMaterial color="#1a1a1a" roughness={0.75} />
+          </mesh>
+          <mesh position={[0, 0.025, 0]}>
+            <boxGeometry args={[0.022, 0.04, 0.04]} />
+            <meshStandardMaterial color="#2a2a2a" metalness={0.7} roughness={0.45} />
+          </mesh>
+        </group>
+      ))}
+      {/* A few VHS tapes stacked on the bottom shelf (flavor) */}
+      {[0, 1, 2].map((i) => (
+        <mesh key={i} position={[-0.35 + i * 0.03, 0.15 + i * 0.022, 0]}>
+          <boxGeometry args={[0.18, 0.02, 0.11]} />
+          <meshStandardMaterial color={i === 1 ? "#3a1208" : "#1a1008"} roughness={0.85} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+// ——— TV screen content renderers. All called with pre-CRT ctx. ———
+
+function drawStationID(ctx: CanvasRenderingContext2D, W: number, H: number, t: number) {
+  ctx.fillStyle = "#06090f";
+  ctx.fillRect(0, 0, W, H);
+
+  // Pulsing radial glow centre (cool white)
+  const pulse = 0.6 + Math.sin(t * 1.4) * 0.15;
+  const glow = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, W * 0.55);
+  glow.addColorStop(0, `rgba(235,245,255,${0.18 * pulse})`);
+  glow.addColorStop(1, "rgba(235,245,255,0)");
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = "rgb(240,248,255)";
+  ctx.font = "bold 28px 'Times New Roman', serif";
+  ctx.fillText("CHANNEL 15", W / 2, H * 0.28);
+
+  ctx.font = "bold 56px 'Times New Roman', serif";
+  ctx.letterSpacing = "14px" as unknown as string;
+  ctx.fillText("W A R H O L    T V", W / 2, H * 0.46);
+  ctx.letterSpacing = "0px" as unknown as string;
+
+  // Warhol quote
+  ctx.font = "italic 17px 'Times New Roman', serif";
+  ctx.fillStyle = "rgb(215,225,240)";
+  ctx.fillText('"In the future, everyone will be', W / 2, H * 0.64);
+  ctx.fillText('famous for fifteen minutes."', W / 2, H * 0.71);
+
+  ctx.font = "12px ui-monospace, monospace";
+  ctx.fillStyle = "rgb(175,190,215)";
+  ctx.fillText("— ANDY WARHOL, 1968", W / 2, H * 0.8);
+
+  // Little corner bug
+  ctx.textAlign = "left";
+  ctx.font = "bold 10px ui-monospace, monospace";
+  ctx.fillStyle = "rgb(235,245,255)";
+  ctx.fillText("● CH 15", 16, 22);
+}
+
+function drawNextUp(
+  ctx: CanvasRenderingContext2D, W: number, H: number,
+  who: Submitter, secsToShow: number, t: number,
+) {
+  ctx.fillStyle = "#070b13";
+  ctx.fillRect(0, 0, W, H);
+
+  // Top bar
+  ctx.fillStyle = "rgb(225,235,250)";
+  ctx.fillRect(0, 0, W, 36);
+  ctx.fillStyle = "rgb(10,15,22)";
+  ctx.font = "bold 20px ui-monospace, monospace";
+  ctx.textAlign = "center";
+  ctx.fillText("★   N E X T   U P   ★", W / 2, 25);
+
+  // Portrait
+  const pX = 30;
+  const pY = 60;
+  const pW = 180;
+  const pH = 220;
+  drawAvatar(ctx, pX, pY, pW, pH, who.avatarSeed);
+  // portrait frame
+  ctx.strokeStyle = "rgba(230,240,255,0.6)";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(pX - 1, pY - 1, pW + 2, pH + 2);
+
+  // Right column
+  ctx.textAlign = "left";
+  ctx.fillStyle = "rgb(235,245,255)";
+  ctx.font = "bold 26px 'Times New Roman', serif";
+  const name = who.name;
+  const parts = name.length > 16 ? wrapText(ctx, name, W - pX - pW - 40) : [name];
+  let ly = pY + 30;
+  for (const p of parts) { ctx.fillText(p, pX + pW + 20, ly); ly += 30; }
+
+  ctx.font = "14px ui-monospace, monospace";
+  ctx.fillStyle = "rgb(180,195,220)";
+  ctx.fillText(who.location, pX + pW + 20, ly + 4);
+  ly += 28;
+
+  // Quote
+  ctx.font = "italic 18px 'Times New Roman', serif";
+  ctx.fillStyle = "rgb(225,235,250)";
+  const quote = `"${who.quote}"`;
+  const lines = wrapText(ctx, quote, W - pX - pW - 40);
+  for (const l of lines) { ctx.fillText(l, pX + pW + 20, ly); ly += 24; }
+
+  // Countdown
+  ctx.textAlign = "center";
+  const timeStr = formatHMS(secsToShow);
+  ctx.font = "bold 14px ui-monospace, monospace";
+  ctx.fillStyle = "rgb(190,205,225)";
+  ctx.fillText("ON AIR IN", W / 2, H - 58);
+  ctx.font = "bold 36px ui-monospace, monospace";
+  ctx.fillStyle = "rgb(235,245,255)";
+  const tick = Math.floor(t * 2) % 2 === 0 ? timeStr : timeStr.replace(/:/g, " ");
+  ctx.fillText(tick, W / 2, H - 24);
+}
+
+function drawLineup(
+  ctx: CanvasRenderingContext2D, W: number, H: number,
+  queue: Submitter[], secsToShow: number, t: number,
+) {
+  ctx.fillStyle = "#06090f";
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = "rgb(235,245,255)";
+  ctx.font = "bold 24px ui-monospace, monospace";
+  ctx.fillText("COMING UP", W / 2, 32);
+
+  // Six small portraits in a filmstrip
+  const shown = queue.slice(0, 6);
+  const cellW = (W - 32) / shown.length;
+  const cellH = 90;
+  for (let i = 0; i < shown.length; i++) {
+    const x = 16 + i * cellW + 4;
+    const y = 56;
+    const w = cellW - 8;
+    drawAvatar(ctx, x, y, w, cellH, shown[i].avatarSeed);
+    ctx.strokeStyle = "rgba(210,225,245,0.55)";
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(x, y, w, cellH);
+    // perforations
+    ctx.fillStyle = "rgba(210,225,245,0.25)";
+    for (let k = 0; k < 4; k++) {
+      ctx.fillRect(x + 4 + k * (w - 8) / 3 - 3, y - 8, 6, 4);
+      ctx.fillRect(x + 4 + k * (w - 8) / 3 - 3, y + cellH + 4, 6, 4);
+    }
+  }
+
+  // Slot listing below
+  ctx.textAlign = "left";
+  ctx.font = "13px ui-monospace, monospace";
+  const startY = 180;
+  const slotMinutes = 15;
+  const baseMin = Math.floor(secsToShow / 60);
+  for (let i = 0; i < Math.min(6, queue.length); i++) {
+    const y = startY + i * 22;
+    const mins = baseMin + i * slotMinutes;
+    const hh = Math.floor(mins / 60);
+    const mm = mins % 60;
+    const eta = hh > 0 ? `+${hh}H ${mm.toString().padStart(2, "0")}M` : `+${mm}M`;
+    // First row amber-warm to signify "next" against the cool CRT
+    ctx.fillStyle = i === 0 ? "rgb(255,210,170)" : "rgb(225,235,250)";
+    const dot = i === 0 ? "►" : "·";
+    ctx.fillText(`${dot}  ${queue[i].name}`, 24, y);
+    ctx.textAlign = "right";
+    ctx.fillText(eta, W - 24, y);
+    ctx.textAlign = "left";
+  }
+}
+
+function drawOnAir(
+  ctx: CanvasRenderingContext2D, W: number, H: number,
+  who: Submitter, remainingSecs: number, t: number,
+) {
+  // Full-bleed portrait
+  drawAvatar(ctx, 0, 0, W, H, who.avatarSeed);
+
+  // LIVE bug top-left — blinks
+  const blink = Math.floor(t * 1.5) % 2 === 0;
+  if (blink) {
+    ctx.fillStyle = "rgba(180,40,40,0.9)";
+    ctx.fillRect(16, 16, 84, 30);
+    ctx.fillStyle = "rgb(255,245,240)";
+    ctx.font = "bold 22px ui-monospace, monospace";
+    ctx.textAlign = "center";
+    ctx.fillText("● LIVE", 58, 38);
+  }
+
+  // Name banner bottom
+  ctx.fillStyle = "rgba(8,12,18,0.78)";
+  ctx.fillRect(0, H - 76, W, 76);
+  ctx.fillStyle = "rgb(235,245,255)";
+  ctx.textAlign = "left";
+  ctx.font = "bold 22px 'Times New Roman', serif";
+  ctx.fillText(who.name, 20, H - 46);
+  ctx.font = "14px ui-monospace, monospace";
+  ctx.fillStyle = "rgb(185,200,225)";
+  ctx.fillText(who.location, 20, H - 24);
+
+  // Remaining time bottom-right
+  ctx.textAlign = "right";
+  ctx.font = "bold 26px ui-monospace, monospace";
+  ctx.fillStyle = "rgb(240,248,255)";
+  ctx.fillText(formatMS(remainingSecs), W - 20, H - 36);
+  ctx.font = "11px ui-monospace, monospace";
+  ctx.fillStyle = "rgb(185,200,225)";
+  ctx.fillText("REMAINING", W - 20, H - 18);
+}
+
+function drawChyron(
+  ctx: CanvasRenderingContext2D, W: number, H: number, t: number, secsToShow: number,
+) {
+  const H_BAR = 24;
+  const y = H - H_BAR;
+  ctx.fillStyle = "rgba(10,15,22,0.9)";
+  ctx.fillRect(0, y, W, H_BAR);
+  ctx.strokeStyle = "rgba(185,200,225,0.5)";
+  ctx.beginPath();
+  ctx.moveTo(0, y);
+  ctx.lineTo(W, y);
+  ctx.stroke();
+
+  // Left fixed: countdown
+  ctx.fillStyle = "rgb(235,245,255)";
+  ctx.font = "bold 13px ui-monospace, monospace";
+  ctx.textAlign = "left";
+  const blink = Math.floor(t * 2) % 2 === 0;
+  const timeStr = formatHMS(secsToShow);
+  ctx.fillText(`ON AIR IN  ${blink ? timeStr : timeStr.replace(/:/g, " ")}`, 10, y + 16);
+
+  // Right: scrolling marquee of next names
+  const names = TV_QUEUE.map((q) => q.name).join("   ·   ") + "   ·   ";
+  ctx.font = "13px ui-monospace, monospace";
+  const text = names + names; // loop
+  const textW = ctx.measureText(text).width;
+  const scroll = (t * 32) % (textW / 2);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(W * 0.4, y + 2, W * 0.6 - 8, H_BAR - 4);
+  ctx.clip();
+  ctx.fillStyle = "rgb(205,220,245)";
+  ctx.fillText(text, W - 10 - scroll, y + 16);
+  ctx.restore();
+}
+
+function wrapText(ctx: CanvasRenderingContext2D, text: string, maxW: number): string[] {
+  const words = text.split(" ");
+  const lines: string[] = [];
+  let cur = "";
+  for (const w of words) {
+    const test = cur ? `${cur} ${w}` : w;
+    if (ctx.measureText(test).width > maxW && cur) {
+      lines.push(cur); cur = w;
+    } else {
+      cur = test;
+    }
+  }
+  if (cur) lines.push(cur);
+  return lines;
 }
 
 // ————— camera with a gentle mouse-parallax rig —————
@@ -1341,17 +2515,17 @@ function Torchiere({ position }: { position: [number, number, number] }) {
   return (
     <group position={position}>
       {/* Base disc */}
-      <mesh position={[0, 0.04, 0]} castShadow>
+      <mesh position={[0, 0.04, 0]} >
         <cylinderGeometry args={[0.22, 0.26, 0.08, 24]} />
         <meshStandardMaterial color="#3a2a14" metalness={0.7} roughness={0.55} />
       </mesh>
       {/* Thin brass pole */}
-      <mesh position={[0, 1.5, 0]} castShadow>
+      <mesh position={[0, 1.5, 0]} >
         <cylinderGeometry args={[0.03, 0.03, 3, 12]} />
         <meshStandardMaterial color="#8b6a34" metalness={0.8} roughness={0.4} />
       </mesh>
       {/* Bowl at top — shallow cone, open upward */}
-      <mesh position={[0, 3.08, 0]} castShadow>
+      <mesh position={[0, 3.08, 0]} >
         <coneGeometry args={[0.35, 0.18, 24, 1, true]} />
         <meshStandardMaterial
           color="#4a3518"
@@ -1431,11 +2605,11 @@ function RedCarpet() {
         />
       </mesh>
       {/* Thin brass edge trim along each side */}
-      <mesh position={[-1.3, 0.02, -3.5]} castShadow>
+      <mesh position={[-1.3, 0.02, -3.5]} >
         <boxGeometry args={[0.04, 0.02, 18]} />
         <meshStandardMaterial color="#8b6a34" metalness={0.8} roughness={0.45} />
       </mesh>
-      <mesh position={[1.3, 0.02, -3.5]} castShadow>
+      <mesh position={[1.3, 0.02, -3.5]} >
         <boxGeometry args={[0.04, 0.02, 18]} />
         <meshStandardMaterial color="#8b6a34" metalness={0.8} roughness={0.45} />
       </mesh>
@@ -1476,24 +2650,24 @@ function Candelabra({ position }: { position: [number, number, number] }) {
   return (
     <group position={position}>
       {/* Base disc */}
-      <mesh position={[0, 0.04, 0]} castShadow>
+      <mesh position={[0, 0.04, 0]} >
         <cylinderGeometry args={[0.16, 0.2, 0.08, 24]} />
         <meshStandardMaterial color="#3a2614" metalness={0.7} roughness={0.5} />
       </mesh>
       {/* Stem */}
-      <mesh position={[0, 0.45, 0]} castShadow>
+      <mesh position={[0, 0.45, 0]} >
         <cylinderGeometry args={[0.025, 0.028, 0.8, 14]} />
         <meshStandardMaterial color="#8b6a34" metalness={0.8} roughness={0.4} />
       </mesh>
       {/* Crossbar */}
-      <mesh position={[0, 0.84, 0]} rotation={[0, 0, Math.PI / 2]} castShadow>
+      <mesh position={[0, 0.84, 0]} rotation={[0, 0, Math.PI / 2]} >
         <cylinderGeometry args={[0.02, 0.02, 0.62, 12]} />
         <meshStandardMaterial color="#8b6a34" metalness={0.8} roughness={0.4} />
       </mesh>
       {branches.map(([dx, dy], i) => (
         <group key={i} position={[dx, 0.88 + dy, 0]}>
           {/* Tiny cup */}
-          <mesh position={[0, 0.02, 0]} castShadow>
+          <mesh position={[0, 0.02, 0]} >
             <cylinderGeometry args={[0.05, 0.04, 0.03, 14]} />
             <meshStandardMaterial
               color="#8b6a34"
@@ -1502,7 +2676,7 @@ function Candelabra({ position }: { position: [number, number, number] }) {
             />
           </mesh>
           {/* Candle wax */}
-          <mesh position={[0, 0.11, 0]} castShadow>
+          <mesh position={[0, 0.11, 0]} >
             <cylinderGeometry args={[0.035, 0.035, 0.16, 10]} />
             <meshStandardMaterial color="#f2e6ca" roughness={0.75} />
           </mesh>
@@ -1559,7 +2733,7 @@ function VelvetChair({
   return (
     <group position={position} rotation={rotation}>
       {/* Wooden frame under the cushions */}
-      <mesh position={[0, 0.18, 0]} castShadow receiveShadow>
+      <mesh position={[0, 0.18, 0]}  receiveShadow>
         <boxGeometry args={[1.05, 0.22, 0.82]} />
         <meshStandardMaterial
           color="#2a1608"
@@ -1568,12 +2742,12 @@ function VelvetChair({
         />
       </mesh>
       {/* Seat cushion — puffy */}
-      <mesh position={[0, 0.42, 0]} castShadow receiveShadow>
+      <mesh position={[0, 0.42, 0]}  receiveShadow>
         <boxGeometry args={[0.82, 0.18, 0.68]} />
         {velvet}
       </mesh>
       {/* Back cushion — tall, padded */}
-      <mesh position={[0, 0.85, 0.3]} castShadow>
+      <mesh position={[0, 0.85, 0.3]} >
         <boxGeometry args={[0.82, 0.72, 0.2]} />
         {velvet}
       </mesh>
@@ -1581,18 +2755,17 @@ function VelvetChair({
       <mesh
         position={[0, 1.24, 0.3]}
         rotation={[0, 0, Math.PI / 2]}
-        castShadow
-      >
+             >
         <cylinderGeometry args={[0.1, 0.1, 0.82, 20]} />
         {velvet}
       </mesh>
       {/* Left arm — padded block */}
-      <mesh position={[-0.46, 0.58, 0.05]} castShadow>
+      <mesh position={[-0.46, 0.58, 0.05]} >
         <boxGeometry args={[0.18, 0.5, 0.72]} />
         {velvet}
       </mesh>
       {/* Right arm */}
-      <mesh position={[0.46, 0.58, 0.05]} castShadow>
+      <mesh position={[0.46, 0.58, 0.05]} >
         <boxGeometry args={[0.18, 0.5, 0.72]} />
         {velvet}
       </mesh>
@@ -1600,16 +2773,14 @@ function VelvetChair({
       <mesh
         position={[-0.46, 0.85, 0.05]}
         rotation={[Math.PI / 2, 0, 0]}
-        castShadow
-      >
+             >
         <cylinderGeometry args={[0.09, 0.09, 0.72, 16]} />
         {velvet}
       </mesh>
       <mesh
         position={[0.46, 0.85, 0.05]}
         rotation={[Math.PI / 2, 0, 0]}
-        castShadow
-      >
+             >
         <cylinderGeometry args={[0.09, 0.09, 0.72, 16]} />
         {velvet}
       </mesh>
@@ -1622,13 +2793,279 @@ function VelvetChair({
           [0.42, 0.04, 0.34],
         ] as Array<[number, number, number]>
       ).map((p, i) => (
-        <mesh key={i} position={p} castShadow>
+        <mesh key={i} position={p} >
           <cylinderGeometry args={[0.05, 0.05, 0.08, 10]} />
           <meshStandardMaterial
             color="#8b6a34"
             metalness={0.8}
             roughness={0.45}
           />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+// FloorLamp — Twin-Peaks-style standing lamp. Thin brass pole, fabric
+// tulip shade, dim blood-amber emission that paints the chevron floor
+// with a warm pool. Called next to each audience pair.
+function FloorLamp({ position }: { position: [number, number, number] }) {
+  const lightRef = useRef<THREE.PointLight | null>(null);
+  // Per-lamp random phase so the 4 lamps don't flicker in lockstep
+  const phase = useMemo(() => position[0] * 3.1 + position[2] * 1.7, [position]);
+
+  useFrame(({ clock }) => {
+    if (!lightRef.current) return;
+    const t = clock.elapsedTime + phase;
+    // Slow candle-like wobble + occasional deeper dip. Intensity 0-1.
+    const base = 0.82;
+    const wobble = Math.sin(t * 1.9) * 0.06 + Math.sin(t * 7.3) * 0.035;
+    const gust = Math.sin(t * 0.4) < -0.7 ? -0.18 : 0;
+    lightRef.current.intensity = base + wobble + gust;
+  });
+
+  return (
+    <group position={position}>
+      {/* Weighted round base */}
+      <mesh position={[0, 0.025, 0]}  receiveShadow>
+        <cylinderGeometry args={[0.16, 0.18, 0.05, 24]} />
+        <meshStandardMaterial color="#3a2a0f" metalness={0.65} roughness={0.5} />
+      </mesh>
+      {/* Base highlight ring */}
+      <mesh position={[0, 0.055, 0]}>
+        <cylinderGeometry args={[0.15, 0.15, 0.01, 24]} />
+        <meshStandardMaterial color="#8b6a34" metalness={0.85} roughness={0.35} />
+      </mesh>
+      {/* Slim brass pole — taller than before (+15cm) */}
+      <mesh position={[0, 0.97, 0]} >
+        <cylinderGeometry args={[0.014, 0.016, 1.85, 12]} />
+        <meshStandardMaterial color="#8b6a34" metalness={0.85} roughness={0.35} />
+      </mesh>
+      {/* Small decorative ball at pole top */}
+      <mesh position={[0, 1.90, 0]} >
+        <sphereGeometry args={[0.022, 12, 10]} />
+        <meshStandardMaterial color="#b8934a" metalness={0.8} roughness={0.35} />
+      </mesh>
+      {/* Fabric lampshade — warm amber/gold now (more yellow than the
+          previous blood-amber). Emissive so it reads as glowing. */}
+      <mesh position={[0, 2.17, 0]} >
+        <cylinderGeometry args={[0.18, 0.24, 0.34, 20, 1, true]} />
+        <meshStandardMaterial
+          color="#6a3418"
+          emissive="#d8781c"
+          emissiveIntensity={1.25}
+          roughness={0.95}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+      {/* Shade top cap */}
+      <mesh position={[0, 2.345, 0]}>
+        <cylinderGeometry args={[0.175, 0.175, 0.006, 20]} />
+        <meshStandardMaterial color="#2a1008" roughness={0.9} />
+      </mesh>
+      {/* Bulb glow blob — warmer yellow bulb */}
+      <mesh position={[0, 2.15, 0]}>
+        <sphereGeometry args={[0.07, 14, 10]} />
+        <meshBasicMaterial color="#ffc880" toneMapped={false} />
+      </mesh>
+      {/* The actual light emission — shifted from blood-amber (#c84818,
+          red-orange) to warm amber (#d8802c, gold-amber). Still "dim
+          and candid," just more yellow so it reads as lamp-light
+          rather than firelight. */}
+      <pointLight
+        ref={lightRef}
+        position={[0, 2.13, 0]}
+        color="#d8802c"
+        intensity={0.88}
+        distance={4.4}
+        decay={1.9}
+      />
+    </group>
+  );
+}
+
+// VelvetBigChair — an oversize single-seater armchair (throne-ish).
+// Same velvet language as VelvetChair, but ~40% wider + slightly
+// taller so it reads as "the one seat that matters". Used for the
+// lone TV-bearing seat on front-right.
+function VelvetBigChair({
+  position,
+  rotation = [0, 0, 0],
+}: {
+  position: [number, number, number];
+  rotation?: [number, number, number];
+}) {
+  const velvet = (
+    <meshPhysicalMaterial
+      color="#5a0f0f"
+      roughness={0.95}
+      metalness={0}
+      sheen={1}
+      sheenColor="#b02828"
+      sheenRoughness={0.4}
+      emissive="#1a0303"
+      emissiveIntensity={0.22}
+    />
+  );
+  const W = 1.45; // wider than regular 1.05
+  const D = 0.92; // slightly deeper too
+  return (
+    <group position={position} rotation={rotation}>
+      {/* Wooden frame under the cushions */}
+      <mesh position={[0, 0.2, 0]}  receiveShadow>
+        <boxGeometry args={[W + 0.05, 0.24, D]} />
+        <meshStandardMaterial color="#2a1608" roughness={0.6} metalness={0.3} />
+      </mesh>
+      {/* Single plush seat cushion — one wide pad */}
+      <mesh position={[0, 0.46, 0]}  receiveShadow>
+        <boxGeometry args={[W - 0.18, 0.2, D - 0.18]} />
+        {velvet}
+      </mesh>
+      {/* Back cushion — tall, padded */}
+      <mesh position={[0, 0.95, 0.35]} >
+        <boxGeometry args={[W - 0.06, 0.82, 0.22]} />
+        {velvet}
+      </mesh>
+      {/* Rolled bolster at top of back */}
+      <mesh
+        position={[0, 1.38, 0.35]}
+        rotation={[0, 0, Math.PI / 2]}
+             >
+        <cylinderGeometry args={[0.11, 0.11, W - 0.06, 20]} />
+        {velvet}
+      </mesh>
+      {/* Left arm */}
+      <mesh position={[-(W / 2) - 0.01, 0.62, 0.05]} >
+        <boxGeometry args={[0.2, 0.56, D - 0.1]} />
+        {velvet}
+      </mesh>
+      {/* Right arm */}
+      <mesh position={[(W / 2) + 0.01, 0.62, 0.05]} >
+        <boxGeometry args={[0.2, 0.56, D - 0.1]} />
+        {velvet}
+      </mesh>
+      {/* Arm top rolls */}
+      <mesh
+        position={[-(W / 2) - 0.01, 0.94, 0.05]}
+        rotation={[Math.PI / 2, 0, 0]}
+             >
+        <cylinderGeometry args={[0.1, 0.1, D - 0.1, 16]} />
+        {velvet}
+      </mesh>
+      <mesh
+        position={[(W / 2) + 0.01, 0.94, 0.05]}
+        rotation={[Math.PI / 2, 0, 0]}
+             >
+        <cylinderGeometry args={[0.1, 0.1, D - 0.1, 16]} />
+        {velvet}
+      </mesh>
+      {/* Four stout brass feet */}
+      {(
+        [
+          [-(W / 2) + 0.12, 0.04, -(D / 2) + 0.1],
+          [(W / 2) - 0.12, 0.04, -(D / 2) + 0.1],
+          [-(W / 2) + 0.12, 0.04, (D / 2) - 0.1],
+          [(W / 2) - 0.12, 0.04, (D / 2) - 0.1],
+        ] as Array<[number, number, number]>
+      ).map((p, i) => (
+        <mesh key={i} position={p} >
+          <cylinderGeometry args={[0.055, 0.055, 0.08, 10]} />
+          <meshStandardMaterial color="#8b6a34" metalness={0.8} roughness={0.45} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+// VelvetSofa — a 2-seater loveseat using the same velvet as the chairs,
+// same silhouette language (puffy cushions, rolled bolster, wooden frame,
+// brass feet) but ~2m wide so two people (or one person + a companion
+// object) can share it.
+function VelvetSofa({
+  position,
+  rotation = [0, 0, 0],
+}: {
+  position: [number, number, number];
+  rotation?: [number, number, number];
+}) {
+  const velvet = (
+    <meshPhysicalMaterial
+      color="#5a0f0f"
+      roughness={0.95}
+      metalness={0}
+      sheen={1}
+      sheenColor="#b02828"
+      sheenRoughness={0.4}
+      emissive="#1a0303"
+      emissiveIntensity={0.22}
+    />
+  );
+  const W = 2.3; // sofa width
+  return (
+    <group position={position} rotation={rotation}>
+      {/* Wooden frame under the cushions */}
+      <mesh position={[0, 0.18, 0]}  receiveShadow>
+        <boxGeometry args={[W + 0.05, 0.22, 0.82]} />
+        <meshStandardMaterial color="#2a1608" roughness={0.6} metalness={0.3} />
+      </mesh>
+      {/* Two seat cushions side-by-side */}
+      <mesh position={[-W / 4, 0.42, 0]}  receiveShadow>
+        <boxGeometry args={[W / 2 - 0.04, 0.18, 0.68]} />
+        {velvet}
+      </mesh>
+      <mesh position={[W / 4, 0.42, 0]}  receiveShadow>
+        <boxGeometry args={[W / 2 - 0.04, 0.18, 0.68]} />
+        {velvet}
+      </mesh>
+      {/* Back cushion — one long pad across the whole width */}
+      <mesh position={[0, 0.85, 0.3]} >
+        <boxGeometry args={[W, 0.72, 0.2]} />
+        {velvet}
+      </mesh>
+      {/* Rolled bolster at top of back */}
+      <mesh position={[0, 1.24, 0.3]} rotation={[0, 0, Math.PI / 2]} >
+        <cylinderGeometry args={[0.1, 0.1, W, 20]} />
+        {velvet}
+      </mesh>
+      {/* Left arm */}
+      <mesh position={[-(W / 2) - 0.01, 0.58, 0.05]} >
+        <boxGeometry args={[0.18, 0.5, 0.72]} />
+        {velvet}
+      </mesh>
+      {/* Right arm */}
+      <mesh position={[(W / 2) + 0.01, 0.58, 0.05]} >
+        <boxGeometry args={[0.18, 0.5, 0.72]} />
+        {velvet}
+      </mesh>
+      {/* Arm top rolls */}
+      <mesh
+        position={[-(W / 2) - 0.01, 0.85, 0.05]}
+        rotation={[Math.PI / 2, 0, 0]}
+             >
+        <cylinderGeometry args={[0.09, 0.09, 0.72, 16]} />
+        {velvet}
+      </mesh>
+      <mesh
+        position={[(W / 2) + 0.01, 0.85, 0.05]}
+        rotation={[Math.PI / 2, 0, 0]}
+             >
+        <cylinderGeometry args={[0.09, 0.09, 0.72, 16]} />
+        {velvet}
+      </mesh>
+      {/* Six brass feet (three on each long side) */}
+      {(
+        [
+          [-(W / 2) + 0.1, 0.04, -0.34],
+          [0, 0.04, -0.34],
+          [(W / 2) - 0.1, 0.04, -0.34],
+          [-(W / 2) + 0.1, 0.04, 0.34],
+          [0, 0.04, 0.34],
+          [(W / 2) - 0.1, 0.04, 0.34],
+        ] as Array<[number, number, number]>
+      ).map((p, i) => (
+        <mesh key={i} position={p} >
+          <cylinderGeometry args={[0.05, 0.05, 0.08, 10]} />
+          <meshStandardMaterial color="#8b6a34" metalness={0.8} roughness={0.45} />
         </mesh>
       ))}
     </group>
@@ -1688,7 +3125,7 @@ function CandleStand({ position }: { position: [number, number, number] }) {
         />
       </mesh>
       {/* Thin brass trim around base top */}
-      <mesh position={[0, 0.125, 0]} castShadow>
+      <mesh position={[0, 0.125, 0]} >
         <boxGeometry args={[0.74, 0.015, 0.54]} />
         <meshStandardMaterial color="#8b6a34" metalness={0.8} roughness={0.45} />
       </mesh>
@@ -3265,12 +4702,27 @@ export function RedRoom() {
             Armchairs are wider than the old boxy chairs so push x
             outward a touch; Venus now lives near row 1 on the left
             so keep the left front chair back a little. */}
-        <VelvetChair position={[-3.9, 0, -4]} />
-        <VelvetChair position={[3.9, 0, -3]} />
-        <VelvetChair position={[-3.9, 0, -7]} />
-        <VelvetChair position={[3.9, 0, -6]} />
+        {/* Audience — 4 pairs of armchairs, LEFT and RIGHT aligned
+            on the same z rows (front row at z=-3.5, back row at
+            z=-6.5). Each pair has a Twin-Peaks-style floor lamp on
+            its outer side. */}
+        {/* Front row — z=-3.5 */}
+        <VelvetChair position={[-4.45, 0, -3.5]} />
+        <VelvetChair position={[-3.35, 0, -3.5]} />
+        <FloorLamp position={[-5.2, 0, -3.5]} />
+        <VelvetChair position={[3.35, 0, -3.5]} />
+        <VelvetChair position={[4.45, 0, -3.5]} />
+        <FloorLamp position={[5.2, 0, -3.5]} />
+        {/* Back row — z=-6.5 */}
+        <VelvetChair position={[-4.45, 0, -6.5]} />
+        <VelvetChair position={[-3.35, 0, -6.5]} />
+        <FloorLamp position={[-5.2, 0, -6.5]} />
+        <VelvetChair position={[3.35, 0, -6.5]} />
+        <VelvetChair position={[4.45, 0, -6.5]} />
+        <FloorLamp position={[5.2, 0, -6.5]} />
 
         <Venus />
+        <TVSet />
 
         {/* Atmospheric dynamics */}
         <DustMotes />
