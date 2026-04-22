@@ -884,7 +884,9 @@ function Stage() {
 
 type CloudVariant = "a" | "b" | "c";
 
-// A single dancing cloud group with its own sway/pirouette phase.
+// A single dancing cloud group. Still air: only gentle translation,
+// no rotation (rotation reads as wind-driven which is wrong for clouds
+// supposed to be floating motionless inside a theatre).
 function DancingCloudBody({
   basePos,
   bounds,
@@ -892,8 +894,7 @@ function DancingCloudBody({
   phase,
   swaySpeed,
   breathSpeed,
-  spinSpeed,
-  swayAmp = 1.0,
+  swayAmp = 0.4,
 }: {
   basePos: [number, number, number];
   bounds: [number, number, number];
@@ -901,7 +902,6 @@ function DancingCloudBody({
   phase: number;
   swaySpeed: number;
   breathSpeed: number;
-  spinSpeed: number;
   swayAmp?: number;
 }) {
   const ref = useRef<THREE.Group>(null);
@@ -909,10 +909,11 @@ function DancingCloudBody({
     const g = ref.current;
     if (!g) return;
     const t = clock.elapsedTime;
+    // Only translate — no rotation. The cloud's internal `speed` prop
+    // already churns its silhouette; outer rotation makes it look
+    // pushed by wind.
     g.position.x = basePos[0] + Math.sin(t * swaySpeed + phase) * swayAmp;
-    g.position.y = basePos[1] + Math.cos(t * breathSpeed + phase) * 0.16;
-    g.rotation.y = Math.sin(t * spinSpeed + phase) * 0.35;
-    g.rotation.z = Math.sin(t * spinSpeed * 1.6 + phase * 0.7) * 0.08;
+    g.position.y = basePos[1] + Math.cos(t * breathSpeed + phase) * 0.09;
   });
   return (
     <group ref={ref} position={basePos}>
@@ -925,9 +926,9 @@ function DancingCloudBody({
         growth={3.8}
         speed={0.09}
         concentrate="inside"
-        color="#dcd0b8"
-        opacity={0.72}
-        fade={45}
+        color="#b8ac8e"
+        opacity={0.55}
+        fade={50}
       />
     </group>
   );
@@ -952,83 +953,79 @@ function DancingCloud({
 }) {
   const variant = useCloudVariant();
   const y = stageH + 1.6;
-  const z = stageD / 2 + 0.5;
+  // Sit back on the apron, close to the curtain — keeps clouds clearly
+  // "on the stage" even at their forward-most breath position.
+  const z = stageD / 2 + 0.25;
 
   let bodies: React.ReactNode = null;
 
   if (variant === "a") {
-    // Massive solo — one wide cloud sweeping across the stage
+    // Massive solo — one wide cloud sweeping slowly
     bodies = (
       <DancingCloudBody
         basePos={[0, y, z]}
-        bounds={[7.0, 3.0, 2.0]}
+        bounds={[5.5, 2.5, 1.8]}
         seed={7}
         phase={0}
-        swaySpeed={0.18}
-        breathSpeed={0.32}
-        spinSpeed={0.13}
-        swayAmp={2.0}
+        swaySpeed={0.15}
+        breathSpeed={0.28}
+        swayAmp={0.8}
       />
     );
   } else if (variant === "c") {
-    // Duet — two clouds meeting in the middle
+    // Duet — two clouds drifting toward / away from each other
     bodies = (
       <>
         <DancingCloudBody
-          basePos={[-2.0, y, z]}
-          bounds={[3.0, 2.6, 1.8]}
+          basePos={[-1.6, y, z]}
+          bounds={[2.4, 2.0, 1.5]}
           seed={11}
           phase={0}
-          swaySpeed={0.22}
-          breathSpeed={0.36}
-          spinSpeed={0.16}
-          swayAmp={1.4}
+          swaySpeed={0.18}
+          breathSpeed={0.32}
+          swayAmp={0.5}
         />
         <DancingCloudBody
-          basePos={[2.0, y, z]}
-          bounds={[3.0, 2.6, 1.8]}
+          basePos={[1.6, y, z]}
+          bounds={[2.4, 2.0, 1.5]}
           seed={23}
-          phase={Math.PI}  // opposite phase, so they lean toward each other
-          swaySpeed={0.22}
-          breathSpeed={0.36}
-          spinSpeed={0.16}
-          swayAmp={1.4}
+          phase={Math.PI}  // opposite phase
+          swaySpeed={0.18}
+          breathSpeed={0.32}
+          swayAmp={0.5}
         />
       </>
     );
   } else {
-    // Trio (default) — smaller & slightly warmer
+    // Trio (default) — three small clouds, tight positions, minimal drift
     bodies = (
       <>
         <DancingCloudBody
-          basePos={[-2.7, y, z]}
-          bounds={[1.9, 1.7, 1.3]}
+          basePos={[-2.3, y, z]}
+          bounds={[1.6, 1.5, 1.2]}
           seed={5}
           phase={0}
-          swaySpeed={0.24}
-          breathSpeed={0.40}
-          spinSpeed={0.18}
-          swayAmp={0.7}
-        />
-        <DancingCloudBody
-          basePos={[0, y + 0.08, z + 0.12]}
-          bounds={[2.4, 1.9, 1.5]}
-          seed={13}
-          phase={1.5}
           swaySpeed={0.20}
           breathSpeed={0.34}
-          spinSpeed={0.14}
-          swayAmp={0.9}
+          swayAmp={0.3}
         />
         <DancingCloudBody
-          basePos={[2.7, y, z]}
-          bounds={[1.9, 1.7, 1.3]}
+          basePos={[0, y + 0.05, z + 0.08]}
+          bounds={[2.0, 1.7, 1.3]}
+          seed={13}
+          phase={1.5}
+          swaySpeed={0.17}
+          breathSpeed={0.29}
+          swayAmp={0.35}
+        />
+        <DancingCloudBody
+          basePos={[2.3, y, z]}
+          bounds={[1.6, 1.5, 1.2]}
           seed={29}
           phase={3.0}
-          swaySpeed={0.25}
-          breathSpeed={0.42}
-          spinSpeed={0.19}
-          swayAmp={0.7}
+          swaySpeed={0.22}
+          breathSpeed={0.36}
+          swayAmp={0.3}
         />
       </>
     );
