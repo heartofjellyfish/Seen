@@ -925,8 +925,8 @@ function DancingCloudBody({
         growth={3.8}
         speed={0.09}
         concentrate="inside"
-        color="#f0ebdd"
-        opacity={0.85}
+        color="#dcd0b8"
+        opacity={0.72}
         fade={45}
       />
     </group>
@@ -997,38 +997,38 @@ function DancingCloud({
       </>
     );
   } else {
-    // Trio (default)
+    // Trio (default) — smaller & slightly warmer
     bodies = (
       <>
         <DancingCloudBody
-          basePos={[-3.2, y, z]}
-          bounds={[2.6, 2.2, 1.7]}
+          basePos={[-2.7, y, z]}
+          bounds={[1.9, 1.7, 1.3]}
           seed={5}
           phase={0}
           swaySpeed={0.24}
           breathSpeed={0.40}
           spinSpeed={0.18}
-          swayAmp={0.9}
+          swayAmp={0.7}
         />
         <DancingCloudBody
-          basePos={[0, y + 0.1, z + 0.15]}
-          bounds={[3.2, 2.5, 1.9]}
+          basePos={[0, y + 0.08, z + 0.12]}
+          bounds={[2.4, 1.9, 1.5]}
           seed={13}
           phase={1.5}
           swaySpeed={0.20}
           breathSpeed={0.34}
           spinSpeed={0.14}
-          swayAmp={1.1}
+          swayAmp={0.9}
         />
         <DancingCloudBody
-          basePos={[3.2, y, z]}
-          bounds={[2.6, 2.2, 1.7]}
+          basePos={[2.7, y, z]}
+          bounds={[1.9, 1.7, 1.3]}
           seed={29}
           phase={3.0}
           swaySpeed={0.25}
           breathSpeed={0.42}
           spinSpeed={0.19}
-          swayAmp={0.9}
+          swayAmp={0.7}
         />
       </>
     );
