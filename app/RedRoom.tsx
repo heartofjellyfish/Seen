@@ -871,11 +871,77 @@ function Stage() {
   );
 }
 
-// ————— Dancing cloud — the stand-in performer —————
-// A single large drei <Cloud> floating centre-stage on the apron.
-// The cloud itself morphs internally (drei's speed prop); the whole
-// group additionally translates and rotates in slow sinusoids so the
-// silhouette reads as a body doing a slow ballet.
+// ————— Dancing clouds — ghost performers on the apron —————
+// Three variants, selectable via ?cloud=a|b|c in the URL.
+//   a) Single massive solo — one wide cloud sweeping slowly
+//   b) Trio (default)       — three clouds at x={-3, 0, +3}
+//   c) Duet                 — two clouds dancing toward each other
+//
+// Materials: MeshBasicMaterial so the clouds keep their own pale color
+// and don't pick up the room's red light (which made the single-cloud
+// version read as "on fire"). High opacity + pale off-white means the
+// curtain's pleat pattern doesn't bleed through as stripes.
+
+type CloudVariant = "a" | "b" | "c";
+
+// A single dancing cloud group with its own sway/pirouette phase.
+function DancingCloudBody({
+  basePos,
+  bounds,
+  seed,
+  phase,
+  swaySpeed,
+  breathSpeed,
+  spinSpeed,
+  swayAmp = 1.0,
+}: {
+  basePos: [number, number, number];
+  bounds: [number, number, number];
+  seed: number;
+  phase: number;
+  swaySpeed: number;
+  breathSpeed: number;
+  spinSpeed: number;
+  swayAmp?: number;
+}) {
+  const ref = useRef<THREE.Group>(null);
+  useFrame(({ clock }) => {
+    const g = ref.current;
+    if (!g) return;
+    const t = clock.elapsedTime;
+    g.position.x = basePos[0] + Math.sin(t * swaySpeed + phase) * swayAmp;
+    g.position.y = basePos[1] + Math.cos(t * breathSpeed + phase) * 0.16;
+    g.rotation.y = Math.sin(t * spinSpeed + phase) * 0.35;
+    g.rotation.z = Math.sin(t * spinSpeed * 1.6 + phase * 0.7) * 0.08;
+  });
+  return (
+    <group ref={ref} position={basePos}>
+      <Cloud
+        seed={seed}
+        segments={38}
+        bounds={bounds}
+        volume={bounds[0] * 1.35}
+        smallestVolume={1.0}
+        growth={3.8}
+        speed={0.09}
+        concentrate="inside"
+        color="#f0ebdd"
+        opacity={0.85}
+        fade={45}
+      />
+    </group>
+  );
+}
+
+function useCloudVariant(): CloudVariant {
+  const [variant, setVariant] = useState<CloudVariant>("b");
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const v = new URLSearchParams(window.location.search).get("cloud");
+    if (v === "a" || v === "b" || v === "c") setVariant(v);
+  }, []);
+  return variant;
+}
 
 function DancingCloud({
   stageH,
@@ -884,42 +950,94 @@ function DancingCloud({
   stageH: number;
   stageD: number;
 }) {
-  const groupRef = useRef<THREE.Group>(null);
-  const baseY = stageH + 1.5;          // centre of cloud ~1.5 m above deck
-  const baseZ = stageD / 2 + 0.55;     // on the apron, in front of curtain
+  const variant = useCloudVariant();
+  const y = stageH + 1.6;
+  const z = stageD / 2 + 0.5;
 
-  useFrame(({ clock }) => {
-    const g = groupRef.current;
-    if (!g) return;
-    const t = clock.elapsedTime;
-    // Lateral sway — wide slow arc across the centre of the stage
-    g.position.x = Math.sin(t * 0.23) * 1.6;
-    // Gentle vertical breathing
-    g.position.y = baseY + Math.cos(t * 0.37) * 0.18;
-    // Slow pirouette around the vertical axis
-    g.rotation.y = Math.sin(t * 0.17) * 0.45;
-    // Small hip-tilt side to side
-    g.rotation.z = Math.sin(t * 0.29 + 1.1) * 0.10;
-  });
+  let bodies: React.ReactNode = null;
+
+  if (variant === "a") {
+    // Massive solo — one wide cloud sweeping across the stage
+    bodies = (
+      <DancingCloudBody
+        basePos={[0, y, z]}
+        bounds={[7.0, 3.0, 2.0]}
+        seed={7}
+        phase={0}
+        swaySpeed={0.18}
+        breathSpeed={0.32}
+        spinSpeed={0.13}
+        swayAmp={2.0}
+      />
+    );
+  } else if (variant === "c") {
+    // Duet — two clouds meeting in the middle
+    bodies = (
+      <>
+        <DancingCloudBody
+          basePos={[-2.0, y, z]}
+          bounds={[3.0, 2.6, 1.8]}
+          seed={11}
+          phase={0}
+          swaySpeed={0.22}
+          breathSpeed={0.36}
+          spinSpeed={0.16}
+          swayAmp={1.4}
+        />
+        <DancingCloudBody
+          basePos={[2.0, y, z]}
+          bounds={[3.0, 2.6, 1.8]}
+          seed={23}
+          phase={Math.PI}  // opposite phase, so they lean toward each other
+          swaySpeed={0.22}
+          breathSpeed={0.36}
+          spinSpeed={0.16}
+          swayAmp={1.4}
+        />
+      </>
+    );
+  } else {
+    // Trio (default)
+    bodies = (
+      <>
+        <DancingCloudBody
+          basePos={[-3.2, y, z]}
+          bounds={[2.6, 2.2, 1.7]}
+          seed={5}
+          phase={0}
+          swaySpeed={0.24}
+          breathSpeed={0.40}
+          spinSpeed={0.18}
+          swayAmp={0.9}
+        />
+        <DancingCloudBody
+          basePos={[0, y + 0.1, z + 0.15]}
+          bounds={[3.2, 2.5, 1.9]}
+          seed={13}
+          phase={1.5}
+          swaySpeed={0.20}
+          breathSpeed={0.34}
+          spinSpeed={0.14}
+          swayAmp={1.1}
+        />
+        <DancingCloudBody
+          basePos={[3.2, y, z]}
+          bounds={[2.6, 2.2, 1.7]}
+          seed={29}
+          phase={3.0}
+          swaySpeed={0.25}
+          breathSpeed={0.42}
+          spinSpeed={0.19}
+          swayAmp={0.9}
+        />
+      </>
+    );
+  }
 
   return (
-    <group ref={groupRef} position={[0, baseY, baseZ]}>
-      <Clouds material={THREE.MeshLambertMaterial} limit={300}>
-        <Cloud
-          seed={7}
-          segments={42}
-          bounds={[3.2, 2.4, 1.8]}
-          volume={4.5}
-          smallestVolume={1.0}
-          growth={3.5}
-          speed={0.10}
-          concentrate="inside"
-          color="#dcc8a8"
-          opacity={0.62}
-          fade={40}
-        />
-      </Clouds>
-    </group>
+    <Clouds material={THREE.MeshBasicMaterial} limit={500}>
+      {bodies}
+    </Clouds>
   );
 }
 
