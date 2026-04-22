@@ -742,13 +742,15 @@ function VelvetCeiling() {
       receiveShadow
     >
       <planeGeometry args={[28, 28, 1, 1]} />
-      <meshPhysicalMaterial
+      {/* Standard (not Physical) — the ceiling is a large, dark,
+          flat surface seen only at grazing angles near the edges
+          where sheen would contribute, and even there it reads as
+          a subtle tint on already-dark pixels. Not worth the per-
+          fragment PBR sheen math on 784 sq m. */}
+      <meshStandardMaterial
         color="#5a0f0f"
         roughness={0.95}
         metalness={0}
-        sheen={1}
-        sheenColor="#a01818"
-        sheenRoughness={0.4}
         emissive="#1e0303"
         emissiveIntensity={0.3}
         side={THREE.DoubleSide}
