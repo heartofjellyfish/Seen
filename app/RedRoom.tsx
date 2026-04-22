@@ -2490,6 +2490,8 @@ function AltarSpot() {
       distance={26}
       decay={1.4}
       color="#f2cc86"
+      castShadow
+      shadow-mapSize={[512, 512]}
     >
       <object3D position={[0, 1.5, -13]} attach="target" />
     </spotLight>
@@ -3950,8 +3952,8 @@ useGLTF.preload("/Parrot.glb");
 // stork's dive corridor.
 
 // Simple triangle-bird geometry — three tris forming a body + two
-// wings. Vertices 4 and 5 are the wingtips; we oscillate their Y
-// per-frame for the flap.
+// wings. Vertices 4 and 5 are the wingtips; a per-vertex `aWing`
+// mask flags them so the vertex shader can displace y for the flap.
 function makeBirdGeo() {
   const s = 0.035; // overall scale — bird ~0.35m long
   const verts = new Float32Array([
@@ -3964,8 +3966,10 @@ function makeBirdGeo() {
     2 * s, 0, 0,
     -3 * s, 0, 0,
   ]);
+  const wing = new Float32Array([0, 0, 0, 0, 1, 1, 0, 0]);
   const g = new THREE.BufferGeometry();
   g.setAttribute("position", new THREE.BufferAttribute(verts, 3));
+  g.setAttribute("aWing", new THREE.BufferAttribute(wing, 1));
   g.setIndex([0, 2, 1, 4, 7, 6, 5, 6, 7]);
   g.computeVertexNormals();
   return g;
@@ -4256,10 +4260,65 @@ function Flock() {
     return list;
   }, []);
 
-  // Each bird gets its own geometry clone so wing-flap vertex writes
-  // don't affect its neighbors.
-  const geos = useMemo(() => boids.map(() => makeBirdGeo()), [boids]);
-  const meshRefs = useRef<(THREE.Mesh | null)[]>([]);
+  // ONE shared geometry + ONE InstancedMesh for all NUM birds — a
+  // single draw call, not 40. The wing flap runs in the vertex shader
+  // (see `material` below), driven per-bird by an InstancedBuffer-
+  // Attribute `aPhase` that we update on CPU each frame. This keeps
+  // the original pitch-coupled flap rate exactly (the flap rate
+  // depends on each bird's pitch, so the phase advance stays on the
+  // CPU alongside boid physics) while avoiding 40 separate geometry
+  // uploads per frame — we upload 40 floats instead of 40 meshes'
+  // worth of vertex data.
+  const geometry = useMemo(() => makeBirdGeo(), []);
+
+  const phaseAttr = useMemo(() => {
+    const arr = new Float32Array(NUM);
+    const a = new THREE.InstancedBufferAttribute(arr, 1);
+    a.setUsage(THREE.DynamicDrawUsage);
+    return a;
+  }, [NUM]);
+
+  // Attach the per-instance phase to the shared geometry so the
+  // vertex shader can read it (the `attribute float aPhase;` below).
+  useEffect(() => {
+    geometry.setAttribute("aPhase", phaseAttr);
+  }, [geometry, phaseAttr]);
+
+  // Boid material: MeshStandardMaterial + DoubleSide (unchanged from
+  // the per-mesh version — no visual downgrade). onBeforeCompile adds
+  // the wing-flap displacement: for each vertex, mix the base y with
+  // sin(aPhase) * flapScale using the aWing mask (0 for body, 1 for
+  // wingtips). This matches the old CPU code's `pos.setY(4, flap)` /
+  // `pos.setY(5, flap)` exactly — it REPLACES the base y on wingtips
+  // rather than adding to it.
+  const material = useMemo(() => {
+    const m = new THREE.MeshStandardMaterial({
+      color: new THREE.Color("#1a0d08"),
+      roughness: 0.5,
+      metalness: 0.1,
+      side: THREE.DoubleSide,
+    });
+    m.onBeforeCompile = (shader) => {
+      shader.uniforms.uFlapScale = { value: BIRD_WING_SCALE };
+      shader.vertexShader = shader.vertexShader
+        .replace(
+          "#include <common>",
+          `#include <common>
+           attribute float aPhase;
+           attribute float aWing;
+           uniform float uFlapScale;`,
+        )
+        .replace(
+          "#include <begin_vertex>",
+          `#include <begin_vertex>
+           transformed.y = mix(transformed.y, sin(aPhase) * uFlapScale, aWing);`,
+        );
+    };
+    return m;
+  }, []);
+
+  const instancedRef = useRef<THREE.InstancedMesh>(null);
+  const tmpObj = useMemo(() => new THREE.Object3D(), []);
 
   // Roaming goal — a waypoint the whole flock slowly steers toward.
   // Two structures drive the flock's motion:
@@ -4577,28 +4636,30 @@ function Flock() {
     const showMul = 0.001;
     const activeMul = phase.current === "hide" ? hideMul : showMul;
 
+    const mesh = instancedRef.current;
+    if (!mesh) return;
+    const phaseArr = phaseAttr.array as Float32Array;
     for (let i = 0; i < boids.length; i++) {
       const b = boids[i];
-      const mesh = meshRefs.current[i];
-      if (!mesh) continue;
       b.goal = goal.current;
       b.goalMultiplier = activeMul;
       b.run(boids);
 
-      mesh.position.copy(b.position);
-      mesh.rotation.y = Math.atan2(-b.velocity.z, b.velocity.x);
+      tmpObj.position.copy(b.position);
+      tmpObj.rotation.set(0, Math.atan2(-b.velocity.z, b.velocity.x), 0);
       const speed = b.velocity.length();
-      mesh.rotation.z = speed > 1e-6 ? Math.asin(b.velocity.y / speed) : 0;
+      tmpObj.rotation.z = speed > 1e-6 ? Math.asin(b.velocity.y / speed) : 0;
+      tmpObj.updateMatrix();
+      mesh.setMatrixAt(i, tmpObj.matrix);
 
-      // Flap: wingtip y oscillates sin(phase) * scale.
-      b.phase =
-        (b.phase + Math.max(0, mesh.rotation.z) + 0.1) % 62.83;
-      const pos = mesh.geometry.attributes.position as THREE.BufferAttribute;
-      const flap = Math.sin(b.phase) * BIRD_WING_SCALE;
-      pos.setY(4, flap);
-      pos.setY(5, flap);
-      pos.needsUpdate = true;
+      // Flap: shader reads sin(aPhase) * uFlapScale for wingtip
+      // vertices. Keep the pen's pitch-coupled advance so climbing
+      // birds flap faster, diving birds glide.
+      b.phase = (b.phase + Math.max(0, tmpObj.rotation.z) + 0.1) % 62.83;
+      phaseArr[i] = b.phase;
     }
+    mesh.instanceMatrix.needsUpdate = true;
+    phaseAttr.needsUpdate = true;
   });
 
   return (
@@ -4613,30 +4674,14 @@ function Flock() {
     // The roaming goal above sends the flock on a tour through the
     // room's deep corners, past-camera space, and Venus' upper
     // area, so the whole volume actually gets used.
+    // Dark warm-brown body (not pure black): under PBR diffuse ≈
+    // baseColor × lightColor, so a near-black body can't reflect much
+    // red no matter how strong the lights. #1a0d08 keeps the
+    // silhouette dark but has enough red in the base that passes
+    // through red zones visibly warm up. Slight metalness adds a
+    // subtle sheen when catching the warm spots.
     <group position={[0, 5, -3]}>
-      {boids.map((_, i) => (
-        <mesh
-          key={i}
-          geometry={geos[i]}
-          ref={(m) => {
-            meshRefs.current[i] = m;
-          }}
-        >
-          {/* Dark warm-brown body (not pure black): under PBR
-              diffuse ≈ baseColor × lightColor, so a near-black
-              body can't reflect much red no matter how strong the
-              lights. #1a0d08 keeps the silhouette dark but has
-              enough red in the base that passes through red zones
-              visibly warm up. Slight metalness adds a subtle sheen
-              when catching the warm spots. */}
-          <meshStandardMaterial
-            color="#1a0d08"
-            side={THREE.DoubleSide}
-            roughness={0.5}
-            metalness={0.1}
-          />
-        </mesh>
-      ))}
+      <instancedMesh ref={instancedRef} args={[geometry, material, NUM]} />
     </group>
   );
 }
