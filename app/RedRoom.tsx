@@ -1754,9 +1754,16 @@ function DustMotes() {
 // State machine — every rain event has four phases:
 //   dry      → idle, no drops rendered (50–80s)
 //   ramp-in  → opacity 0 → max over 2s (sparse drizzle thickening)
-//   steady   → full max opacity (7–11s of "rain curtain")
+//   steady   → full max opacity (LOG-NORMAL distributed, see below)
 //   ramp-out → opacity max → 0 over 2s (drizzle dying away)
-// Total visible rain ≈ 11–15s, then back to dry.
+//
+// Steady duration is sampled from a log-normal distribution with
+// median 21s (so total visible rain ≈25s including the 4s of ramps)
+// and σ_log = 1.0, then clamped to [1, 296] so total is in [5, 300].
+// This gives:
+//   ~50% of events between 13–49s total
+//   ~25% short showers 5–13s
+//   ~25% long downpours 49–300s (occasional 5-min storms)
 //
 // Rendering choices:
 // - LineSegments: each drop is a 0.35m vertical streak. WebGL
@@ -1831,6 +1838,18 @@ function Rain() {
     phaseDuration: 8 + Math.random() * 8, // first dry is shorter so user sees rain quickly
   });
 
+  // Log-normal sample for steady-rain duration. Median 21s + 4s of
+  // ramp-in/out ≈ 25s total median. Clamped to [1, 296] so total is
+  // in user's requested [5, 300] window.
+  const pickSteadyDuration = (): number => {
+    // Box-Muller standard normal
+    const u = Math.max(1e-9, Math.random());
+    const v = Math.random();
+    const z = Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+    const value = 21 * Math.exp(1.0 * z);
+    return Math.min(296, Math.max(1, value));
+  };
+
   useFrame((state, dt) => {
     const t = state.clock.elapsedTime;
     let elapsed = t - cycle.current.phaseStart;
@@ -1847,7 +1866,7 @@ function Rain() {
           break;
         case "ramp-in":
           cycle.current.phase = "steady";
-          cycle.current.phaseDuration = 7 + Math.random() * 4; // 7–11s
+          cycle.current.phaseDuration = pickSteadyDuration();
           break;
         case "steady":
           cycle.current.phase = "ramp-out";
@@ -1915,30 +1934,70 @@ function Rain() {
 
 // ————— Lightning flash spectacle —————
 // Brief room-wide white flash, like a flashbulb or distant lightning
-// strike. Implementation: AmbientLight whose intensity is normally 0,
-// pulsed up to ~5 for 60–150ms total. The room's existing lights are
-// in the 1–3 range, so 5 of pure-white ambient does whitewash the
-// scene briefly.
+// strike. Implementation: AmbientLight pulsed from 0 → ~5 for short
+// bursts. Room's existing lights are 1–3, so 5 of pure-white ambient
+// does whitewash the scene.
 //
-// Pattern: 50% chance of a single flash, 50% chance of a double-flash
-// (real lightning often has multiple strokes, ~50–100ms apart). Gap
-// between flash events 30–90s — frequent enough to feel like a
-// recurring presence, rare enough to startle.
+// Per event:
+//   - Number of strokes weighted random:
+//       40% single, 30% double, 20% triple, 10% 4–6 strokes
+//   - Each stroke 50–150ms, intensity 0.5×–1.0× peak (varies stroke
+//     to stroke so multi-stroke bursts don't feel uniform)
+//   - Gaps between strokes within event: 50–250ms
+//
+// Inter-event interval mixes three regimes for "stormy" feel:
+//   - 25% chance: close follow-up (3–12s) — same storm
+//   - 60% chance: standard gap (20–90s)
+//   - 15% chance: long quiet (90–240s)
 
 const FLASH_PEAK_INTENSITY = 5.0;
 
 function LightningFlash() {
   const lightRef = useRef<THREE.AmbientLight>(null);
 
-  // A flash event has 1–2 BURSTS; each burst is (start_offset_in_event,
-  // duration). Outside any burst, intensity is 0.
-  type Burst = { startOffset: number; duration: number };
+  // A flash event has N bursts. Each burst is (start_offset_in_event,
+  // duration, intensity_multiplier). Outside any burst, light = 0.
+  type Burst = { startOffset: number; duration: number; intensity: number };
   const cycle = useRef({
     flashing: false,
     flashStart: 0,
     nextFlashAt: 15 + Math.random() * 25, // first flash 15–40s in
     bursts: [] as Burst[],
   });
+
+  // Weighted stroke count: more often 1–2, occasionally 4–6.
+  const pickBurstCount = (): number => {
+    const r = Math.random();
+    if (r < 0.40) return 1;
+    if (r < 0.70) return 2;
+    if (r < 0.90) return 3;
+    return 4 + Math.floor(Math.random() * 3); // 4, 5, or 6
+  };
+
+  // Build a burst sequence with random gaps and intensity variation.
+  const buildBursts = (): Burst[] => {
+    const count = pickBurstCount();
+    const bursts: Burst[] = [];
+    let offset = 0;
+    for (let i = 0; i < count; i++) {
+      const duration = 0.05 + Math.random() * 0.10;     // 50–150ms
+      const intensity = 0.5 + Math.random() * 0.5;       // 0.5×–1.0× peak
+      bursts.push({ startOffset: offset, duration, intensity });
+      if (i < count - 1) {
+        const gap = 0.05 + Math.random() * 0.20;         // 50–250ms gap
+        offset += duration + gap;
+      }
+    }
+    return bursts;
+  };
+
+  // Mixed-regime gap so cadence doesn't feel uniform.
+  const pickNextFlashGap = (): number => {
+    const r = Math.random();
+    if (r < 0.25) return 3 + Math.random() * 9;          // 3–12s close follow-up
+    if (r < 0.85) return 20 + Math.random() * 70;        // 20–90s standard
+    return 90 + Math.random() * 150;                     // 90–240s long quiet
+  };
 
   useFrame((state) => {
     const t = state.clock.elapsedTime;
@@ -1947,21 +2006,7 @@ function LightningFlash() {
     if (!cycle.current.flashing && t > cycle.current.nextFlashAt) {
       cycle.current.flashing = true;
       cycle.current.flashStart = t;
-      if (Math.random() < 0.5) {
-        // Single flash, 100–150ms.
-        cycle.current.bursts = [
-          { startOffset: 0, duration: 0.10 + Math.random() * 0.05 },
-        ];
-      } else {
-        // Double flash. First burst short (60–100ms), gap 80–130ms,
-        // second burst slightly longer (90–140ms).
-        const firstDur = 0.06 + Math.random() * 0.04;
-        const gap = 0.08 + Math.random() * 0.05;
-        cycle.current.bursts = [
-          { startOffset: 0, duration: firstDur },
-          { startOffset: firstDur + gap, duration: 0.09 + Math.random() * 0.05 },
-        ];
-      }
+      cycle.current.bursts = buildBursts();
     }
 
     if (!cycle.current.flashing) {
@@ -1971,11 +2016,11 @@ function LightningFlash() {
 
     const dt = t - cycle.current.flashStart;
 
-    // Compute current intensity based on which burst is active.
+    // Find active burst (if any) and apply its per-burst intensity.
     let intensity = 0;
     for (const b of cycle.current.bursts) {
       if (dt >= b.startOffset && dt < b.startOffset + b.duration) {
-        intensity = FLASH_PEAK_INTENSITY;
+        intensity = FLASH_PEAK_INTENSITY * b.intensity;
         break;
       }
     }
@@ -1985,7 +2030,7 @@ function LightningFlash() {
     const last = cycle.current.bursts[cycle.current.bursts.length - 1];
     if (dt > last.startOffset + last.duration) {
       cycle.current.flashing = false;
-      cycle.current.nextFlashAt = t + 30 + Math.random() * 60; // 30–90s
+      cycle.current.nextFlashAt = t + pickNextFlashGap();
     }
   });
 
