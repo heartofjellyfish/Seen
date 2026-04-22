@@ -1780,69 +1780,126 @@ function DustMotes() {
 //   correctly occlude drops behind them.
 
 function Rain() {
-  const N = 280;
+  const N = 220;
   const STREAK_LEN = 0.35;
+  const Y_RANGE = 11;       // total fall range (top - floor)
+  const Y_TOP = 11;          // y where drops respawn
   const MAX_OPACITY = 0.4;
   const RAMP_IN_DUR = 2.0;
   const RAMP_OUT_DUR = 2.0;
 
   const linesRef = useRef<THREE.LineSegments>(null);
-  const matRef = useRef<THREE.LineBasicMaterial>(null);
 
-  // Each segment = 2 vertices = 6 floats. Initial positions are
-  // distributed throughout the volume; they're re-randomised at each
-  // ramp-in start (see scatterDrops below) so this initial layout
-  // only matters for the very first event.
-  const { positions, velocities, geometry } = useMemo(() => {
+  // Build geometry ONCE at mount with per-vertex attributes that the
+  // shader reads to compute current y. CPU never touches positions
+  // again — the entire animation runs on the GPU via uTime uniform.
+  // This eliminates the per-frame buffer upload (was 6.7KB × 60fps =
+  // 400KB/s) AND the per-frame loop over N drops (was the visible
+  // FPS hit during long steady-rain phases now that they can last
+  // up to 5 minutes).
+  const geometry = useMemo(() => {
+    // 2 vertices per segment, N segments
+    const dropX = new Float32Array(N * 2);
+    const dropZ = new Float32Array(N * 2);
+    const dropPhase = new Float32Array(N * 2);    // 0..1 init offset
+    const dropVelocity = new Float32Array(N * 2); // m/s
+    const isBottom = new Float32Array(N * 2);     // 0=top, 1=bottom
+
+    // BufferGeometry needs SOME `position` attribute even though
+    // the shader replaces gl_Position with computed values. Use a
+    // dummy zeroed buffer.
     const positions = new Float32Array(N * 6);
-    const velocities = new Float32Array(N);
+
     for (let i = 0; i < N; i++) {
       const x = (Math.random() - 0.5) * 18;     // x: -9 to 9
-      const y = Math.random() * 10;             // y: 0–10
       const z = (Math.random() - 0.5) * 14 - 3; // z: -10 to 4
-      positions[i * 6 + 0] = x;
-      positions[i * 6 + 1] = y;
-      positions[i * 6 + 2] = z;
-      positions[i * 6 + 3] = x;
-      positions[i * 6 + 4] = y - STREAK_LEN;
-      positions[i * 6 + 5] = z;
-      velocities[i] = 5 + Math.random() * 2; // 5–7 m/s drizzle pace
+      const phase = Math.random();              // randomise initial fall position
+      const velocity = 5 + Math.random() * 2;   // 5–7 m/s drizzle pace
+      // Top vertex
+      dropX[i * 2 + 0] = x;
+      dropZ[i * 2 + 0] = z;
+      dropPhase[i * 2 + 0] = phase;
+      dropVelocity[i * 2 + 0] = velocity;
+      isBottom[i * 2 + 0] = 0;
+      // Bottom vertex (same drop, but flagged)
+      dropX[i * 2 + 1] = x;
+      dropZ[i * 2 + 1] = z;
+      dropPhase[i * 2 + 1] = phase;
+      dropVelocity[i * 2 + 1] = velocity;
+      isBottom[i * 2 + 1] = 1;
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-    return { positions, velocities, geometry: g };
+    g.setAttribute("aDropX", new THREE.BufferAttribute(dropX, 1));
+    g.setAttribute("aDropZ", new THREE.BufferAttribute(dropZ, 1));
+    g.setAttribute("aDropPhase", new THREE.BufferAttribute(dropPhase, 1));
+    g.setAttribute("aDropVelocity", new THREE.BufferAttribute(dropVelocity, 1));
+    g.setAttribute("aIsBottom", new THREE.BufferAttribute(isBottom, 1));
+    // Disable frustum culling — bounding sphere is computed from the
+    // dummy positions (all 0), so frustum test would think the mesh
+    // is at origin. The shader places vertices wherever, so we just
+    // tell three.js to always draw it.
+    g.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 5, -3), 30);
+    return g;
   }, []);
 
-  // Re-scatter drops throughout the volume — used at ramp-in start
-  // so a new event doesn't "wake up" with drops frozen at last
-  // event's bottom positions (which would look unnatural).
-  const scatterDrops = () => {
-    for (let i = 0; i < N; i++) {
-      const x = (Math.random() - 0.5) * 18;
-      const y = Math.random() * 10;
-      const z = (Math.random() - 0.5) * 14 - 3;
-      positions[i * 6 + 0] = x;
-      positions[i * 6 + 1] = y;
-      positions[i * 6 + 2] = z;
-      positions[i * 6 + 3] = x;
-      positions[i * 6 + 4] = y - STREAK_LEN;
-      positions[i * 6 + 5] = z;
-    }
-    geometry.attributes.position.needsUpdate = true;
-  };
+  // ShaderMaterial: vertex shader computes current y from
+  // mod(phase * Y_RANGE + velocity * uTime, Y_RANGE), so each drop
+  // wraps automatically when it hits the floor. uOpacity controls
+  // ramp-in / ramp-out fade.
+  const material = useMemo(
+    () =>
+      new THREE.ShaderMaterial({
+        uniforms: {
+          uTime: { value: 0 },
+          uOpacity: { value: 0 },
+          uColor: { value: new THREE.Color("#d0d8e4") },
+          uYRange: { value: Y_RANGE },
+          uYTop: { value: Y_TOP },
+          uStreakLen: { value: STREAK_LEN },
+        },
+        vertexShader: /* glsl */ `
+          uniform float uTime;
+          uniform float uYRange;
+          uniform float uYTop;
+          uniform float uStreakLen;
+          attribute float aDropX;
+          attribute float aDropZ;
+          attribute float aDropPhase;
+          attribute float aDropVelocity;
+          attribute float aIsBottom;
+          void main() {
+            float wrapped = mod(aDropPhase * uYRange + aDropVelocity * uTime, uYRange);
+            float topY = uYTop - wrapped;
+            float y = topY - uStreakLen * aIsBottom;
+            vec4 mv = modelViewMatrix * vec4(aDropX, y, aDropZ, 1.0);
+            gl_Position = projectionMatrix * mv;
+          }
+        `,
+        fragmentShader: /* glsl */ `
+          uniform vec3 uColor;
+          uniform float uOpacity;
+          void main() {
+            gl_FragColor = vec4(uColor, uOpacity);
+          }
+        `,
+        transparent: true,
+        depthWrite: false,
+      }),
+    [],
+  );
 
   type Phase = "dry" | "ramp-in" | "steady" | "ramp-out";
   const cycle = useRef<{ phase: Phase; phaseStart: number; phaseDuration: number }>({
     phase: "dry",
     phaseStart: 0,
-    phaseDuration: 8 + Math.random() * 8, // first dry is shorter so user sees rain quickly
+    phaseDuration: 8 + Math.random() * 8,
   });
 
   // Log-normal sample for steady-rain duration. Median 21s + 4s of
   // ramp-in/out ≈ 25s total median. Clamped to [1, 296] so total is
   // in user's requested [5, 300] window.
   const pickSteadyDuration = (): number => {
-    // Box-Muller standard normal
     const u = Math.max(1e-9, Math.random());
     const v = Math.random();
     const z = Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
@@ -1850,11 +1907,10 @@ function Rain() {
     return Math.min(296, Math.max(1, value));
   };
 
-  useFrame((state, dt) => {
+  useFrame((state) => {
     const t = state.clock.elapsedTime;
     let elapsed = t - cycle.current.phaseStart;
 
-    // Phase transition
     if (elapsed > cycle.current.phaseDuration) {
       cycle.current.phaseStart = t;
       elapsed = 0;
@@ -1862,7 +1918,6 @@ function Rain() {
         case "dry":
           cycle.current.phase = "ramp-in";
           cycle.current.phaseDuration = RAMP_IN_DUR;
-          scatterDrops();
           break;
         case "ramp-in":
           cycle.current.phase = "steady";
@@ -1874,12 +1929,11 @@ function Rain() {
           break;
         case "ramp-out":
           cycle.current.phase = "dry";
-          cycle.current.phaseDuration = 50 + Math.random() * 30; // 50–80s
+          cycle.current.phaseDuration = 50 + Math.random() * 30;
           break;
       }
     }
 
-    // Compute opacity from phase + elapsed
     let opacity = 0;
     if (cycle.current.phase === "ramp-in") {
       opacity = (elapsed / RAMP_IN_DUR) * MAX_OPACITY;
@@ -1887,48 +1941,21 @@ function Rain() {
       opacity = MAX_OPACITY;
     } else if (cycle.current.phase === "ramp-out") {
       opacity = (1 - elapsed / RAMP_OUT_DUR) * MAX_OPACITY;
-    } // "dry" → 0
-
-    if (matRef.current) matRef.current.opacity = opacity;
-
-    // Skip per-particle update when not visible — zero perf cost dry.
-    if (opacity < 0.001) {
-      if (linesRef.current) linesRef.current.visible = false;
-      return;
     }
-    if (linesRef.current) linesRef.current.visible = true;
 
-    // Update each streak: top + bottom both fall by velocity*dt.
-    // Respawn at top when bottom passes the floor.
-    for (let i = 0; i < N; i++) {
-      const fall = velocities[i] * dt;
-      positions[i * 6 + 1] -= fall;
-      positions[i * 6 + 4] -= fall;
-      if (positions[i * 6 + 4] < 0) {
-        const x = (Math.random() - 0.5) * 18;
-        const z = (Math.random() - 0.5) * 14 - 3;
-        const newY = 9 + Math.random() * 2;
-        positions[i * 6 + 0] = x;
-        positions[i * 6 + 1] = newY;
-        positions[i * 6 + 2] = z;
-        positions[i * 6 + 3] = x;
-        positions[i * 6 + 4] = newY - STREAK_LEN;
-        positions[i * 6 + 5] = z;
-      }
-    }
-    geometry.attributes.position.needsUpdate = true;
+    // The only per-frame work: 2 uniform writes.
+    material.uniforms.uTime.value = t;
+    material.uniforms.uOpacity.value = opacity;
+    if (linesRef.current) linesRef.current.visible = opacity > 0.001;
   });
 
   return (
-    <lineSegments ref={linesRef} geometry={geometry} visible={false}>
-      <lineBasicMaterial
-        ref={matRef}
-        color="#d0d8e4"
-        transparent
-        opacity={0}
-        depthWrite={false}
-      />
-    </lineSegments>
+    <lineSegments
+      ref={linesRef}
+      geometry={geometry}
+      material={material}
+      visible={false}
+    />
   );
 }
 
