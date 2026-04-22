@@ -1960,6 +1960,177 @@ function DustMotes() {
   );
 }
 
+// ————— Indoor rain spectacle —————
+// Surreal indoor rainfall — Twin Peaks-style. Falls for 10–15s,
+// then dry for 50–80s. ~250 droplets, 6–9 m/s downward, pale-blue.
+//
+// Rendering choices that matter:
+// - `depthWrite: false` so drops don't occlude each other (the
+//   buffer order would produce ugly z-fighting between adjacent
+//   drops). Depth TEST is still on by default, so the drops are
+//   correctly occluded by the back curtain, stage curtain, etc.
+// - `transparent: true` + low opacity so drops read as wet streaks
+//   not solid pellets. NormalBlending (the default) — Additive
+//   would make drops overlap-brighten and lose their streak feel
+//   against the dark room.
+// - Drops are confined to z ∈ [-10, 4] world to stay in the
+//   audience volume — falling behind the back curtain (z < -16)
+//   wouldn't be visible anyway, but limiting the spawn box also
+//   keeps the particle count efficient.
+
+function Rain() {
+  const N = 250;
+  const pointsRef = useRef<THREE.Points>(null);
+
+  // Pre-allocate position + velocity buffers. Initial positions are
+  // distributed throughout the volume so on first activation the rain
+  // looks like an established downpour, not a synchronised wave from
+  // the top.
+  const { positions, velocities, geometry } = useMemo(() => {
+    const positions = new Float32Array(N * 3);
+    const velocities = new Float32Array(N);
+    for (let i = 0; i < N; i++) {
+      positions[i * 3]     = (Math.random() - 0.5) * 18;     // x: -9 to 9
+      positions[i * 3 + 1] = Math.random() * 10;             // y: 0–10
+      positions[i * 3 + 2] = (Math.random() - 0.5) * 14 - 3; // z: -10 to 4
+      velocities[i] = 6 + Math.random() * 3;                 // 6–9 m/s
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    return { positions, velocities, geometry: g };
+  }, []);
+
+  // Rain ↔ dry cycle. First rain is delayed 8–16s so the user has
+  // time to take in the room before the spectacle begins.
+  const cycle = useRef({
+    raining: false,
+    nextChangeAt: 8 + Math.random() * 8,
+  });
+
+  useFrame((state, dt) => {
+    const t = state.clock.elapsedTime;
+
+    if (t > cycle.current.nextChangeAt) {
+      cycle.current.raining = !cycle.current.raining;
+      if (cycle.current.raining) {
+        cycle.current.nextChangeAt = t + 10 + Math.random() * 5; // 10–15s rain
+      } else {
+        cycle.current.nextChangeAt = t + 50 + Math.random() * 30; // 50–80s dry
+      }
+    }
+
+    if (!cycle.current.raining) {
+      if (pointsRef.current) pointsRef.current.visible = false;
+      return; // skip per-particle work when off — zero perf cost
+    }
+    if (pointsRef.current) pointsRef.current.visible = true;
+
+    // Update each drop. When it falls below the floor, respawn at the
+    // top with a new x/z so the streaks don't form vertical "trails".
+    for (let i = 0; i < N; i++) {
+      positions[i * 3 + 1] -= velocities[i] * dt;
+      if (positions[i * 3 + 1] < 0) {
+        positions[i * 3]     = (Math.random() - 0.5) * 18;
+        positions[i * 3 + 1] = 9 + Math.random() * 2;
+        positions[i * 3 + 2] = (Math.random() - 0.5) * 14 - 3;
+      }
+    }
+    geometry.attributes.position.needsUpdate = true;
+  });
+
+  return (
+    <points ref={pointsRef} geometry={geometry} visible={false}>
+      <pointsMaterial
+        size={0.07}
+        color="#d8e0ff"
+        transparent
+        opacity={0.7}
+        sizeAttenuation
+        depthWrite={false}
+      />
+    </points>
+  );
+}
+
+// ————— Lightning flash spectacle —————
+// Brief room-wide white flash, like a flashbulb or distant lightning
+// strike. Implementation: AmbientLight whose intensity is normally 0,
+// pulsed up to ~5 for 60–150ms total. The room's existing lights are
+// in the 1–3 range, so 5 of pure-white ambient does whitewash the
+// scene briefly.
+//
+// Pattern: 50% chance of a single flash, 50% chance of a double-flash
+// (real lightning often has multiple strokes, ~50–100ms apart). Gap
+// between flash events 30–90s — frequent enough to feel like a
+// recurring presence, rare enough to startle.
+
+const FLASH_PEAK_INTENSITY = 5.0;
+
+function LightningFlash() {
+  const lightRef = useRef<THREE.AmbientLight>(null);
+
+  // A flash event has 1–2 BURSTS; each burst is (start_offset_in_event,
+  // duration). Outside any burst, intensity is 0.
+  type Burst = { startOffset: number; duration: number };
+  const cycle = useRef({
+    flashing: false,
+    flashStart: 0,
+    nextFlashAt: 15 + Math.random() * 25, // first flash 15–40s in
+    bursts: [] as Burst[],
+  });
+
+  useFrame((state) => {
+    const t = state.clock.elapsedTime;
+
+    // Schedule next flash event.
+    if (!cycle.current.flashing && t > cycle.current.nextFlashAt) {
+      cycle.current.flashing = true;
+      cycle.current.flashStart = t;
+      if (Math.random() < 0.5) {
+        // Single flash, 100–150ms.
+        cycle.current.bursts = [
+          { startOffset: 0, duration: 0.10 + Math.random() * 0.05 },
+        ];
+      } else {
+        // Double flash. First burst short (60–100ms), gap 80–130ms,
+        // second burst slightly longer (90–140ms).
+        const firstDur = 0.06 + Math.random() * 0.04;
+        const gap = 0.08 + Math.random() * 0.05;
+        cycle.current.bursts = [
+          { startOffset: 0, duration: firstDur },
+          { startOffset: firstDur + gap, duration: 0.09 + Math.random() * 0.05 },
+        ];
+      }
+    }
+
+    if (!cycle.current.flashing) {
+      if (lightRef.current) lightRef.current.intensity = 0;
+      return;
+    }
+
+    const dt = t - cycle.current.flashStart;
+
+    // Compute current intensity based on which burst is active.
+    let intensity = 0;
+    for (const b of cycle.current.bursts) {
+      if (dt >= b.startOffset && dt < b.startOffset + b.duration) {
+        intensity = FLASH_PEAK_INTENSITY;
+        break;
+      }
+    }
+    if (lightRef.current) lightRef.current.intensity = intensity;
+
+    // End the event after the last burst finishes. Schedule next.
+    const last = cycle.current.bursts[cycle.current.bursts.length - 1];
+    if (dt > last.startOffset + last.duration) {
+      cycle.current.flashing = false;
+      cycle.current.nextFlashAt = t + 30 + Math.random() * 60; // 30–90s
+    }
+  });
+
+  return <ambientLight ref={lightRef} color="#ffffff" intensity={0} />;
+}
+
 // ————— 4iv walker —————
 // Every 45s or so a slender dark silhouette crosses the stage in
 // front of the closed curtain, right to left or left to right
@@ -3130,6 +3301,8 @@ export function RedRoom() {
         <DustMotes />
         <Flock />
         <RavenFlyBy />
+        <Rain />
+        <LightningFlash />
 
         {/* FPS panel only when ?debug URL flag or env debug is set. */}
         {showStats && <Stats />}
