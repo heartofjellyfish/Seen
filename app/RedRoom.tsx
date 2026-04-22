@@ -1957,95 +1957,170 @@ function DustMotes() {
   );
 }
 
-// ————— Indoor rain spectacle —————
-// Surreal indoor rainfall — Twin Peaks-style. Falls for 10–15s,
-// then dry for 50–80s. ~250 droplets, 6–9 m/s downward, pale-blue.
+// ————— Indoor drizzle spectacle —————
+// Surreal indoor rain — Twin Peaks-style. Light, atmospheric, never
+// dominant. Each drop is a short LINE SEGMENT (not a point) so it
+// reads as a vertical streak rather than a hailstone pellet.
 //
-// Rendering choices that matter:
-// - `depthWrite: false` so drops don't occlude each other (the
-//   buffer order would produce ugly z-fighting between adjacent
-//   drops). Depth TEST is still on by default, so the drops are
-//   correctly occluded by the back curtain, stage curtain, etc.
-// - `transparent: true` + low opacity so drops read as wet streaks
-//   not solid pellets. NormalBlending (the default) — Additive
-//   would make drops overlap-brighten and lose their streak feel
-//   against the dark room.
-// - Drops are confined to z ∈ [-10, 4] world to stay in the
-//   audience volume — falling behind the back curtain (z < -16)
-//   wouldn't be visible anyway, but limiting the spawn box also
-//   keeps the particle count efficient.
+// State machine — every rain event has four phases:
+//   dry      → idle, no drops rendered (50–80s)
+//   ramp-in  → opacity 0 → max over 2s (sparse drizzle thickening)
+//   steady   → full max opacity (7–11s of "rain curtain")
+//   ramp-out → opacity max → 0 over 2s (drizzle dying away)
+// Total visible rain ≈ 11–15s, then back to dry.
+//
+// Rendering choices:
+// - LineSegments: each drop is a 0.35m vertical streak. WebGL
+//   limits hardware line width to 1px on most platforms — that's
+//   actually what we want, thin streaks read as real rain rather
+//   than chunky spheres.
+// - Pale grey-white tint (#d0d8e4): real rain isn't blue, but a
+//   faint blue keeps it from looking like ash.
+// - Low max opacity (0.4): user requirement "不要看着太明显". The
+//   rain sits underneath the scene's other dramatic events as
+//   ambient texture, not stealing focus.
+// - depthWrite: false (drops don't z-fight each other) but depth
+//   TEST stays on, so the back curtain / stage curtain / Venus
+//   correctly occlude drops behind them.
 
 function Rain() {
-  const N = 250;
-  const pointsRef = useRef<THREE.Points>(null);
+  const N = 280;
+  const STREAK_LEN = 0.35;
+  const MAX_OPACITY = 0.4;
+  const RAMP_IN_DUR = 2.0;
+  const RAMP_OUT_DUR = 2.0;
 
-  // Pre-allocate position + velocity buffers. Initial positions are
-  // distributed throughout the volume so on first activation the rain
-  // looks like an established downpour, not a synchronised wave from
-  // the top.
+  const linesRef = useRef<THREE.LineSegments>(null);
+  const matRef = useRef<THREE.LineBasicMaterial>(null);
+
+  // Each segment = 2 vertices = 6 floats. Initial positions are
+  // distributed throughout the volume; they're re-randomised at each
+  // ramp-in start (see scatterDrops below) so this initial layout
+  // only matters for the very first event.
   const { positions, velocities, geometry } = useMemo(() => {
-    const positions = new Float32Array(N * 3);
+    const positions = new Float32Array(N * 6);
     const velocities = new Float32Array(N);
     for (let i = 0; i < N; i++) {
-      positions[i * 3]     = (Math.random() - 0.5) * 18;     // x: -9 to 9
-      positions[i * 3 + 1] = Math.random() * 10;             // y: 0–10
-      positions[i * 3 + 2] = (Math.random() - 0.5) * 14 - 3; // z: -10 to 4
-      velocities[i] = 6 + Math.random() * 3;                 // 6–9 m/s
+      const x = (Math.random() - 0.5) * 18;     // x: -9 to 9
+      const y = Math.random() * 10;             // y: 0–10
+      const z = (Math.random() - 0.5) * 14 - 3; // z: -10 to 4
+      positions[i * 6 + 0] = x;
+      positions[i * 6 + 1] = y;
+      positions[i * 6 + 2] = z;
+      positions[i * 6 + 3] = x;
+      positions[i * 6 + 4] = y - STREAK_LEN;
+      positions[i * 6 + 5] = z;
+      velocities[i] = 5 + Math.random() * 2; // 5–7 m/s drizzle pace
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.BufferAttribute(positions, 3));
     return { positions, velocities, geometry: g };
   }, []);
 
-  // Rain ↔ dry cycle. First rain is delayed 8–16s so the user has
-  // time to take in the room before the spectacle begins.
-  const cycle = useRef({
-    raining: false,
-    nextChangeAt: 8 + Math.random() * 8,
+  // Re-scatter drops throughout the volume — used at ramp-in start
+  // so a new event doesn't "wake up" with drops frozen at last
+  // event's bottom positions (which would look unnatural).
+  const scatterDrops = () => {
+    for (let i = 0; i < N; i++) {
+      const x = (Math.random() - 0.5) * 18;
+      const y = Math.random() * 10;
+      const z = (Math.random() - 0.5) * 14 - 3;
+      positions[i * 6 + 0] = x;
+      positions[i * 6 + 1] = y;
+      positions[i * 6 + 2] = z;
+      positions[i * 6 + 3] = x;
+      positions[i * 6 + 4] = y - STREAK_LEN;
+      positions[i * 6 + 5] = z;
+    }
+    geometry.attributes.position.needsUpdate = true;
+  };
+
+  type Phase = "dry" | "ramp-in" | "steady" | "ramp-out";
+  const cycle = useRef<{ phase: Phase; phaseStart: number; phaseDuration: number }>({
+    phase: "dry",
+    phaseStart: 0,
+    phaseDuration: 8 + Math.random() * 8, // first dry is shorter so user sees rain quickly
   });
 
   useFrame((state, dt) => {
     const t = state.clock.elapsedTime;
+    let elapsed = t - cycle.current.phaseStart;
 
-    if (t > cycle.current.nextChangeAt) {
-      cycle.current.raining = !cycle.current.raining;
-      if (cycle.current.raining) {
-        cycle.current.nextChangeAt = t + 10 + Math.random() * 5; // 10–15s rain
-      } else {
-        cycle.current.nextChangeAt = t + 50 + Math.random() * 30; // 50–80s dry
+    // Phase transition
+    if (elapsed > cycle.current.phaseDuration) {
+      cycle.current.phaseStart = t;
+      elapsed = 0;
+      switch (cycle.current.phase) {
+        case "dry":
+          cycle.current.phase = "ramp-in";
+          cycle.current.phaseDuration = RAMP_IN_DUR;
+          scatterDrops();
+          break;
+        case "ramp-in":
+          cycle.current.phase = "steady";
+          cycle.current.phaseDuration = 7 + Math.random() * 4; // 7–11s
+          break;
+        case "steady":
+          cycle.current.phase = "ramp-out";
+          cycle.current.phaseDuration = RAMP_OUT_DUR;
+          break;
+        case "ramp-out":
+          cycle.current.phase = "dry";
+          cycle.current.phaseDuration = 50 + Math.random() * 30; // 50–80s
+          break;
       }
     }
 
-    if (!cycle.current.raining) {
-      if (pointsRef.current) pointsRef.current.visible = false;
-      return; // skip per-particle work when off — zero perf cost
-    }
-    if (pointsRef.current) pointsRef.current.visible = true;
+    // Compute opacity from phase + elapsed
+    let opacity = 0;
+    if (cycle.current.phase === "ramp-in") {
+      opacity = (elapsed / RAMP_IN_DUR) * MAX_OPACITY;
+    } else if (cycle.current.phase === "steady") {
+      opacity = MAX_OPACITY;
+    } else if (cycle.current.phase === "ramp-out") {
+      opacity = (1 - elapsed / RAMP_OUT_DUR) * MAX_OPACITY;
+    } // "dry" → 0
 
-    // Update each drop. When it falls below the floor, respawn at the
-    // top with a new x/z so the streaks don't form vertical "trails".
+    if (matRef.current) matRef.current.opacity = opacity;
+
+    // Skip per-particle update when not visible — zero perf cost dry.
+    if (opacity < 0.001) {
+      if (linesRef.current) linesRef.current.visible = false;
+      return;
+    }
+    if (linesRef.current) linesRef.current.visible = true;
+
+    // Update each streak: top + bottom both fall by velocity*dt.
+    // Respawn at top when bottom passes the floor.
     for (let i = 0; i < N; i++) {
-      positions[i * 3 + 1] -= velocities[i] * dt;
-      if (positions[i * 3 + 1] < 0) {
-        positions[i * 3]     = (Math.random() - 0.5) * 18;
-        positions[i * 3 + 1] = 9 + Math.random() * 2;
-        positions[i * 3 + 2] = (Math.random() - 0.5) * 14 - 3;
+      const fall = velocities[i] * dt;
+      positions[i * 6 + 1] -= fall;
+      positions[i * 6 + 4] -= fall;
+      if (positions[i * 6 + 4] < 0) {
+        const x = (Math.random() - 0.5) * 18;
+        const z = (Math.random() - 0.5) * 14 - 3;
+        const newY = 9 + Math.random() * 2;
+        positions[i * 6 + 0] = x;
+        positions[i * 6 + 1] = newY;
+        positions[i * 6 + 2] = z;
+        positions[i * 6 + 3] = x;
+        positions[i * 6 + 4] = newY - STREAK_LEN;
+        positions[i * 6 + 5] = z;
       }
     }
     geometry.attributes.position.needsUpdate = true;
   });
 
   return (
-    <points ref={pointsRef} geometry={geometry} visible={false}>
-      <pointsMaterial
-        size={0.07}
-        color="#d8e0ff"
+    <lineSegments ref={linesRef} geometry={geometry} visible={false}>
+      <lineBasicMaterial
+        ref={matRef}
+        color="#d0d8e4"
         transparent
-        opacity={0.7}
-        sizeAttenuation
+        opacity={0}
         depthWrite={false}
       />
-    </points>
+    </lineSegments>
   );
 }
 
